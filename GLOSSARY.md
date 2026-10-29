@@ -1,0 +1,38 @@
+# Ostraka
+
+A personal admin base for one developer: a place to keep todos, notes and sketches, review daily work, and see open merge requests and the current sprint at a glance.
+
+## Content
+
+**Todo**:
+A unit of work to be done that can be marked done.
+_Avoid_: Task, item, action
+
+**Note**:
+A free-form piece of writing kept for later reference.
+_Avoid_: Memo, doc, page
+
+**Idea**:
+A Note tagged as an idea; not a separate kind of content.
+_Avoid_: Thought, brainstorm
+
+**Dev log**:
+The record of one working day: what was done, worked on, discussed and decided. There is at most one per day.
+_Avoid_: Journal, diary, daily log, worklog
+
+**Backfill**:
+Writing Dev logs for past days that have none.
+
+**Sketch**:
+A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
+_Avoid_: Drawing, diagram, whiteboard
+
+## Work overview
+
+**Briefing**:
+The start-of-day summary of what is waiting, open and planned.
+_Avoid_: Standup, welcome, digest
+
+**Activity source**:
+An external system whose recent activity feeds a Dev log or a Briefing, such as GitLab, Jira, Outlook or Slack.
+_Avoid_: Integration, connector, feed
