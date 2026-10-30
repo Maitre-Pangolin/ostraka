@@ -8,6 +8,18 @@ A personal admin base for one developer: a place to keep todos, notes and sketch
 A unit of work to be done that can be marked done.
 _Avoid_: Task, item, action
 
+**Sub-todo**:
+A Todo that belongs to a parent Todo; Sub-todos cannot have Sub-todos of their own.
+_Avoid_: Subtask, child, step, checklist item
+
+**Dropped**:
+The state of a Todo deliberately abandoned without being done, optionally with a reason.
+_Avoid_: Cancelled, deleted, archived
+
+**Tag**:
+A flat, lowercase label shared by Todos, Notes and Dev logs, created by first use.
+_Avoid_: Label, category, project
+
 **Note**:
 A free-form piece of writing kept for later reference.
 _Avoid_: Memo, doc, page
