@@ -39,6 +39,20 @@ Writing Dev logs for past days that have none.
 A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
 _Avoid_: Drawing, diagram, whiteboard
 
+## People
+
+**Person**:
+A colleague recorded in the People directory.
+_Avoid_: Contact, user, member
+
+**People directory**:
+The machine-wide list of Persons and their identities in each Activity source.
+_Avoid_: Address book, contacts, roster
+
+**Mention**:
+A reference to a Person in a Todo or Dev log, written `@<person id>`.
+_Avoid_: Tag (a Tag is a label, not a Person)
+
 ## Work overview
 
 **Briefing**:
