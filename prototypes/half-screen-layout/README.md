@@ -1,8 +1,9 @@
-# PROTOTYPE: half-screen layout (#10)
+# PROTOTYPE: ostraka shell, half-screen first (#10)
 
-Throwaway. Answers "what should the half-screen layout look like?" for ostraka.
-Three variants (A focus list + work strip, B tabs, C rail + panes) with in-memory mock data.
+Throwaway. Layout A (focus list + work strip) inside C's side rail, with every section stubbed:
+Todos, Notes (Milkdown Crepe), Dev logs (rendered Markdown, day/week), Sketches (Mermaid split editor),
+Work (GitLab MRs + Jira sprint) and Settings. In-memory mock data only.
 
     pnpm install && pnpm dev
 
-Bottom bar: ← → switch variant, ⅓ / ½ / full frame width, comfy/compact density, light/dark.
+`?view=` picks the section. Bottom-right bar: ⅓ / ½ / full frame width, comfy/compact density, light/dark.

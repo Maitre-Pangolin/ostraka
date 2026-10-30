@@ -65,15 +65,23 @@ export function compareTodos(a: Todo, b: Todo): number {
   )
 }
 
-export type TagFilter = { tags: string[]; mode: 'and' | 'or' }
+export type PrioKey = 'high' | 'med' | 'low' | 'none'
+export type Filter = { tags: string[]; mode: 'and' | 'or'; prios: PrioKey[]; people: string[] }
+export const EMPTY_FILTER: Filter = { tags: [], mode: 'and', prios: [], people: [] }
+export const isFiltering = (f: Filter) => f.tags.length + f.prios.length + f.people.length > 0
 
-export const matchesFilter = (t: Todo, f: TagFilter) =>
-  f.tags.length === 0 || (f.mode === 'and' ? f.tags.every((x) => t.tags.includes(x)) : f.tags.some((x) => t.tags.includes(x)))
+export const mentions = (t: Todo) => [...`${t.title} ${t.description ?? ''}`.matchAll(/@([a-z0-9-]+)/g)].map((m) => m[1])
+
+// Tags: AND/OR between selected Tags. Priorities and People: any of the selected. Groups combine with AND.
+export const matchesFilter = (t: Todo, f: Filter) =>
+  (f.tags.length === 0 || (f.mode === 'and' ? f.tags.every((x) => t.tags.includes(x)) : f.tags.some((x) => t.tags.includes(x)))) &&
+  (f.prios.length === 0 || f.prios.includes(t.priority ?? 'none')) &&
+  (f.people.length === 0 || f.people.some((p) => mentions(t).includes(p)))
 
 export type VisibleTodo = { todo: Todo; dimmed: boolean; subs: Todo[]; forceOpen: boolean }
 
 // A parent that only matches through its Sub-todos is shown dimmed with just those Sub-todos.
-export function visibleTodos(todos: Todo[], f: TagFilter, statuses: Todo['status'][]): VisibleTodo[] {
+export function visibleTodos(todos: Todo[], f: Filter, statuses: Todo['status'][]): VisibleTodo[] {
   const out: VisibleTodo[] = []
   for (const todo of todos.filter((t) => statuses.includes(t.status))) {
     if (matchesFilter(todo, f)) {
