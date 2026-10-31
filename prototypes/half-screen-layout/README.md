@@ -6,4 +6,4 @@ Work (GitLab MRs + Jira sprint) and Settings. In-memory mock data only.
 
     pnpm install && pnpm dev
 
-`?view=` picks the section. Bottom-right bar: ⅓ / ½ / full frame width, comfy/compact density, light/dark.
+`?view=` picks the section. The app fills the window; theme (light/dark) and density (compact/comfy) are switched from the rail or Settings, defaulting to light + compact.

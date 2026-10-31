@@ -1,6 +1,7 @@
 // PROTOTYPE: app shell for #10 — layout A (focus list + work strip) inside C's side rail. Throw away.
 import { cn } from '@/lib/utils'
-import { BookText, CheckSquare, ChevronDown, Lightbulb, Settings, Shapes } from 'lucide-react'
+import { BookText, CheckSquare, ChevronDown, Lightbulb, Moon, Rows3, Rows4, Settings, Shapes, Sun } from 'lucide-react'
+import type { Density } from '../App'
 import { useState } from 'react'
 import { CONFIG } from './data'
 import { DevLogsView, NotesView, SketchesView } from './docs'
@@ -17,7 +18,9 @@ const RAIL: { view: View; icon: typeof CheckSquare; label: string }[] = [
   { view: 'sketches', icon: Shapes, label: 'Sketches' },
 ]
 
-function Rail({ view, setView }: { view: View; setView: (v: View) => void }) {
+type Appearance = { dark: boolean; setDark: (d: boolean) => void; density: Density; setDensity: (d: Density) => void }
+
+function Rail({ view, setView, dark, setDark, density, setDensity }: { view: View; setView: (v: View) => void } & Appearance) {
   const { todos } = useStore()
   const badge: Partial<Record<View, number>> = {
     todos: todos.filter((t) => t.status === 'open').length,
@@ -39,6 +42,12 @@ function Rail({ view, setView }: { view: View; setView: (v: View) => void }) {
       <span className="mb-2 grid size-7 place-items-center rounded-lg bg-primary font-heading text-sm font-bold text-primary-foreground">o</span>
       {RAIL.map(item)}
       <span className="flex-1" />
+      <button type="button" title={density === 'compact' ? 'Compact (switch to comfy)' : 'Comfy (switch to compact)'} onClick={() => setDensity(density === 'compact' ? 'comfy' : 'compact')} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
+        {density === 'compact' ? <Rows4 className="size-4" /> : <Rows3 className="size-4" />}
+      </button>
+      <button type="button" title={dark ? 'Dark (switch to light)' : 'Light (switch to dark)'} onClick={() => setDark(!dark)} className="grid size-9 place-items-center rounded-lg text-muted-foreground hover:bg-muted hover:text-foreground">
+        {dark ? <Moon className="size-4" /> : <Sun className="size-4" />}
+      </button>
       {item({ view: 'settings', icon: Settings, label: 'Settings' })}
     </nav>
   )
@@ -67,7 +76,16 @@ function TodosView() {
   )
 }
 
-function SettingsView() {
+function SettingsView({ dark, setDark, density, setDensity }: Appearance) {
+  const seg = <T extends string>(value: T, options: [T, string][], set: (v: T) => void) => (
+    <div className="flex w-fit rounded-md bg-muted p-0.5 text-xs">
+      {options.map(([v, label]) => (
+        <button key={v} type="button" onClick={() => set(v)} className={value === v ? 'rounded bg-background px-2 py-0.5 shadow-sm' : 'rounded px-2 py-0.5 text-muted-foreground'}>
+          {label}
+        </button>
+      ))}
+    </div>
+  )
   const field = (label: string, value: string, hint?: string) => (
     <label className="flex flex-col gap-0.5">
       <span className="text-xs font-medium">{label}</span>
@@ -81,6 +99,11 @@ function SettingsView() {
         <p className="text-xs text-muted-foreground">
           Stored in <code className="rounded bg-muted px-1">~/.config/ostraka/config.yml</code>. Tokens are not here: they live in the macOS Keychain.
         </p>
+        <section className="flex flex-col gap-2">
+          <SectionLabel className="px-0">Appearance</SectionLabel>
+          <div className="flex items-center justify-between text-sm">Theme {seg(dark ? 'dark' : 'light', [['light', 'Light'], ['dark', 'Dark']], (v) => setDark(v === 'dark'))}</div>
+          <div className="flex items-center justify-between text-sm">Density {seg(density, [['compact', 'Compact'], ['comfy', 'Comfy']], setDensity)}</div>
+        </section>
         <section className="flex flex-col gap-2">
           <SectionLabel className="px-0">Content</SectionLabel>
           {field('Content folder', CONFIG.contentDir, 'Overridden by OSTRAKA_HOME.')}
@@ -100,10 +123,11 @@ function SettingsView() {
   )
 }
 
-export function Shell({ view, setView, dark }: { view: View; setView: (v: View) => void; dark: boolean }) {
+export function Shell({ view, setView, ...appearance }: { view: View; setView: (v: View) => void } & Appearance) {
+  const { dark } = appearance
   return (
     <div className="flex h-full">
-      <Rail view={view} setView={setView} />
+      <Rail view={view} setView={setView} {...appearance} />
       <div className="@container flex min-w-0 flex-1 flex-col">
         <WorkStrip />
         <div className="min-h-0 flex-1">
@@ -111,7 +135,7 @@ export function Shell({ view, setView, dark }: { view: View; setView: (v: View) 
         {view === 'notes' && <NotesView />}
         {view === 'devlogs' && <DevLogsView />}
         {view === 'sketches' && <SketchesView dark={dark} />}
-        {view === 'settings' && <SettingsView />}
+        {view === 'settings' && <SettingsView {...appearance} />}
         </div>
       </div>
     </div>
