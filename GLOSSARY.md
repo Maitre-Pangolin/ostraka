@@ -62,3 +62,7 @@ _Avoid_: Standup, welcome, digest
 **Activity source**:
 An external system whose recent activity feeds a Dev log or a Briefing, such as GitLab, Jira, Outlook or Slack.
 _Avoid_: Integration, connector, feed
+
+**Reference**:
+A pointer from a Todo, Note or Dev log to a merge request or Jira issue, written as that system's own token: `group/project!<iid>` or `<KEY>-<number>`.
+_Avoid_: Link, autolink (a Reference is stored as text, not as a URL)
