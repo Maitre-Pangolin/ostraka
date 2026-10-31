@@ -1,4 +1,4 @@
-// PROTOTYPE: todo list, inline editing, quick entry and filters for #10, references per variant for #17. Throw away.
+// PROTOTYPE: todo list, inline editing, quick entry and filters for #10, MR / Jira references and quick-entry tokens for #17. Throw away.
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -15,7 +15,6 @@ import {
   Flag,
   GitBranch,
   Hash,
-  Link2,
   Mail,
   MessageCircle,
   Plus,
@@ -24,14 +23,12 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { PEOPLE, TODAY, type Priority, type Todo } from './data'
 import { dueLabel, isFiltering, type Prop, mentions, parseQuickEntry, tagSlot, visibleTodos, EMPTY_FILTER, type PrioKey, type VisibleTodo } from './logic'
 import { useStore } from './store'
-import { RichEditor } from './linking'
 import { TokenEditor } from './tokeneditor'
-import { parseToken, parseUrl, refItems, refQuery, refToken, RefCard, RefChip, RefIcon, RefRow, resolve, StatusDot, TOKEN_RE } from './refs'
-import { VARIANT } from './variant'
+import { parseToken, parseUrl, refItems, refQuery, refToken, RefChip, RefRow, resolve, TOKEN_RE } from './refs'
 
 // ---------------------------------------------------------------- small pieces
 
@@ -139,49 +136,15 @@ export function PersonMention({ id }: { id: string }) {
   )
 }
 
-// A Markdown link whose URL is an MR or Jira issue (variant B): the user's text, plus an icon and a status dot.
-function RefLink({ text, url }: { text: string; url: string }) {
-  const r = parseUrl(url)!
-  const res = resolve(r)
-  return (
-    <Popover>
-      <PopoverTrigger
-        openOnHover
-        nativeButton={false}
-        delay={300}
-        onClick={stop}
-        render={<a href={url} onClick={(e) => e.preventDefault()} className="inline-flex items-baseline gap-0.5 text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary" />}
-      >
-        <RefIcon r={r} className="size-3 self-center" />
-        {text}
-        <StatusDot r={res} />
-      </PopoverTrigger>
-      <PopoverContent className="w-72" align="start" onClick={stop}>
-        <RefCard r={res} />
-      </PopoverContent>
-    </Popover>
-  )
-}
+const SPLIT = new RegExp(String.raw`(@[a-z0-9-]+|https?:\/\/\S+|` + TOKEN_RE.source.replace(/\((?!\?)/g, '(?:') + ')', 'g')
 
-const unescapeMd = (s: string) => s.replace(/\\([\\`*_{}[\]()#+\-.!])/g, '$1').replace(/\*\*|__/g, '')
-const SPLIT = new RegExp(String.raw`(\[[^\]]+\]\([^)\s]+\)|@[a-z0-9-]+|https?:\/\/\S+|` + TOKEN_RE.source.replace(/\((?!\?)/g, '(?:') + ')', 'g')
-
-// Renders @mentions as Person chips, references as chips (tokens, A) or links (Markdown, B), other URLs as short links.
+// Renders @mentions as Person chips, references as chips, other URLs as short links.
 export function RichText({ text, className }: { text: string; className?: string }) {
   const parts = text.split(SPLIT)
   return (
     <span className={className}>
       {parts.map((p, i) => {
         if (!p) return null
-        const md = p.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/)
-        if (md)
-          return parseUrl(md[2]) ? (
-            <RefLink key={i} text={unescapeMd(md[1])} url={md[2]} />
-          ) : (
-            <a key={i} href={md[2]} onClick={(e) => (stop(e), e.preventDefault())} className="text-primary underline underline-offset-2">
-              {unescapeMd(md[1])}
-            </a>
-          )
         if (p.startsWith('@')) return <PersonMention key={i} id={p.slice(1)} />
         const tok = parseToken(p)
         if (tok) return <RefChip key={i} r={tok} />
@@ -194,7 +157,7 @@ export function RichText({ text, className }: { text: string; className?: string
             </a>
           )
         }
-        return <span key={i}>{unescapeMd(p)}</span>
+        return <span key={i}>{p}</span>
       })}
     </span>
   )
@@ -364,136 +327,15 @@ export function SuggestionList({ items, sel, onPick, footer }: { items: string[]
   )
 }
 
-// ---------------------------------------------------------------- plain-text field with token suggestions (A, C)
-
-// Suggests at the caret. A picked or pasted reference becomes a token in the text, or goes to onLink (variant C).
-function TokenInput({
-  value,
-  onChange,
-  multiline,
-  onEnter,
-  onLink,
-  onBlur,
-  className,
-  wrapClassName,
-  placeholder,
-  autoFocus,
-  inputRef,
-}: {
-  value: string
-  onChange: (v: string) => void
-  multiline?: boolean
-  onEnter?: (e: KeyboardEvent) => void
-  onLink?: (token: string) => void
-  onBlur?: () => void
-  className?: string
-  wrapClassName?: string
-  placeholder?: string
-  autoFocus?: boolean
-  inputRef?: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
-}) {
-  const { tags } = useStore()
-  const own = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
-  const ref = inputRef ?? own
-  const [caret, setCaret] = useState(value.length)
-  const [sel, setSel] = useState(0)
-  const [focused, setFocused] = useState(false)
-  const before = value.slice(0, caret)
-  const last = before.split(/\s/).pop() ?? ''
-  const items = focused ? suggestFor(last, tags) : []
-  const setAt = (v: string, pos: number) => {
-    onChange(v)
-    setSel(0)
-    requestAnimationFrame(() => {
-      ref.current?.setSelectionRange(pos, pos)
-      setCaret(pos)
-    })
-  }
-  const insert = (s: string) => {
-    const head = before.slice(0, before.length - last.length)
-    const tail = value.slice(caret)
-    if (onLink && parseToken(s)) {
-      onLink(s)
-      setAt((head.replace(/\s+$/, ' ') + tail.replace(/^\s+/, '')).replace(/^\s+/, ''), head.length)
-    } else setAt(head + s + ' ' + tail.replace(/^\s+/, ''), head.length + s.length + 1)
-  }
-  const onPaste = (e: ClipboardEvent) => {
-    const r = parseUrl(e.clipboardData.getData('text/plain'))
-    if (!r) return
-    e.preventDefault()
-    const tok = refToken(r)
-    if (onLink) return onLink(tok)
-    const head = value.slice(0, caret)
-    const sep = head && !/\s$/.test(head) ? ' ' : ''
-    setAt(head + sep + tok + ' ' + value.slice(caret), head.length + sep.length + tok.length + 1)
-  }
-  const props = {
-    ref: ref as never,
-    value,
-    autoFocus,
-    placeholder,
-    onPaste,
-    onClick: stop,
-    onFocus: () => setFocused(true),
-    onBlur: () => (setFocused(false), onBlur?.()),
-    onSelect: (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => setCaret(e.currentTarget.selectionStart ?? 0),
-    onChange: (e: { target: HTMLInputElement | HTMLTextAreaElement }) => (onChange(e.target.value), setCaret(e.target.selectionStart ?? 0), setSel(0)),
-    onKeyDown: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
-      if (items.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
-        e.preventDefault()
-        insert(items[sel] ?? items[0])
-      } else if (items.length && e.key === 'ArrowDown') {
-        e.preventDefault()
-        setSel((sel + 1) % Math.min(items.length, 8))
-      } else if (items.length && e.key === 'ArrowUp') {
-        e.preventDefault()
-        setSel((sel - 1 + Math.min(items.length, 8)) % Math.min(items.length, 8))
-      } else if (e.key === 'Enter' && onEnter && !(multiline && e.shiftKey)) onEnter(e)
-      else if (e.key === 'Escape') (e.target as HTMLElement).blur()
-    },
-    className,
-  }
-  return (
-    <span className={cn('relative block', wrapClassName)}>
-      {multiline ? <textarea rows={3} {...props} /> : <input {...props} />}
-      {items.length > 0 && <SuggestionList items={items} sel={sel} onPick={insert} />}
-    </span>
-  )
-}
-
 // ---------------------------------------------------------------- expanded editor
-
-// Variant C: references attached to the Todo, like Tags.
-function LinkEditor({ todo }: { todo: Todo }) {
-  const { update } = useStore()
-  const [value, setValue] = useState('')
-  const links = todo.links ?? []
-  const addLink = (t: string) => !links.includes(t) && update(todo.id, { links: [...links, t] })
-  return (
-    <div className="flex flex-wrap items-center gap-1">
-      <Link2 className="size-3.5 text-muted-foreground" />
-      {links.map((l) => (
-        <RefChip key={l} r={parseToken(l)!} wide onRemove={() => update(todo.id, { links: links.filter((x) => x !== l) })} />
-      ))}
-      <TokenInput
-        value={value}
-        onChange={setValue}
-        onLink={(t) => (addLink(t), setValue(''))}
-        placeholder="+ link  (!812, PAY-, or paste a URL)"
-        wrapClassName="w-56"
-        className="h-5 w-full bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70"
-      />
-    </div>
-  )
-}
 
 function StoredAs({ todo }: { todo: Todo }) {
   const [open, setOpen] = useState(false)
-  const json = JSON.stringify({ title: todo.title, description: todo.description, links: todo.links }, null, 2)
+  const json = JSON.stringify({ title: todo.title, description: todo.description }, null, 2)
   return (
     <div className="flex flex-col gap-1">
       <button type="button" onClick={() => setOpen(!open)} className="self-start text-[10px] uppercase tracking-wide text-muted-foreground/70 hover:text-foreground">
-        {open ? '▾' : '▸'} stored in todos.json (variant {VARIANT})
+        {open ? '▾' : '▸'} stored in todos.json
       </button>
       {open && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-2 py-1 font-mono text-[10.5px] leading-snug">{json}</pre>}
     </div>
@@ -556,19 +398,8 @@ function TodoEditor({ todo, depth, descOpen, setDescOpen }: { todo: Todo; depth:
   const { update } = useStore()
   return (
     <div className={cn('mb-1 flex flex-col gap-1 pr-2', depth === 0 ? 'ml-12' : 'ml-[4.5rem]')}>
-      {VARIANT !== 'A' ? (
-        // B and C: the description is rich text, edited in place (Milkdown, saved as Markdown).
-        <RichEditor
-          key={todo.id}
-          value={todo.description ?? ''}
-          refMode="link"
-          compact
-          placeholder="Description, links, @mentions…  (type ! or PAY-, ⌘K on a selection)"
-          onBlur={(md) => md !== (todo.description ?? '') && update(todo.id, { description: md || undefined })}
-          className="ostraka-desc rounded-md border-l-2 border-border"
-        />
-      ) : (todo.description || descOpen) && (
-        // A: plain text, edited in place with references and mentions as chips (same look as when not editing).
+      {(todo.description || descOpen) && (
+        // Plain text, edited in place with references and mentions as chips (same look as when not editing).
         // No empty field: ⇧↵ in the title opens it, and emptying it closes it again.
         <TokenEditor
           key={todo.id}
@@ -584,7 +415,6 @@ function TodoEditor({ todo, depth, descOpen, setDescOpen }: { todo: Todo; depth:
         />
       )}
       {todo.dropReason && <div className="text-xs italic text-muted-foreground">Dropped: {todo.dropReason}</div>}
-      {VARIANT === 'C' && <LinkEditor todo={todo} />}
       <TagEditor todo={todo} />
       <StoredAs todo={todo} />
     </div>
@@ -595,45 +425,15 @@ function TodoEditor({ todo, depth, descOpen, setDescOpen }: { todo: Todo; depth:
 
 function TitleInput({ todo, onShiftEnter }: { todo: Todo; onShiftEnter: () => void }) {
   const { update } = useStore()
-  const [title, setTitle] = useState(todo.title)
-  const save = (t = title) => t.trim() && t !== todo.title && update(todo.id, { title: t.trim() })
-  if (VARIANT === 'B') {
-    // B: the title is a one-line rich text field; ↵ saves.
-    return (
-      <span className="min-w-0 flex-1" onClick={stop}>
-        <RichEditor
-          key={todo.id}
-          inline
-          value={todo.title}
-          refMode="link"
-          placeholder="Title"
-          onBlur={(md) => save(md)}
-          onEnter={(md) => save(md)}
-          className="-ml-1 rounded border border-transparent hover:border-border focus-within:border-ring"
-        />
-      </span>
-    )
-  }
-  if (VARIANT === 'A')
-    return (
-      <TokenEditor
-        key={todo.id}
-        value={todo.title}
-        onBlur={(t) => save(t)}
-        onProp={applyProp(update, todo.id)}
-        onEnter={(e) => (e.shiftKey ? onShiftEnter() : (document.activeElement as HTMLElement | null)?.blur(), true)}
-        className="-ml-1 min-w-0 flex-1 rounded border border-transparent text-sm leading-6 [--tok-pad:0_4px] hover:border-border focus-within:border-ring"
-      />
-    )
+  const save = (t: string) => t.trim() && t !== todo.title && update(todo.id, { title: t.trim() })
   return (
-    <TokenInput
-      value={title}
-      onChange={setTitle}
-      onBlur={() => save()}
-      onEnter={(e) => (e.target as HTMLInputElement).blur()}
-      onLink={VARIANT === 'C' ? (t) => !(todo.links ?? []).includes(t) && update(todo.id, { links: [...(todo.links ?? []), t] }) : undefined}
-      wrapClassName="min-w-0 flex-1"
-      className="-ml-1 h-6 w-full rounded border border-transparent bg-transparent px-1 text-sm outline-none hover:border-border focus:border-ring"
+    <TokenEditor
+      key={todo.id}
+      value={todo.title}
+      onBlur={save}
+      onProp={applyProp(update, todo.id)}
+      onEnter={(e) => (e.shiftKey ? onShiftEnter() : (document.activeElement as HTMLElement | null)?.blur(), true)}
+      className="-ml-1 min-w-0 flex-1 rounded border border-transparent text-sm leading-6 [--tok-pad:0_4px] hover:border-border focus-within:border-ring"
     />
   )
 }
@@ -668,7 +468,6 @@ function TodoLine({ todo, depth, dimmed, doneCount }: { todo: Todo; depth: 0 | 1
         )}
         <span className="flex shrink-0 items-center gap-1">
           {todo.description && !open && <AlignLeftIcon />}
-          {VARIANT === 'C' && !open && (todo.links ?? []).map((l) => <RefChip key={l} r={parseToken(l)!} />)}
           {doneCount && (
             <span className="flex items-center gap-0.5 text-[11px] tabular-nums text-muted-foreground">
               <ListTreeIcon />
@@ -764,38 +563,32 @@ export function TodoList({ statuses = ['open'], empty }: { statuses?: Todo['stat
 
 // ---------------------------------------------------------------- quick entry
 
-// #17: `!812` / `PAY-` / a pasted URL suggest open MRs and sprint tickets. A keeps the token, B turns it into
-// a Markdown link on save, C moves it out of the text into the Todo's links.
+// #17: `!812` / `PAY-` / a pasted URL suggest open MRs and sprint tickets and become chips; #tag / *prio / ^date
+// leave the text and show as chips under the input until the Todo is added.
 export function QuickEntry({ className, autoFocus }: { className?: string; autoFocus?: boolean }) {
   const { add, tags } = useStore()
   const [value, setValue] = useState('')
   const [desc, setDesc] = useState<string | null>(null)
-  const [links, setLinks] = useState<string[]>([])
-  const [round, setRound] = useState(0) // remounts the A editors after adding
-  // A: #tag / *prio / ^date pulled out of the text while typing, shown as chips until the Todo is added.
+  const [round, setRound] = useState(0) // remounts the editors after adding
+  // #tag / *prio / ^date pulled out of the text while typing, shown as chips until the Todo is added.
   const [props, setProps] = useState<{ tags: string[]; priority: Priority; due?: string }>({ tags: [], priority: null })
   const onProp = (p: Prop) =>
     setProps((x) =>
       p.kind === 'tag' ? { ...x, tags: x.tags.includes(p.value) ? x.tags : [...x.tags, p.value] } : p.kind === 'priority' ? { ...x, priority: p.value } : { ...x, due: p.value },
     )
-  const titleRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const last = value.split(/\s/).pop() ?? ''
   const parsed = parseQuickEntry(value)
-  const onLink = VARIANT === 'C' ? (t: string) => setLinks((ls) => (ls.includes(t) ? ls : [...ls, t])) : undefined
   const submit = () => {
-    add(value, desc ?? undefined, undefined, links, props)
+    add(value, desc ?? undefined, undefined, props)
     setProps({ tags: [], priority: null })
     setValue('')
     setDesc(null)
-    setLinks([])
     setRound((r) => r + 1)
-    titleRef.current?.focus()
   }
   const newTag = last.startsWith('#') && last.length > 1 && !tags.some((t) => t.startsWith(last.slice(1).toLowerCase()))
   return (
     <div className={cn('relative rounded-lg border bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30', className)}>
-      {VARIANT === 'A' ? (
-        <TokenEditor
+      <TokenEditor
           key={`t${round}`}
           autoFocus={autoFocus || round > 0}
           value=""
@@ -805,23 +598,7 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
           placeholder="Add Todo   #tag  *high  ^fri  @person  !812  PAY-"
           className="text-sm leading-9 [--tok-pad:0_10px]"
         />
-      ) : (
-      <TokenInput
-        inputRef={titleRef}
-        autoFocus={autoFocus}
-        value={value}
-        onChange={setValue}
-        onLink={onLink}
-        onEnter={(e) => {
-          e.preventDefault()
-          if (e.shiftKey) setDesc(desc ?? '')
-          else submit()
-        }}
-        placeholder="Add Todo   #tag  *high  ^fri  @person  !812  PAY-"
-        className="h-9 w-full bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground"
-      />
-      )}
-      {desc !== null && VARIANT === 'A' && (
+      {desc !== null && (
         <TokenEditor
           key={`d${round}`}
           autoFocus
@@ -834,25 +611,10 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
           className="border-t text-xs [--tok-pad:6px_10px]"
         />
       )}
-      {desc !== null && VARIANT !== 'A' && (
-        <TokenInput
-          autoFocus
-          multiline
-          value={desc}
-          onChange={setDesc}
-          onLink={onLink}
-          onEnter={(e) => (e.preventDefault(), submit())}
-          placeholder="Description, links, @mentions…  (⇧↵ new line, ↵ add, Esc back)"
-          className="block w-full resize-none border-t bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/80"
-        />
-      )}
       {newTag && <div className="px-2.5 py-1 text-xs text-muted-foreground">New Tag “{last.slice(1).toLowerCase()}” on save</div>}
-      {(value || links.length > 0 || props.tags.length > 0 || props.priority || props.due) && (
+      {(value || props.tags.length > 0 || props.priority || props.due) && (
         <div className="flex flex-wrap items-center gap-1.5 border-t px-2.5 py-1 text-[11px] text-muted-foreground">
-          <span className="truncate">“{VARIANT === 'A' ? <RichText text={parsed.title} /> : (VARIANT === 'B' ? parsed.title.replace(TOKEN_RE, (m) => `[${resolve(parseToken(m)!).title}]`) : parsed.title) || '…'}”</span>
-          {links.map((l) => (
-            <RefChip key={l} r={parseToken(l)!} onRemove={() => setLinks(links.filter((x) => x !== l))} />
-          ))}
+          <span className="truncate">“{parsed.title ? <RichText text={parsed.title} /> : '…'}”</span>
           {(parsed.priority ?? props.priority) && (
             <button type="button" onClick={() => setProps({ ...props, priority: null })} title="Remove priority" className="flex items-center">
               <PrioIcon p={(parsed.priority ?? props.priority)!} className="size-3" />

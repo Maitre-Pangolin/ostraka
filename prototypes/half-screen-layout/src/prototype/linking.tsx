@@ -1,117 +1,66 @@
-// PROTOTYPE (#17): Milkdown editor with the MR / Jira picker, link hover cards and token decorations. Throw away.
+// PROTOTYPE (#17): Notes and Dev logs editor (Milkdown Crepe) with the MR / Jira picker and token highlighting. Throw away.
 //
-// refMode 'link'  → picking inserts a Markdown link on the item's title: [Retry failed payments](https://…/812)
-// refMode 'token' → picking inserts the plain token: pay/api!812
-// Both: a pasted MR / Jira URL converts the same way; ⌘K on a selection attaches a link to that text.
+// References stay plain-text tokens in the Markdown (`pay/api!812`, `PAY-1432`): picking or pasting a URL inserts the
+// token, and the editor decorates tokens and @mentions in place, with a status dot and a hover card.
 import '@milkdown/crepe/theme/common/style.css'
 import '@milkdown/crepe/theme/frame.css'
 import { cn } from '@/lib/utils'
 import { Crepe } from '@milkdown/crepe'
 import { editorViewCtx } from '@milkdown/kit/core'
-import { Plugin, TextSelection } from '@milkdown/kit/prose/state'
+import { Plugin } from '@milkdown/kit/prose/state'
 import { Decoration, DecorationSet, type EditorView } from '@milkdown/kit/prose/view'
 import { $prose } from '@milkdown/kit/utils'
-import { Unlink } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
-import { MRS, PEOPLE, SPRINT } from './data'
-import { dotClass, parseToken, parseUrl, refItems, refQuery, refToken, refUrl, resolve, RefCard, RefPickerList, TOKEN_RE, type Ref, type Resolved } from './refs'
+import { PEOPLE } from './data'
+import { dotClass, parseToken, parseUrl, refItems, refQuery, refToken, resolve, RefCard, RefPickerList, TOKEN_RE, type Ref, type Resolved } from './refs'
 
-type Picker = { x: number; y: number; from: number; to: number; items: Resolved[]; sel: number; wrap: boolean }
-type Hover = { x: number; y: number; r: Ref; link?: HTMLAnchorElement }
+type Picker = { x: number; y: number; from: number; to: number; items: Resolved[]; sel: number }
+type Hover = { x: number; y: number; r: Ref }
 
-const allItems = () => [
-  ...MRS.map((m) => resolve({ kind: 'mr', project: m.project, iid: m.iid })),
-  ...SPRINT.mine.filter((i) => i.category !== 'done').map((i) => resolve({ kind: 'jira', key: i.key })),
-]
-
-// Plain-text tokens and @mentions get a chip look inside the editor (they stay plain text in the file).
-const tokenDecorations = (tokens: boolean) =>
-  $prose(
-    () =>
-      new Plugin({
-        props: {
-          decorations(state) {
-            const decos: Decoration[] = []
-            state.doc.descendants((node, pos) => {
-              if (!node.isText || !node.text || node.marks.some((m) => m.type.name === 'link' || m.type.name === 'inlineCode')) return
-              const re = new RegExp(`${tokens ? TOKEN_RE.source + '|' : ''}@([a-z0-9-]+)`, 'g')
-              for (const m of node.text.matchAll(re)) {
-                const isMention = m[0].startsWith('@')
-                if (isMention && !PEOPLE[m[0].slice(1)]) continue
-                const end = pos + m.index! + m[0].length
-                const ref = !isMention && parseToken(m[0])
-                // Keep the status dot while editing (round 2 feedback).
-                if (ref)
-                  decos.push(
-                    Decoration.widget(end, () => Object.assign(document.createElement('span'), { className: dotClass(resolve(ref)) + ' ml-0.5 align-middle' }), { side: -1 }),
-                  )
+// Tokens and @mentions get a chip look inside the editor (they stay plain text in the file).
+const tokenDecorations = $prose(
+  () =>
+    new Plugin({
+      props: {
+        decorations(state) {
+          const decos: Decoration[] = []
+          state.doc.descendants((node, pos) => {
+            if (!node.isText || !node.text || node.marks.some((m) => m.type.name === 'link' || m.type.name === 'inlineCode')) return
+            for (const m of node.text.matchAll(new RegExp(`${TOKEN_RE.source}|@([a-z0-9-]+)`, 'g'))) {
+              const isMention = m[0].startsWith('@')
+              if (isMention && !PEOPLE[m[0].slice(1)]) continue
+              const end = pos + m.index! + m[0].length
+              const ref = !isMention && parseToken(m[0])
+              // Keep the status dot while editing.
+              if (ref)
                 decos.push(
-                  Decoration.inline(pos + m.index!, end, {
-                    class: isMention ? 'ostraka-mention' : 'ostraka-token',
-                    'data-token': m[0],
-                  }),
+                  Decoration.widget(end, () => Object.assign(document.createElement('span'), { className: dotClass(resolve(ref)) + ' ml-0.5 align-middle' }), { side: -1 }),
                 )
-              }
-            })
-            return DecorationSet.create(state.doc, decos)
-          },
+              decos.push(Decoration.inline(pos + m.index!, end, { class: isMention ? 'ostraka-mention' : 'ostraka-token', 'data-token': m[0] }))
+            }
+          })
+          return DecorationSet.create(state.doc, decos)
         },
-      }),
-  )
+      },
+    }),
+)
 
-export function RichEditor({
-  value,
-  onChange,
-  readonly,
-  refMode,
-  inline,
-  compact,
-  placeholder,
-  autoFocus,
-  onEnter,
-  onBlur,
-  className,
-}: {
-  value: string
-  onChange?: (md: string) => void
-  readonly?: boolean
-  refMode: 'link' | 'token'
-  inline?: boolean // single line (a Todo title): ↵ calls onEnter instead of splitting
-  compact?: boolean // a Todo description: no block handles, images or tables
-  placeholder?: string
-  autoFocus?: boolean
-  onEnter?: (md: string) => void
-  onBlur?: (md: string) => void // gets the live Markdown (markdownUpdated is debounced)
-  className?: string
-}) {
+export function RichEditor({ value, onChange, readonly, className }: { value: string; onChange?: (md: string) => void; readonly?: boolean; className?: string }) {
   const root = useRef<HTMLDivElement>(null)
   const [picker, setPicker] = useState<Picker | null>(null)
   const [hover, setHover] = useState<Hover | null>(null)
   const pickerRef = useRef(picker)
   pickerRef.current = picker
-  const cb = useRef({ onChange, onEnter, onBlur })
-  cb.current = { onChange, onEnter, onBlur }
+  const changeRef = useRef(onChange)
+  changeRef.current = onChange
   const viewRef = useRef<EditorView | null>(null)
   const hideT = useRef(0)
   const refreshRef = useRef<(v: EditorView) => void>(() => {})
 
-  const insert = (r: Resolved, p: Picker) => {
+  const insert = (r: Resolved, from: number, to: number) => {
     const view = viewRef.current!
-    const { schema } = view.state
-    const tr = view.state.tr
-    if (refMode === 'link') {
-      const link = schema.marks.link.create({ href: refUrl(r.ref) })
-      if (p.wrap) tr.addMark(p.from, p.to, link)
-      else {
-        tr.replaceWith(p.from, p.to, [schema.text(r.title, [link]), schema.text(' ')])
-        tr.setSelection(TextSelection.create(tr.doc, p.from + r.title.length + 1))
-      }
-    } else {
-      tr.insertText(refToken(r.ref) + ' ', p.from, p.to)
-    }
-    tr.setStoredMarks([])
-    view.dispatch(tr)
+    view.dispatch(view.state.tr.insertText(refToken(r.ref) + ' ', from, to))
     setPicker(null)
     view.focus()
   }
@@ -119,31 +68,11 @@ export function RichEditor({
   insertRef.current = insert
 
   useEffect(() => {
-    const off = { [Crepe.Feature.Latex]: false }
-    const features = inline
-      ? {
-          ...off,
-          [Crepe.Feature.BlockEdit]: false,
-          [Crepe.Feature.Toolbar]: false,
-          [Crepe.Feature.LinkTooltip]: false,
-          [Crepe.Feature.ImageBlock]: false,
-          [Crepe.Feature.Table]: false,
-          [Crepe.Feature.CodeMirror]: false,
-          [Crepe.Feature.ListItem]: false,
-        }
-      : compact
-        ? { ...off, [Crepe.Feature.BlockEdit]: false, [Crepe.Feature.ImageBlock]: false, [Crepe.Feature.Table]: false }
-        : off
-    const crepe = new Crepe({
-      root: root.current!,
-      defaultValue: value,
-      features,
-      featureConfigs: { [Crepe.Feature.Placeholder]: { text: placeholder ?? 'Write…', mode: 'doc' } },
-    })
-    crepe.editor.use(tokenDecorations(refMode === 'token'))
+    const crepe = new Crepe({ root: root.current!, defaultValue: value, features: { [Crepe.Feature.Latex]: false } })
+    crepe.editor.use(tokenDecorations)
     // Re-check the text before the caret after every transaction (typing, paste, clicks).
     crepe.editor.use($prose(() => new Plugin({ view: () => ({ update: (v) => refreshRef.current(v) }) })))
-    crepe.on((l) => l.markdownUpdated((_, md) => cb.current.onChange?.(md.trim())))
+    crepe.on((l) => l.markdownUpdated((_, md) => changeRef.current?.(md)))
 
     const cleanups: (() => void)[] = []
     const ready = crepe.create().then(() => {
@@ -151,102 +80,63 @@ export function RichEditor({
       const view = crepe.editor.action((ctx) => ctx.get(editorViewCtx))
       viewRef.current = view
       const dom = view.dom
-      if (autoFocus) {
-        view.focus()
-        view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)))
-      }
 
       refreshRef.current = (view: EditorView) => {
         if (!view.hasFocus()) return
         const { $from, empty } = view.state.selection
-        const p = pickerRef.current
-        if (p?.wrap) return
         if (!empty || $from.marks().some((m) => m.type.name === 'link' || m.type.name === 'inlineCode')) return setPicker(null)
-        const before = $from.parent.textBetween(0, $from.parentOffset, undefined, '￼')
-        const q = refQuery(before)
+        const q = refQuery($from.parent.textBetween(0, $from.parentOffset, undefined, '￼'))
         if (!q) return setPicker(null)
         const c = view.coordsAtPos($from.pos)
-        setPicker({ x: c.left, y: c.bottom + 4, from: $from.pos - q.q.length, to: $from.pos, items: refItems(q), sel: 0, wrap: false })
+        setPicker({ x: c.left, y: c.bottom + 4, from: $from.pos - q.q.length, to: $from.pos, items: refItems(q), sel: 0 })
       }
 
       const onKey = (e: KeyboardEvent) => {
         const p = pickerRef.current
-        if (p) {
-          if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
-            e.preventDefault()
-            e.stopPropagation()
-            const n = Math.min(p.items.length, 8) || 1
-            setPicker({ ...p, sel: (p.sel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n })
-            return
-          }
-          if ((e.key === 'Enter' || e.key === 'Tab') && p.items[p.sel]) {
-            e.preventDefault()
-            e.stopPropagation()
-            insertRef.current(p.items[p.sel], p)
-            return
-          }
-          if (e.key === 'Escape') {
-            e.preventDefault()
-            e.stopPropagation()
-            setPicker(null)
-            return
-          }
+        if (!p) return
+        const stop = () => (e.preventDefault(), e.stopPropagation())
+        if (e.key === 'ArrowDown' || e.key === 'ArrowUp') {
+          stop()
+          const n = Math.min(p.items.length, 8) || 1
+          setPicker({ ...p, sel: (p.sel + (e.key === 'ArrowDown' ? 1 : n - 1)) % n })
+        } else if ((e.key === 'Enter' || e.key === 'Tab') && p.items[p.sel]) {
+          stop()
+          insertRef.current(p.items[p.sel], p.from, p.to)
+        } else if (e.key === 'Escape') {
+          stop()
+          setPicker(null)
         }
-        if ((e.metaKey || e.ctrlKey) && e.key === 'k' && !view.state.selection.empty && refMode === 'link') {
-          e.preventDefault()
-          e.stopPropagation()
-          const { from, to } = view.state.selection
-          const c = view.coordsAtPos(to)
-          setPicker({ x: c.left, y: c.bottom + 4, from, to, items: allItems(), sel: 0, wrap: true })
-          return
-        }
-        if (inline && e.key === 'Enter') {
-          e.preventDefault()
-          e.stopPropagation()
-          cb.current.onEnter?.(crepe.getMarkdown().trim())
-          return
-        }
-        if (inline && e.key === 'Escape') (view.dom as HTMLElement).blur()
       }
       const onPaste = (e: ClipboardEvent) => {
-        const text = e.clipboardData?.getData('text/plain') ?? ''
-        const r = parseUrl(text)
+        const r = parseUrl(e.clipboardData?.getData('text/plain') ?? '')
         if (!r) return
         e.preventDefault()
         e.stopPropagation()
-        const { from, to, empty } = view.state.selection
-        insertRef.current(resolve(r), { x: 0, y: 0, from, to, items: [], sel: 0, wrap: !empty && refMode === 'link' })
+        const { from, to } = view.state.selection
+        insertRef.current(resolve(r), from, to)
       }
-      // Hover cards on reference links and tokens.
       const onOver = (e: MouseEvent) => {
-        const el = (e.target as HTMLElement).closest('a, .ostraka-token') as HTMLElement | null
-        if (!el || !dom.contains(el)) return
-        const r = el instanceof HTMLAnchorElement ? parseUrl(el.href) : parseToken(el.dataset.token ?? '')
-        if (!r) return
+        const el = (e.target as HTMLElement).closest('.ostraka-token') as HTMLElement | null
+        const r = el && parseToken(el.dataset.token ?? '')
+        if (!el || !r) return
         window.clearTimeout(hideT.current)
         const rect = el.getBoundingClientRect()
-        setHover({ x: rect.left, y: rect.top, r, link: el instanceof HTMLAnchorElement ? el : undefined })
+        setHover({ x: rect.left, y: rect.top, r })
       }
       const onOut = () => {
         window.clearTimeout(hideT.current)
         hideT.current = window.setTimeout(() => setHover(null), 250)
       }
-      const onBlurDom = () => {
-        setPicker(null)
-        cb.current.onBlur?.(crepe.getMarkdown().trim())
-      }
-      dom.addEventListener('keydown', onKey, true)
-      dom.addEventListener('paste', onPaste, true)
-      dom.addEventListener('mouseover', onOver)
-      dom.addEventListener('mouseout', onOut)
-      dom.addEventListener('blur', onBlurDom)
-      cleanups.push(() => {
-        dom.removeEventListener('keydown', onKey, true)
-        dom.removeEventListener('paste', onPaste, true)
-        dom.removeEventListener('mouseover', onOver)
-        dom.removeEventListener('mouseout', onOut)
-        dom.removeEventListener('blur', onBlurDom)
-      })
+      const onBlur = () => setPicker(null)
+      const listeners: [string, EventListener, boolean?][] = [
+        ['keydown', onKey as EventListener, true],
+        ['paste', onPaste as EventListener, true],
+        ['mouseover', onOver as EventListener],
+        ['mouseout', onOut],
+        ['blur', onBlur],
+      ]
+      for (const [t, f, c] of listeners) dom.addEventListener(t, f, c)
+      cleanups.push(() => listeners.forEach(([t, f, c]) => dom.removeEventListener(t, f, c)))
     })
     return () => {
       ready.then(() => {
@@ -258,25 +148,13 @@ export function RichEditor({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [readonly])
 
-  const unlink = (a: HTMLAnchorElement) => {
-    const view = viewRef.current!
-    const from = view.posAtDOM(a, 0)
-    view.dispatch(view.state.tr.removeMark(from, from + (a.textContent?.length ?? 0), view.state.schema.marks.link))
-    setHover(null)
-  }
-
   return (
     <>
-      <div ref={root} onClick={(e) => e.stopPropagation()} className={cn('ostraka-md', inline && 'ostraka-inline', compact && 'ostraka-compact', readonly && 'is-readonly', className)} />
+      <div ref={root} className={cn('ostraka-md', readonly && 'is-readonly', className)} />
       {picker &&
         createPortal(
-          <div className="fixed z-50" style={{ left: Math.min(picker.x, window.innerWidth - 336), top: picker.y }}>
-            <RefPickerList
-              items={picker.items}
-              sel={picker.sel}
-              onPick={(r) => insert(r, picker)}
-              header={picker.wrap ? <div className="px-2 pb-1 text-[11px] text-muted-foreground">Link the selected text to…</div> : undefined}
-            />
+          <div className="fixed z-50" style={{ left: Math.min(picker.x, window.innerWidth - 360), top: picker.y }}>
+            <RefPickerList items={picker.items} sel={picker.sel} onPick={(r) => insert(r, picker.from, picker.to)} />
           </div>,
           document.body,
         )}
@@ -289,11 +167,6 @@ export function RichEditor({
             onMouseLeave={() => setHover(null)}
           >
             <RefCard r={resolve(hover.r)} />
-            {hover.link && !readonly && (
-              <button type="button" onClick={() => unlink(hover.link!)} className="mt-1.5 flex items-center gap-1 text-[11px] text-muted-foreground hover:text-foreground">
-                <Unlink className="size-3" /> Unlink (keep the text)
-              </button>
-            )}
           </div>,
           document.body,
         )}

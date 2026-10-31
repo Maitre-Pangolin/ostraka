@@ -6,15 +6,14 @@ import mermaid from 'mermaid'
 import { useEffect, useState, type ReactNode } from 'react'
 import { DEVLOGS, MISSING_DEVLOGS, MONTHLY_DEVLOGS, SKETCHES, TODAY, type Doc } from './data'
 import { RichEditor } from './linking'
-import { VARIANT } from './variant'
 import { useStore } from './store'
 import { TagPill } from './todos'
 
 // ---------------------------------------------------------------- Markdown editor (Milkdown Crepe)
 
-// #17: Notes and Dev logs get the same MR / Jira picker; variant A inserts tokens, B and C insert Markdown links.
+// #17: Notes and Dev logs get the MR / Jira picker; references are inserted as plain-text tokens.
 export function MarkdownEditor({ value, readonly, onChange }: { value: string; readonly?: boolean; onChange?: (md: string) => void }) {
-  return <RichEditor value={value} readonly={readonly} onChange={onChange} refMode={VARIANT === 'A' ? 'token' : 'link'} />
+  return <RichEditor value={value} readonly={readonly} onChange={onChange} />
 }
 
 // ---------------------------------------------------------------- list + detail layout

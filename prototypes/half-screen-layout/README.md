@@ -8,12 +8,13 @@ Work (GitLab MRs + Jira sprint) and Settings. In-memory mock data only.
 
 `?view=` picks the section. The app fills the window; theme (light/dark) and density (compact/comfy) are switched from the rail or Settings, defaulting to light + compact.
 
-## #17: MR / Jira references
+## #17 / #18: references and quick-entry tokens
 
-Three variants of how references are typed and stored, on the same shell: `?variant=A|B|C`, or the floating bar at the bottom (← / → when not typing). Switching reloads, because the seed data is stored differently per variant.
+Decided on #17 and #18. Three reference models were prototyped first; variants B (Markdown links) and C (link properties) live in commit 7db58da.
 
-- **A, plain-text tokens:** title and description are stored as plain text with GitLab/Jira tokens (`pay/api!812`, `PAY-1432`). Round 2: they are edited in a small ProseMirror field where references and @mentions are atomic chips (status dot included), and a complete `!809 ` / `PAY-1432 ` / `@lea-martin ` becomes a chip on space or punctuation. Priority moved from `!high` to `*high`, since `!` now means an MR.
-- **B, Markdown links (rich text):** title and description are Milkdown. Picking inserts a link on the item's title, and the text stays editable. ⌘K on a selection links that text; pasting an MR/Jira URL over a selection does the same. Quick entry keeps tokens and turns them into links on save.
-- **C, links as properties:** references leave the text and go to `todo.links`, shown as chips with status like Tags (`+ link` in the expanded row). The description is Milkdown with ordinary links.
+- Todo titles and descriptions are plain text. MRs and Jira issues are GitLab's and Jira's own tokens (`pay/api!812`, `PAY-1432`), and mentions are `@person-id`.
+- They are edited in a small ProseMirror field (`tokeneditor.tsx`) where references and mentions are atomic chips with a live status dot. `!` suggests open MRs, `KEY-` suggests sprint tickets, and a complete token becomes a chip on space.
+- `#tag`, `*high|*med|*low` and `^date` leave the text once completed and become properties: chips under quick entry, or applied straight away in an open Todo. ⇧↵ in a title opens the description.
+- Notes (Milkdown) insert the same tokens and highlight them in place.
 
-Every expanded Todo has a "stored in todos.json" toggle that shows the stored fields. Notes use the same picker (tokens in A, links in B and C).
+Each expanded Todo has a "stored in todos.json" toggle that shows the stored fields.

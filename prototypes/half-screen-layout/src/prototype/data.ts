@@ -1,5 +1,4 @@
 // PROTOTYPE: in-memory mock data for the half-screen shell prototype (#10, #17). Throw away.
-import { pick } from './variant'
 
 export type Priority = 'high' | 'med' | 'low' | null
 export type Status = 'open' | 'done' | 'dropped'
@@ -15,7 +14,6 @@ export type Todo = {
   createdAt: string
   finishedAt?: string
   dropReason?: string
-  links?: string[] // #17 variant C: reference tokens kept out of the text
   subs: Todo[]
 }
 
@@ -46,25 +44,15 @@ const t = (p: Partial<Todo> & { title: string }): Todo => ({
 
 export const INITIAL_TODOS: Todo[] = [
   t({
-    ...pick<Partial<Todo> & { title: string }>({
-      A: { title: 'Review pay/api!812', description: 'Asked by @milena-senechal, focus on idempotency keys. Tracks PAY-1418.' },
-      B: {
-        title: 'Review [payment retry MR](https://gitlab.example.com/pay/api/-/merge_requests/812)',
-        description: 'Asked by @milena-senechal, focus on [idempotency keys](https://corp.atlassian.net/browse/PAY-1418).',
-      },
-      C: { title: 'Review payment retry MR', description: 'Asked by @milena-senechal, focus on idempotency keys.', links: ['pay/api!812', 'PAY-1418'] },
-    }),
+    title: 'Review pay/api!812',
+    description: 'Asked by @milena-senechal, focus on idempotency keys. Tracks PAY-1418.',
     priority: 'high',
     due: '2026-10-29',
     tags: ['code-review', 'sprint-42'],
   }),
   t({
     title: 'Migrate staging Redis to 7.4',
-    ...pick<Partial<Todo>>({
-      A: { description: 'PAY-1432. Terraform in infra/terraform!798, runbook in Confluence.' },
-      B: { description: '[PAY-1432](https://corp.atlassian.net/browse/PAY-1432). Terraform in [the 7.4 module MR](https://gitlab.example.com/infra/terraform/-/merge_requests/798), runbook in Confluence.' },
-      C: { description: 'Runbook in Confluence.', links: ['PAY-1432', 'infra/terraform!798'] },
-    }),
+    description: 'PAY-1432. Terraform in infra/terraform!798, runbook in Confluence.',
     priority: 'high',
     due: TODAY,
     tags: ['infra', 'sprint-42'],
@@ -87,21 +75,13 @@ export const INITIAL_TODOS: Todo[] = [
     ],
   }),
   t({
-    ...pick<{ title: string; links?: string[] }>({
-      A: { title: 'Profile slow invoice export PAY-1440' },
-      B: { title: 'Profile slow [invoice export](https://corp.atlassian.net/browse/PAY-1440)' },
-      C: { title: 'Profile slow invoice export', links: ['PAY-1440'] },
-    }),
+    title: 'Profile slow invoice export PAY-1440',
     priority: 'low',
     due: '2026-11-06',
     tags: ['perf', 'sprint-42'],
   }),
   t({
-    ...pick<{ title: string; links?: string[] }>({
-      A: { title: 'Fix failing pipeline on pay/api!809' },
-      B: { title: 'Fix failing pipeline on [the Redis client bump](https://gitlab.example.com/pay/api/-/merge_requests/809)' },
-      C: { title: 'Fix failing pipeline', links: ['pay/api!809'] },
-    }),
+    title: 'Fix failing pipeline on pay/api!809',
     priority: 'high',
     due: TODAY,
     tags: ['infra'],
@@ -181,7 +161,7 @@ export const NOTES: Doc[] = [
 
 Things to check before the **staging** switch:
 
-- Client lib must be \`>= 5.0\` (see ${pick({ A: 'pay/api!809', B: '[the client bump](https://gitlab.example.com/pay/api/-/merge_requests/809)', C: '[the client bump](https://gitlab.example.com/pay/api/-/merge_requests/809)' })}, PAY-1432)
+- Client lib must be \`>= 5.0\` (see pay/api!809, PAY-1432)
 - Parameter group: keep \`maxmemory-policy allkeys-lru\`
 - Ask @paul-roche whether checkout caches TTLs
 

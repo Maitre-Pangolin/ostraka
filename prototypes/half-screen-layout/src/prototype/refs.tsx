@@ -1,16 +1,11 @@
 // PROTOTYPE: MR and Jira references for #17 — recognition, chips, hover cards and the picker. Throw away.
 //
-// Three variants on the Todos view, switchable via ?variant= and the floating bar:
-//   A  Tokens: title and description stay plain text; a reference is a GitLab/Jira token (`pay/api!812`, `PAY-1432`).
-//   B  Markdown links: title and description are rich text (Milkdown); a reference is a link on editable text.
-//   C  Link properties: references leave the text and live in `todo.links`, shown as chips like Tags.
+// Decided in #17: a reference is stored as GitLab's or Jira's own token (`pay/api!812`, `PAY-1432`) in plain text,
+// and shown as a chip with live status.
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
 import { ExternalLink, GitMerge, SquareKanban } from 'lucide-react'
-import type { ReactNode } from 'react'
 import { CONFIG, MRS, PEOPLE, SPRINT, type MR, type SprintIssue } from './data'
-
-export { VARIANT, VARIANTS, type Variant } from './variant'
 
 // ---------------------------------------------------------------- the reference model
 
@@ -121,8 +116,8 @@ export function RefCard({ r }: { r: Resolved }) {
   )
 }
 
-// A reference rendered as a chip (variants A and C).
-export function RefChip({ r, onRemove, wide }: { r: Ref; onRemove?: () => void; wide?: boolean }) {
+// A reference rendered as a chip.
+export function RefChip({ r }: { r: Ref }) {
   const res = resolve(r)
   return (
     <Popover>
@@ -137,13 +132,7 @@ export function RefChip({ r, onRemove, wide }: { r: Ref; onRemove?: () => void; 
       >
         <RefIcon r={r} className="text-muted-foreground" />
         {refShort(r)}
-        {wide && <span className="max-w-40 truncate font-normal text-muted-foreground">{res.title}</span>}
         <StatusDot r={res} />
-        {onRemove && (
-          <button type="button" onClick={onRemove} className="-mr-0.5 opacity-50 hover:opacity-100" title="Remove link">
-            ×
-          </button>
-        )}
       </PopoverTrigger>
       <PopoverContent className="w-72" align="start" onClick={(e) => e.stopPropagation()}>
         <RefCard r={res} />
@@ -167,11 +156,10 @@ export function RefRow({ r, active }: { r: Resolved; active?: boolean }) {
   )
 }
 
-// The floating picker list used by the Milkdown plugin (B, and Notes in every variant).
-export function RefPickerList({ items, sel, onPick, header }: { items: Resolved[]; sel: number; onPick: (r: Resolved) => void; header?: ReactNode }) {
+// The floating picker list used by the Notes editor (Milkdown).
+export function RefPickerList({ items, sel, onPick }: { items: Resolved[]; sel: number; onPick: (r: Resolved) => void }) {
   return (
     <div className="w-[22rem] max-w-[calc(100vw-2rem)] rounded-lg border bg-popover p-1 text-popover-foreground shadow-md">
-      {header}
       {items.slice(0, 8).map((r, i) => (
         <div key={refToken(r.ref)} onMouseDown={(e) => (e.preventDefault(), onPick(r))} className={cn('flex cursor-pointer rounded-md px-2 py-1', i === sel && 'bg-accent')}>
           <RefRow r={r} active={i === sel} />
@@ -181,10 +169,3 @@ export function RefPickerList({ items, sel, onPick, header }: { items: Resolved[
     </div>
   )
 }
-
-// Variant B: tokens typed in quick entry become Markdown links on the item's title when the Todo is saved.
-export const linkify = (text: string) =>
-  text.replace(TOKEN_RE, (m) => {
-    const r = parseToken(m)
-    return r ? `[${resolve(r).title}](${refUrl(r)})` : m
-  })
