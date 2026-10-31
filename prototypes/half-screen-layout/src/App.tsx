@@ -8,7 +8,7 @@ import { StoreProvider } from './prototype/store'
 const WIDTHS = { third: '33.333%', half: '50%', full: '100%' } as const
 type Width = keyof typeof WIDTHS
 type Density = 'comfy' | 'compact'
-const VIEWS: View[] = ['todos', 'notes', 'devlogs', 'sketches', 'work', 'settings']
+const VIEWS: View[] = ['todos', 'notes', 'devlogs', 'sketches', 'settings']
 
 const params = () => new URLSearchParams(location.search)
 const getParam = <T extends string>(k: string, allowed: readonly T[], fallback: T): T => {

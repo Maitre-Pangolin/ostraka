@@ -4,10 +4,10 @@ import '@milkdown/crepe/theme/frame.css'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
 import { Crepe } from '@milkdown/crepe'
-import { ArrowLeft, CalendarPlus, Check, Code, Columns2, Eye, Pencil, Plus, Search } from 'lucide-react'
+import { ArrowLeft, CalendarPlus, Check, ChevronRight, Code, Columns2, Eye, Pencil, Plus, RefreshCw, Search, Sparkles } from 'lucide-react'
 import mermaid from 'mermaid'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
-import { DEVLOGS, MISSING_DEVLOGS, SKETCHES, TODAY, type Doc } from './data'
+import { DEVLOGS, MISSING_DEVLOGS, MONTHLY_DEVLOGS, SKETCHES, TODAY, type Doc } from './data'
 import { useStore } from './store'
 import { TagPill } from './todos'
 
@@ -139,63 +139,101 @@ export function NotesView() {
 
 // ---------------------------------------------------------------- Dev logs
 
+type LogSel = { kind: 'day' | 'week' | 'month'; id: string }
+
+const weekOf = (iso: string) => {
+  const d = new Date(iso + 'T00:00:00')
+  d.setDate(d.getDate() - ((d.getDay() + 6) % 7))
+  return d.toISOString().slice(0, 10)
+}
+
 export function DevLogsView() {
-  const [sel, setSel] = useState<string | null>(DEVLOGS[0].id)
-  const [range, setRange] = useState<'day' | 'week'>('day')
+  const [sel, setSel] = useState<LogSel | null>(null)
   const [editing, setEditing] = useState(false)
-  const log = DEVLOGS.find((d) => d.id === sel)
-  const rows = [...DEVLOGS.map((d) => ({ id: d.id, doc: d })), ...MISSING_DEVLOGS.map((id) => ({ id, doc: null }))].sort((a, b) => b.id.localeCompare(a.id))
-  const weekMd = DEVLOGS.map((d) => `# ${d.title}\n\n${d.body.replace(/^## /gm, '### ')}`).join('\n\n')
+  const pick = (s: LogSel) => (setSel(s), setEditing(false))
+  const days = [...DEVLOGS.map((d) => ({ id: d.id, doc: d as Doc | null })), ...MISSING_DEVLOGS.map((id) => ({ id, doc: null }))].sort((a, b) => b.id.localeCompare(a.id))
+  const weeks = [...new Set(days.map((d) => weekOf(d.id)))]
+  const month = MONTHLY_DEVLOGS[0]
+  const weekMd = (w: string) =>
+    DEVLOGS.filter((d) => weekOf(d.id) === w)
+      .map((d) => `# ${d.title}\n\n${d.body.replace(/^## /gm, '### ')}`)
+      .join('\n\n')
+  const doc =
+    sel?.kind === 'day' ? DEVLOGS.find((d) => d.id === sel.id) : sel?.kind === 'month' ? MONTHLY_DEVLOGS.find((m) => m.id === sel.id) : undefined
+  const isSel = (s: LogSel) => sel?.kind === s.kind && sel.id === s.id
   return (
     <ListDetail
-      hasSelection={!!log || range === 'week'}
-      onBack={() => (setSel(null), setRange('day'))}
+      hasSelection={!!sel}
+      onBack={() => setSel(null)}
       list={
         <>
-          <ListHeader>
-            <div className="flex rounded-md bg-muted p-0.5 text-xs">
-              {(['day', 'week'] as const).map((r) => (
-                <button key={r} type="button" onClick={() => setRange(r)} className={cn('rounded px-2 py-0.5 capitalize text-muted-foreground', range === r && 'bg-background text-foreground shadow-sm')}>
-                  {r}
-                </button>
-              ))}
-            </div>
+          <button
+            type="button"
+            onClick={() => pick({ kind: 'month', id: month.id })}
+            className={cn('sticky top-0 z-10 flex h-10 shrink-0 items-center gap-2 border-b bg-background px-3 text-left hover:bg-muted/60', isSel({ kind: 'month', id: month.id }) && 'bg-accent')}
+          >
+            <span className="text-sm font-semibold">{month.title}</span>
+            <span className="flex items-center gap-1 rounded-full bg-primary/10 px-1.5 text-[10px] font-medium text-primary">
+              <Sparkles className="size-3" /> summary
+            </span>
             <span className="flex-1" />
-            <span className="text-[11px] text-muted-foreground">Oct 2026</span>
-          </ListHeader>
-          {rows.map(({ id, doc }) =>
-            doc ? (
-              <DocRow key={id} doc={doc} active={range === 'day' && id === sel} onClick={() => (setSel(id), setRange('day'), setEditing(false))} meta={fmtDay(id).split(' ')[0]} />
-            ) : (
-              <div key={id} className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
-                <CalendarPlus className="size-3.5" />
-                <span className="flex-1">{fmtDay(id)}: no Dev log</span>
-                <span className="rounded bg-muted px-1 font-mono text-[10px]">/devlog</span>
-              </div>
-            ),
-          )}
+            <span className="text-[11px] text-muted-foreground">{DEVLOGS.length} logs</span>
+          </button>
+          {weeks.map((w) => (
+            <div key={w}>
+              <button
+                type="button"
+                onClick={() => pick({ kind: 'week', id: w })}
+                className={cn('flex w-full items-center gap-1 bg-muted/40 px-3 py-1 text-left text-[11px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground', isSel({ kind: 'week', id: w }) && 'bg-accent text-foreground')}
+              >
+                Week of {fmtDay(w).split(' ').slice(1).join(' ')}
+                <ChevronRight className="ml-auto size-3" />
+              </button>
+              {days
+                .filter((d) => weekOf(d.id) === w)
+                .map(({ id, doc }) =>
+                  doc ? (
+                    <DocRow key={id} doc={doc} active={isSel({ kind: 'day', id })} onClick={() => pick({ kind: 'day', id })} meta={fmtDay(id).split(' ')[0]} />
+                  ) : (
+                    <div key={id} className="flex items-center gap-2 border-b px-3 py-2 text-xs text-muted-foreground">
+                      <CalendarPlus className="size-3.5" />
+                      <span className="flex-1">{fmtDay(id)}: no Dev log</span>
+                      <span className="rounded bg-muted px-1 font-mono text-[10px]">/devlog</span>
+                    </div>
+                  ),
+                )}
+            </div>
+          ))}
         </>
       }
       detail={
-        <div className="flex min-h-0 flex-1 flex-col">
-          <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-3">
-            <span className="truncate text-sm font-medium">{range === 'week' ? 'Week of 26 October' : log?.title}</span>
-            {range === 'day' && log?.tags.map((t) => <TagPill key={t} tag={t} />)}
-            <span className="flex-1" />
-            {range === 'day' && (
-              <Button size="xs" variant="ghost" onClick={() => setEditing(!editing)}>
-                {editing ? <Eye /> : <Pencil />} {editing ? 'View' : 'Edit'}
-              </Button>
-            )}
+        sel && (
+          <div className="flex min-h-0 flex-1 flex-col">
+            <div className="flex h-10 shrink-0 items-center gap-1.5 border-b px-3">
+              <span className="truncate text-sm font-medium">{sel.kind === 'week' ? `Week of ${fmtDay(sel.id).split(' ').slice(1).join(' ')}` : doc?.title}</span>
+              {doc?.tags.map((t) => <TagPill key={t} tag={t} />)}
+              <span className="flex-1" />
+              {sel.kind === 'month' && <span className="hidden text-[11px] text-muted-foreground @md:inline">devlogs/{sel.id}.md · from {DEVLOGS.length} daily logs</span>}
+              {sel.kind !== 'week' && (
+                <Button size="xs" variant="ghost" onClick={() => setEditing(!editing)}>
+                  {editing ? <Eye /> : <Pencil />} {editing ? 'View' : 'Edit'}
+                </Button>
+              )}
+              {sel.kind === 'month' && (
+                <Button size="xs" variant="ghost" title="Regenerate with /devlog-month">
+                  <RefreshCw />
+                </Button>
+              )}
+            </div>
+            <div className="min-h-0 flex-1 overflow-y-auto">
+              {sel.kind === 'week' ? (
+                <MarkdownEditor key={'w' + sel.id} value={weekMd(sel.id)} readonly />
+              ) : (
+                doc && <MarkdownEditor key={doc.id + editing} value={doc.body} readonly={!editing} />
+              )}
+            </div>
           </div>
-          <div className="min-h-0 flex-1 overflow-y-auto">
-            {range === 'week' ? (
-              <MarkdownEditor key="week" value={weekMd} readonly />
-            ) : (
-              log && <MarkdownEditor key={log.id + editing} value={log.body} readonly={!editing} />
-            )}
-          </div>
-        </div>
+        )
       }
     />
   )
@@ -232,7 +270,7 @@ function MermaidPreview({ code, dark }: { code: string; dark: boolean }) {
 
 export function SketchesView({ dark }: { dark: boolean }) {
   const [sketches, setSketches] = useState(SKETCHES)
-  const [sel, setSel] = useState<string | null>(SKETCHES[0].id)
+  const [sel, setSel] = useState<string | null>(null)
   const [mode, setMode] = useState<'split' | 'preview' | 'code'>('split')
   const sk = sketches.find((s) => s.id === sel)
   return (

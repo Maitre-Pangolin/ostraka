@@ -1,6 +1,6 @@
 // PROTOTYPE: GitLab MRs and Jira sprint overview for #10. Throw away.
 import { cn } from '@/lib/utils'
-import { ChevronDown, CircleCheck, CircleX, GitMerge, GitPullRequest, Loader, MessageSquare, SquareKanban } from 'lucide-react'
+import { ChevronDown, CircleCheck, CircleX, GitMerge, GitPullRequest, GitPullRequestArrow, Loader, MessageSquare, SquareKanban } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { MRS, PEOPLE, SPRINT, type MR, type SprintIssue } from './data'
 
@@ -104,35 +104,36 @@ export function SprintSummary() {
 
 export function WorkStrip() {
   const [open, setOpen] = useState(false)
-  const reviewing = MRS.filter((m) => m.role === 'reviewer' && !m.approvedByMe).length
-  const authored = MRS.filter((m) => m.role === 'author').length
+  const toReview = MRS.filter((m) => m.role === 'reviewer' && !m.approvedByMe).length
+  const opened = MRS.filter((m) => m.role === 'author').length
   const failing = MRS.filter((m) => m.role === 'author' && m.pipeline === 'failed').length
+  const stat = (icon: ReactNode, value: number, label: string, className?: string) => (
+    <span className={cn('flex items-center gap-1', className)} title={label}>
+      {icon}
+      <b className="tabular-nums text-foreground">{value}</b>
+      <span className="hidden @md:inline">{label}</span>
+    </span>
+  )
   return (
     <div className="shrink-0 border-b">
       <button type="button" onClick={() => setOpen(!open)} className="flex h-9 w-full items-center gap-3 bg-muted/40 px-3 text-xs text-muted-foreground hover:bg-muted">
-        <span className="flex items-center gap-1" title="Open MRs where you are author or reviewer">
-          <GitPullRequest className="size-3.5" />
-          <b className="text-foreground">{MRS.length}</b> MRs
-          <span className="hidden @sm:inline">
-            ({reviewing} to review, {authored} mine)
-          </span>
-        </span>
-        {failing > 0 && (
-          <span className="flex items-center gap-1 text-destructive">
-            <CircleX className="size-3.5" />
-            {failing} failing
-          </span>
-        )}
-        <span className="flex items-center gap-1">
-          <SquareKanban className="size-3.5" />
-          <b className="text-foreground">{sprintOpen()}</b> open · <b className="text-today">{SPRINT.daysLeft}d left</b>
-        </span>
+        {stat(<GitPullRequest className="size-3.5" />, toReview, 'to review')}
+        {stat(<GitPullRequestArrow className="size-3.5" />, opened, 'opened')}
+        {stat(<CircleX className={cn('size-3.5', failing > 0 && 'text-destructive')} />, failing, 'failed', failing > 0 ? '[&_b]:text-destructive' : 'opacity-60')}
+        <span className="h-3.5 w-px bg-border" />
+        {stat(<SquareKanban className="size-3.5" />, sprintOpen(), 'open tickets')}
         <ChevronDown className={cn('ml-auto size-3.5 transition-transform', open && 'rotate-180')} />
       </button>
       {open && (
-        <div className="grid max-h-[50vh] gap-3 overflow-y-auto bg-muted/20 p-2 @3xl:grid-cols-2">
-          <MRList />
-          <SprintSummary />
+        <div className="grid max-h-[60vh] gap-3 overflow-y-auto bg-muted/20 p-2 @3xl:grid-cols-2">
+          <section>
+            <SectionLabel className="text-foreground/80">GitLab · open MRs</SectionLabel>
+            <MRList />
+          </section>
+          <section>
+            <SectionLabel className="text-foreground/80">Jira · my sprint</SectionLabel>
+            <SprintSummary />
+          </section>
         </div>
       )}
     </div>

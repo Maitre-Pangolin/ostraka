@@ -260,3 +260,31 @@ export const SKETCHES: Doc[] = [
   F -->|auto snapshot| Git[(local git)]`,
   },
 ]
+
+// Monthly Dev log: a summary written by the agent from the daily logs, saved as its own editable file.
+export const MONTHLY_DEVLOGS: Doc[] = [
+  {
+    id: '2026-10',
+    title: 'October 2026',
+    tags: ['infra', 'code-review', 'oncall'],
+    updated: '2026-10-30',
+    body: `## Highlights
+
+- **Redis 7.4 on staging** (PAY-1432): snapshot taken, Terraform module in !798, switch planned for Monday
+- **Payment retry idempotency** (PAY-1418): reviewed !812, waiting on a second reviewer
+- Fixed the flaky checkout test with Léa Martin (timezone default in CI)
+
+## Reviews
+
+- 2 MRs approved, 3 threads opened
+
+## On-call
+
+- Quiet weekend handover, noisy disk alert silenced
+
+## Gaps
+
+- No Dev log on Tuesday 27 October
+`,
+  },
+]

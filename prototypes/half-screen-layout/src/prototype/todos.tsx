@@ -7,15 +7,18 @@ import {
   AtSign,
   Ban,
   CalendarDays,
+  ChevronDown,
   ChevronRight,
   ChevronsDownUp,
   ChevronsUpDown,
   Copy,
   Flag,
   GitBranch,
+  Hash,
   Mail,
   MessageCircle,
   Plus,
+  Search,
   SquareKanban,
   Trash2,
   X,
@@ -487,9 +490,13 @@ function TodoItem({ v }: { v: VisibleTodo }) {
   return (
     <div>
       <TodoLine todo={todo} depth={0} dimmed={v.dimmed} doneCount={doneCount} />
-      {open &&
-        v.subs.map((s) => <TodoLine key={s.id} todo={s} depth={1} />)}
-      {open && todo.status === 'open' && !v.dimmed && (
+      {open && (v.subs.length > 0 || (todo.status === 'open' && !v.dimmed)) && (
+        // guide line from the parent's checkbox down through its Sub-todos
+        <div className="relative before:absolute before:bottom-3 before:left-[33px] before:top-0 before:w-px before:bg-muted-foreground/35">
+          {v.subs.map((s) => (
+            <TodoLine key={s.id} todo={s} depth={1} />
+          ))}
+          {todo.status === 'open' && !v.dimmed && (
         <form className="mb-1 ml-12 mr-2 flex items-center gap-1.5" onSubmit={(e) => (e.preventDefault(), add(sub, undefined, todo.id), setSub(''))}>
           <Plus className="size-3.5 text-muted-foreground" />
           <input
@@ -499,6 +506,8 @@ function TodoItem({ v }: { v: VisibleTodo }) {
             className="h-7 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
           />
         </form>
+      )}
+        </div>
       )}
     </div>
   )
@@ -593,58 +602,107 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
 
 // ---------------------------------------------------------------- filters + toolbar
 
+type FilterKey = 'prios' | 'people' | 'tags'
+
+function FilterPicker({ k, label, icon, options, render }: { k: FilterKey; label: string; icon: ReactNode; options: string[]; render: (v: string) => ReactNode }) {
+  const { filter, setFilter } = useStore()
+  const [q, setQ] = useState('')
+  const selected = filter[k] as string[]
+  const toggle = (v: string) => setFilter({ ...filter, [k]: selected.includes(v) ? selected.filter((x) => x !== v) : [...selected, v] })
+  const shown = options.filter((o) => o.toLowerCase().includes(q.toLowerCase()))
+  return (
+    <Popover>
+      <PopoverTrigger
+        render={
+          <button
+            type="button"
+            className={cn('flex h-6 shrink-0 items-center gap-1 rounded-full border px-2 text-xs text-muted-foreground hover:bg-muted hover:text-foreground', selected.length && 'border-primary/50 bg-primary/10 text-primary')}
+          />
+        }
+      >
+        {icon}
+        {label}
+        {selected.length > 0 && <span className="rounded-full bg-primary px-1 text-[10px] font-semibold leading-4 text-primary-foreground">{selected.length}</span>}
+        <ChevronDown className="size-3 opacity-60" />
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-56 gap-0 p-1">
+        {options.length > 6 && (
+          <div className="flex items-center gap-1.5 border-b px-2 pb-1">
+            <Search className="size-3.5 text-muted-foreground" />
+            <input autoFocus value={q} onChange={(e) => setQ(e.target.value)} placeholder={`Find ${label.toLowerCase()}`} className="h-7 min-w-0 flex-1 bg-transparent text-sm outline-none" />
+          </div>
+        )}
+        {k === 'tags' && (
+          <div className="flex items-center justify-between px-2 py-1 text-[11px] text-muted-foreground">
+            Match
+            <div className="flex rounded-md bg-muted p-0.5">
+              {(['and', 'or'] as const).map((m) => (
+                <button key={m} type="button" onClick={() => setFilter({ ...filter, mode: m })} className={cn('rounded px-1.5 uppercase', filter.mode === m && 'bg-background text-foreground shadow-sm')}>
+                  {m === 'and' ? 'all' : 'any'}
+                </button>
+              ))}
+            </div>
+          </div>
+        )}
+        <div className="max-h-64 overflow-y-auto">
+          {shown.map((o) => (
+            <label key={o} className="flex h-8 cursor-pointer items-center gap-2 rounded-md px-2 text-sm hover:bg-muted">
+              <Checkbox checked={selected.includes(o)} onCheckedChange={() => toggle(o)} />
+              {render(o)}
+            </label>
+          ))}
+          {!shown.length && <p className="px-2 py-2 text-xs text-muted-foreground">No match.</p>}
+        </div>
+      </PopoverContent>
+    </Popover>
+  )
+}
+
 export function FilterBar({ className }: { className?: string }) {
   const { tags, filter, setFilter, todos } = useStore()
-  const toggle = <K extends 'tags' | 'prios' | 'people'>(k: K, v: string) =>
-    setFilter({ ...filter, [k]: (filter[k] as string[]).includes(v) ? (filter[k] as string[]).filter((x) => x !== v) : [...filter[k], v] })
+  const remove = (k: FilterKey, v: string) => setFilter({ ...filter, [k]: (filter[k] as string[]).filter((x) => x !== v) })
   const people = [...new Set(todos.flatMap((t) => [t, ...t.subs]).filter((t) => t.status === 'open').flatMap(mentions))].filter((p) => PEOPLE[p]).sort()
+  const chip = (k: FilterKey, v: string, content: ReactNode) => (
+    <span key={k + v} className="flex h-6 shrink-0 items-center gap-1 rounded-full bg-muted pl-2 pr-1 text-xs">
+      {content}
+      <button type="button" onClick={() => remove(k, v)} className="rounded-full p-0.5 text-muted-foreground hover:bg-background hover:text-foreground" title="Remove filter">
+        <X className="size-3" />
+      </button>
+    </span>
+  )
   return (
-    <div className={cn('flex flex-wrap items-center gap-1 gap-y-1.5 pb-0.5', className)}>
-      {(['high', 'med', 'low', 'none'] as const).map((p) => (
-        <button
-          key={p}
-          type="button"
-          onClick={() => toggle('prios', p)}
-          title={`Priority: ${PRIO_LABEL[p]}`}
-          className={cn('grid h-5 w-6 shrink-0 place-items-center rounded-full', filter.prios.includes(p) ? 'bg-accent ring-1 ring-border' : 'hover:bg-muted', filter.prios.length && !filter.prios.includes(p) && 'opacity-50')}
-        >
-          <PrioIcon p={p} className="size-3" />
-        </button>
-      ))}
-      <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
-      {people.map((p) => (
-        <button
-          key={p}
-          type="button"
-          onClick={() => toggle('people', p)}
-          title={`Mentions ${PEOPLE[p].name}`}
-          className={cn(
-            'flex h-5 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[11px]',
-            filter.people.includes(p) ? 'bg-primary/15 text-primary ring-1 ring-primary/50' : 'text-muted-foreground hover:bg-muted',
-            filter.people.length && !filter.people.includes(p) && 'opacity-55',
-          )}
-        >
-          <AtSign className="size-3" />
-          {PEOPLE[p].name.split(' ')[0]}
-        </button>
-      ))}
-      <span className="mx-0.5 h-3.5 w-px shrink-0 bg-border" />
-      {filter.tags.length > 1 && (
-        <button
-          type="button"
-          onClick={() => setFilter({ ...filter, mode: filter.mode === 'and' ? 'or' : 'and' })}
-          className="h-5 shrink-0 rounded-full border px-1.5 text-[10px] font-semibold uppercase tracking-wide text-muted-foreground hover:text-foreground"
-          title="Match all selected Tags (AND) or any (OR)"
-        >
-          {filter.mode}
-        </button>
+    <div className={cn('flex flex-wrap items-center gap-1.5 pb-0.5', className)}>
+      <FilterPicker
+        k="prios"
+        label="Priority"
+        icon={<Flag className="size-3.5" />}
+        options={['high', 'med', 'low', 'none']}
+        render={(p) => (
+          <span className="flex items-center gap-1.5">
+            <PrioIcon p={p as PrioKey} className="size-3.5" />
+            {PRIO_LABEL[p as PrioKey]}
+          </span>
+        )}
+      />
+      <FilterPicker k="people" label="People" icon={<AtSign className="size-3.5" />} options={people} render={(p) => PEOPLE[p].name} />
+      <FilterPicker k="tags" label="Tags" icon={<Hash className="size-3.5" />} options={tags} render={(t) => <TagPill tag={t} />} />
+      {isFiltering(filter) && <span className="mx-0.5 h-4 w-px shrink-0 bg-border" />}
+      {filter.prios.map((p) =>
+        chip(
+          'prios',
+          p,
+          <>
+            <PrioIcon p={p} className="size-3" />
+            {PRIO_LABEL[p]}
+          </>,
+        ),
       )}
-      {tags.map((t) => (
-        <TagPill key={t} tag={t} active={filter.tags.includes(t)} onClick={() => toggle('tags', t)} className={cn(filter.tags.length > 0 && !filter.tags.includes(t) && 'opacity-55')} />
-      ))}
+      {filter.people.map((p) => chip('people', p, <>@{PEOPLE[p]?.name.split(' ')[0]}</>))}
+      {filter.tags.length > 1 && <span className="text-[10px] font-semibold uppercase text-muted-foreground">{filter.mode === 'and' ? 'all of' : 'any of'}</span>}
+      {filter.tags.map((t) => chip('tags', t, <span className="flex items-center gap-1"><span className="size-2 rounded-full" style={{ background: `var(--tag-${tagSlot(t)})` }} />{t}</span>))}
       {isFiltering(filter) && (
         <button type="button" onClick={() => setFilter(EMPTY_FILTER)} className="shrink-0 px-1 text-[11px] text-muted-foreground hover:text-foreground">
-          clear
+          clear all
         </button>
       )}
     </div>

@@ -1,28 +1,26 @@
 // PROTOTYPE: app shell for #10 — layout A (focus list + work strip) inside C's side rail. Throw away.
 import { cn } from '@/lib/utils'
-import { BookText, CheckSquare, ChevronDown, LayoutDashboard, Lightbulb, Settings, Shapes } from 'lucide-react'
+import { BookText, CheckSquare, ChevronDown, Lightbulb, Settings, Shapes } from 'lucide-react'
 import { useState } from 'react'
-import { CONFIG, MRS } from './data'
+import { CONFIG } from './data'
 import { DevLogsView, NotesView, SketchesView } from './docs'
 import { useStore } from './store'
 import { FilterBar, ListToolbar, QuickEntry, TodoList } from './todos'
-import { MRList, SectionLabel, SprintSummary, WorkStrip, sprintOpen } from './work'
+import { SectionLabel, WorkStrip } from './work'
 
-export type View = 'todos' | 'notes' | 'devlogs' | 'sketches' | 'work' | 'settings'
+export type View = 'todos' | 'notes' | 'devlogs' | 'sketches' | 'settings'
 
 const RAIL: { view: View; icon: typeof CheckSquare; label: string }[] = [
   { view: 'todos', icon: CheckSquare, label: 'Todos' },
   { view: 'notes', icon: Lightbulb, label: 'Notes' },
   { view: 'devlogs', icon: BookText, label: 'Dev logs' },
   { view: 'sketches', icon: Shapes, label: 'Sketches' },
-  { view: 'work', icon: LayoutDashboard, label: 'Work' },
 ]
 
 function Rail({ view, setView }: { view: View; setView: (v: View) => void }) {
   const { todos } = useStore()
   const badge: Partial<Record<View, number>> = {
     todos: todos.filter((t) => t.status === 'open').length,
-    work: MRS.filter((m) => m.role === 'reviewer' && !m.approvedByMe).length,
   }
   const item = ({ view: v, icon: Icon, label }: (typeof RAIL)[number]) => (
     <button
@@ -52,7 +50,6 @@ function TodosView() {
   const open = todos.filter((t) => t.status === 'open').length
   return (
     <div className="flex h-full flex-col">
-      <WorkStrip />
       <div className="min-h-0 flex-1 overflow-y-auto">
         <div className="mx-auto flex max-w-3xl flex-col gap-1.5 p-3">
           <QuickEntry autoFocus />
@@ -65,23 +62,6 @@ function TodosView() {
           </button>
           {showFinished && <TodoList statuses={['done', 'dropped']} />}
         </div>
-      </div>
-    </div>
-  )
-}
-
-function WorkView() {
-  return (
-    <div className="h-full overflow-y-auto p-2">
-      <div className="grid gap-4 @3xl:grid-cols-2">
-        <section>
-          <SectionLabel className="text-foreground/80">GitLab · open MRs ({MRS.length})</SectionLabel>
-          <MRList />
-        </section>
-        <section>
-          <SectionLabel className="text-foreground/80">Jira · my sprint tickets ({sprintOpen()} open)</SectionLabel>
-          <SprintSummary />
-        </section>
       </div>
     </div>
   )
@@ -124,13 +104,15 @@ export function Shell({ view, setView, dark }: { view: View; setView: (v: View) 
   return (
     <div className="flex h-full">
       <Rail view={view} setView={setView} />
-      <div className="@container min-w-0 flex-1">
+      <div className="@container flex min-w-0 flex-1 flex-col">
+        <WorkStrip />
+        <div className="min-h-0 flex-1">
         {view === 'todos' && <TodosView />}
         {view === 'notes' && <NotesView />}
         {view === 'devlogs' && <DevLogsView />}
         {view === 'sketches' && <SketchesView dark={dark} />}
-        {view === 'work' && <WorkView />}
         {view === 'settings' && <SettingsView />}
+        </div>
       </div>
     </div>
   )
