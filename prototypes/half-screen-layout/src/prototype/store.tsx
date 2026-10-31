@@ -3,6 +3,8 @@ import { Button } from '@/components/ui/button'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogTitle } from '@/components/ui/dialog'
 import { createContext, useContext, useMemo, useState, type ReactNode } from 'react'
 import { INITIAL_TODOS, NOTES, TODAY, type Doc, type Todo } from './data'
+import { linkify } from './refs'
+import { VARIANT } from './variant'
 import { allTags, EMPTY_FILTER, parseQuickEntry, type Filter } from './logic'
 
 type Ask = { title: string; body: string; yes: string; no: string; onYes: () => void; onNo?: () => void }
@@ -10,7 +12,7 @@ type Ask = { title: string; body: string; yes: string; no: string; onYes: () => 
 type Store = {
   todos: Todo[]
   tags: string[]
-  add: (input: string, description?: string, parentId?: string) => void
+  add: (input: string, description?: string, parentId?: string, links?: string[]) => void
   update: (id: string, patch: Partial<Todo>) => void
   toggleDone: (id: string) => void
   drop: (id: string, reason?: string) => void
@@ -80,10 +82,13 @@ export function StoreProvider({ children }: { children: ReactNode }) {
       }),
     expandAll: () => setOpenIds(new Set(todos.flatMap((t) => [t.id, ...t.subs.map((s) => s.id)]))),
     collapseAll: () => setOpenIds(new Set()),
-    add(input, description, parentId) {
+    add(input, description, parentId, links) {
       const p = parseQuickEntry(input)
       if (!p.title) return
-      const todo: Todo = { id: `n${nextId++}`, ...p, description: description?.trim() || undefined, status: 'open', createdAt: `${TODAY}T${nextId}`, subs: [] }
+      // #17 variant B stores references as Markdown links; A keeps the tokens; C passes them as links.
+      const fix = (s: string) => (VARIANT === 'B' ? linkify(s) : s)
+      const desc = description?.trim() ? fix(description.trim()) : undefined
+      const todo: Todo = { id: `n${nextId++}`, ...p, title: fix(p.title), description: desc, links: links?.length ? links : undefined, status: 'open', createdAt: `${TODAY}T${nextId}`, subs: [] }
       setTodos((ts) => (parentId ? mapTodos(ts, parentId, (t) => ({ ...t, subs: [...t.subs, todo] })) : [todo, ...ts]))
     },
     update: (id, patch) => setTodos((ts) => mapTodos(ts, id, (x) => ({ ...x, ...patch }))),

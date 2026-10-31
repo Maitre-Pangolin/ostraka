@@ -1,33 +1,20 @@
 // PROTOTYPE: Notes (Milkdown Crepe), Dev logs (rendered Markdown) and Sketches (Mermaid) views for #10. Throw away.
-import '@milkdown/crepe/theme/common/style.css'
-import '@milkdown/crepe/theme/frame.css'
 import { Button } from '@/components/ui/button'
 import { cn } from '@/lib/utils'
-import { Crepe } from '@milkdown/crepe'
 import { ArrowLeft, CalendarPlus, Check, ChevronRight, Code, Columns2, Eye, Pencil, Plus, RefreshCw, Search, Sparkles } from 'lucide-react'
 import mermaid from 'mermaid'
-import { useEffect, useRef, useState, type ReactNode } from 'react'
+import { useEffect, useState, type ReactNode } from 'react'
 import { DEVLOGS, MISSING_DEVLOGS, MONTHLY_DEVLOGS, SKETCHES, TODAY, type Doc } from './data'
+import { RichEditor } from './linking'
+import { VARIANT } from './variant'
 import { useStore } from './store'
 import { TagPill } from './todos'
 
 // ---------------------------------------------------------------- Markdown editor (Milkdown Crepe)
 
+// #17: Notes and Dev logs get the same MR / Jira picker; variant A inserts tokens, B and C insert Markdown links.
 export function MarkdownEditor({ value, readonly, onChange }: { value: string; readonly?: boolean; onChange?: (md: string) => void }) {
-  const ref = useRef<HTMLDivElement>(null)
-  const changeRef = useRef(onChange)
-  changeRef.current = onChange
-  useEffect(() => {
-    const crepe = new Crepe({ root: ref.current!, defaultValue: value, features: { [Crepe.Feature.Latex]: false } })
-    crepe.on((l) => l.markdownUpdated((_, md) => changeRef.current?.(md)))
-    const ready = crepe.create().then(() => crepe.setReadonly(!!readonly))
-    return () => {
-      ready.then(() => crepe.destroy())
-    }
-    // Remount per document (callers key this component); value is only the initial content.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [readonly])
-  return <div ref={ref} className={cn('ostraka-md', readonly && 'is-readonly')} />
+  return <RichEditor value={value} readonly={readonly} onChange={onChange} refMode={VARIANT === 'A' ? 'token' : 'link'} />
 }
 
 // ---------------------------------------------------------------- list + detail layout

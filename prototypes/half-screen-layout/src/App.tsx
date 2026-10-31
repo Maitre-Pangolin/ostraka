@@ -1,7 +1,8 @@
-// PROTOTYPE (#10): ostraka shell filling the window. ?view= picks the section; theme and density live in the app.
+// PROTOTYPE (#10, #17): ostraka shell filling the window. ?view= picks the section, ?variant= the #17 reference model; theme and density live in the app.
 import { useEffect, useState } from 'react'
 import { Shell, type View } from './prototype/shell'
 import { StoreProvider } from './prototype/store'
+import { PrototypeSwitcher } from './prototype/switcher'
 
 export type Density = 'comfy' | 'compact'
 const VIEWS: View[] = ['todos', 'notes', 'devlogs', 'sketches', 'settings']
@@ -34,6 +35,7 @@ export default function App() {
       <StoreProvider>
         <Shell view={view} setView={setView} dark={dark} setDark={setDark} density={density} setDensity={setDensity} />
       </StoreProvider>
+      <PrototypeSwitcher />
     </main>
   )
 }

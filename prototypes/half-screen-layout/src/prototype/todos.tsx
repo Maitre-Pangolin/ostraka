@@ -1,4 +1,4 @@
-// PROTOTYPE: todo list, inline editing, quick entry and filters for #10. Throw away.
+// PROTOTYPE: todo list, inline editing, quick entry and filters for #10, references per variant for #17. Throw away.
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
@@ -15,6 +15,7 @@ import {
   Flag,
   GitBranch,
   Hash,
+  Link2,
   Mail,
   MessageCircle,
   Plus,
@@ -23,10 +24,13 @@ import {
   Trash2,
   X,
 } from 'lucide-react'
-import { useRef, useState, type ReactNode } from 'react'
+import { useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { PEOPLE, TODAY, type Priority, type Todo } from './data'
 import { dueLabel, isFiltering, mentions, parseQuickEntry, tagSlot, visibleTodos, EMPTY_FILTER, type PrioKey, type VisibleTodo } from './logic'
 import { useStore } from './store'
+import { RichEditor } from './linking'
+import { parseToken, parseUrl, refItems, refQuery, refToken, RefCard, RefChip, RefIcon, RefRow, resolve, StatusDot, TOKEN_RE } from './refs'
+import { VARIANT } from './variant'
 
 // ---------------------------------------------------------------- small pieces
 
@@ -134,22 +138,63 @@ export function PersonMention({ id }: { id: string }) {
   )
 }
 
-// Renders @mentions as Person chips and URLs as short links.
+// A Markdown link whose URL is an MR or Jira issue (variant B): the user's text, plus an icon and a status dot.
+function RefLink({ text, url }: { text: string; url: string }) {
+  const r = parseUrl(url)!
+  const res = resolve(r)
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        nativeButton={false}
+        delay={300}
+        onClick={stop}
+        render={<a href={url} onClick={(e) => e.preventDefault()} className="inline-flex items-baseline gap-0.5 text-primary underline decoration-primary/30 underline-offset-2 hover:decoration-primary" />}
+      >
+        <RefIcon r={r} className="size-3 self-center" />
+        {text}
+        <StatusDot r={res} />
+      </PopoverTrigger>
+      <PopoverContent className="w-72" align="start" onClick={stop}>
+        <RefCard r={res} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+const unescapeMd = (s: string) => s.replace(/\\([\\`*_{}[\]()#+\-.!])/g, '$1').replace(/\*\*|__/g, '')
+const SPLIT = new RegExp(String.raw`(\[[^\]]+\]\([^)\s]+\)|@[a-z0-9-]+|https?:\/\/\S+|` + TOKEN_RE.source.replace(/\((?!\?)/g, '(?:') + ')', 'g')
+
+// Renders @mentions as Person chips, references as chips (tokens, A) or links (Markdown, B), other URLs as short links.
 export function RichText({ text, className }: { text: string; className?: string }) {
-  const parts = text.split(/(@[a-z0-9-]+|https?:\/\/\S+)/g)
+  const parts = text.split(SPLIT)
   return (
     <span className={className}>
-      {parts.map((p, i) =>
-        p.startsWith('@') ? (
-          <PersonMention key={i} id={p.slice(1)} />
-        ) : p.startsWith('http') ? (
-          <a key={i} href={p} onClick={(e) => (stop(e), e.preventDefault())} className="text-primary underline-offset-2 hover:underline">
-            {p.replace(/^https?:\/\/[^/]+\//, '').replace('/-/merge_requests/', ' !')}
-          </a>
-        ) : (
-          <span key={i}>{p}</span>
-        ),
-      )}
+      {parts.map((p, i) => {
+        if (!p) return null
+        const md = p.match(/^\[([^\]]+)\]\(([^)\s]+)\)$/)
+        if (md)
+          return parseUrl(md[2]) ? (
+            <RefLink key={i} text={unescapeMd(md[1])} url={md[2]} />
+          ) : (
+            <a key={i} href={md[2]} onClick={(e) => (stop(e), e.preventDefault())} className="text-primary underline underline-offset-2">
+              {unescapeMd(md[1])}
+            </a>
+          )
+        if (p.startsWith('@')) return <PersonMention key={i} id={p.slice(1)} />
+        const tok = parseToken(p)
+        if (tok) return <RefChip key={i} r={tok} />
+        if (p.startsWith('http')) {
+          const r = parseUrl(p)
+          if (r) return <RefChip key={i} r={r} />
+          return (
+            <a key={i} href={p} onClick={(e) => (stop(e), e.preventDefault())} className="text-primary underline-offset-2 hover:underline">
+              {p.replace(/^https?:\/\/[^/]+\//, '')}
+            </a>
+          )
+        }
+        return <span key={i}>{unescapeMd(p)}</span>
+      })}
     </span>
   )
 }
@@ -280,6 +325,11 @@ function DropMenu({ todo }: { todo: Todo }) {
 
 function suggestFor(last: string, tags: string[], exclude: string[] = []) {
   const q = last.slice(1).toLowerCase()
+  const rq = refQuery(last)
+  if (rq) {
+    const refs = refItems(rq).map((r) => refToken(r.ref))
+    return last.startsWith('!') ? [...['!high', '!med', '!low'].filter((p) => p.startsWith(last) && p !== last), ...refs] : refs
+  }
   if (last.startsWith('#')) return tags.filter((t) => t.startsWith(q) && t !== q && !exclude.includes(t)).map((t) => `#${t}`)
   if (last.startsWith('@')) return Object.keys(PEOPLE).filter((p) => p.startsWith(q) || PEOPLE[p].name.toLowerCase().includes(q)).map((p) => `@${p}`)
   if (last.startsWith('!')) return ['!high', '!med', '!low'].filter((p) => p.startsWith(last) && p !== last)
@@ -297,9 +347,15 @@ function SuggestionList({ items, sel, onPick, footer }: { items: string[]; sel: 
           onMouseDown={(e) => (e.preventDefault(), onPick(s))}
           className={cn('flex cursor-pointer items-center justify-between gap-2 rounded-md px-2 py-1 text-sm', i === sel && 'bg-accent')}
         >
-          {s.startsWith('#') ? <TagPill tag={s.slice(1)} /> : <span>{s}</span>}
-          {s.startsWith('@') && <span className="truncate text-xs text-muted-foreground">{PEOPLE[s.slice(1)]?.name}</span>}
-          {i === sel && <kbd className="text-[10px] text-muted-foreground">Tab</kbd>}
+          {parseToken(s) ? (
+            <RefRow r={resolve(parseToken(s)!)} active={i === sel} />
+          ) : (
+            <>
+              {s.startsWith('#') ? <TagPill tag={s.slice(1)} /> : <span>{s}</span>}
+              {s.startsWith('@') && <span className="truncate text-xs text-muted-foreground">{PEOPLE[s.slice(1)]?.name}</span>}
+              {i === sel && <kbd className="text-[10px] text-muted-foreground">Tab</kbd>}
+            </>
+          )}
         </div>
       ))}
       {footer}
@@ -307,7 +363,142 @@ function SuggestionList({ items, sel, onPick, footer }: { items: string[]; sel: 
   )
 }
 
+// ---------------------------------------------------------------- plain-text field with token suggestions (A, C)
+
+// Suggests at the caret. A picked or pasted reference becomes a token in the text, or goes to onLink (variant C).
+function TokenInput({
+  value,
+  onChange,
+  multiline,
+  onEnter,
+  onLink,
+  onBlur,
+  className,
+  wrapClassName,
+  placeholder,
+  autoFocus,
+  inputRef,
+}: {
+  value: string
+  onChange: (v: string) => void
+  multiline?: boolean
+  onEnter?: (e: KeyboardEvent) => void
+  onLink?: (token: string) => void
+  onBlur?: () => void
+  className?: string
+  wrapClassName?: string
+  placeholder?: string
+  autoFocus?: boolean
+  inputRef?: React.RefObject<HTMLInputElement | HTMLTextAreaElement | null>
+}) {
+  const { tags } = useStore()
+  const own = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
+  const ref = inputRef ?? own
+  const [caret, setCaret] = useState(value.length)
+  const [sel, setSel] = useState(0)
+  const [focused, setFocused] = useState(false)
+  const before = value.slice(0, caret)
+  const last = before.split(/\s/).pop() ?? ''
+  const items = focused ? suggestFor(last, tags) : []
+  const setAt = (v: string, pos: number) => {
+    onChange(v)
+    setSel(0)
+    requestAnimationFrame(() => {
+      ref.current?.setSelectionRange(pos, pos)
+      setCaret(pos)
+    })
+  }
+  const insert = (s: string) => {
+    const head = before.slice(0, before.length - last.length)
+    const tail = value.slice(caret)
+    if (onLink && parseToken(s)) {
+      onLink(s)
+      setAt((head.replace(/\s+$/, ' ') + tail.replace(/^\s+/, '')).replace(/^\s+/, ''), head.length)
+    } else setAt(head + s + ' ' + tail.replace(/^\s+/, ''), head.length + s.length + 1)
+  }
+  const onPaste = (e: ClipboardEvent) => {
+    const r = parseUrl(e.clipboardData.getData('text/plain'))
+    if (!r) return
+    e.preventDefault()
+    const tok = refToken(r)
+    if (onLink) return onLink(tok)
+    const head = value.slice(0, caret)
+    const sep = head && !/\s$/.test(head) ? ' ' : ''
+    setAt(head + sep + tok + ' ' + value.slice(caret), head.length + sep.length + tok.length + 1)
+  }
+  const props = {
+    ref: ref as never,
+    value,
+    autoFocus,
+    placeholder,
+    onPaste,
+    onClick: stop,
+    onFocus: () => setFocused(true),
+    onBlur: () => (setFocused(false), onBlur?.()),
+    onSelect: (e: { currentTarget: HTMLInputElement | HTMLTextAreaElement }) => setCaret(e.currentTarget.selectionStart ?? 0),
+    onChange: (e: { target: HTMLInputElement | HTMLTextAreaElement }) => (onChange(e.target.value), setCaret(e.target.selectionStart ?? 0), setSel(0)),
+    onKeyDown: (e: KeyboardEvent<HTMLInputElement | HTMLTextAreaElement>) => {
+      if (items.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
+        e.preventDefault()
+        insert(items[sel] ?? items[0])
+      } else if (items.length && e.key === 'ArrowDown') {
+        e.preventDefault()
+        setSel((sel + 1) % Math.min(items.length, 8))
+      } else if (items.length && e.key === 'ArrowUp') {
+        e.preventDefault()
+        setSel((sel - 1 + Math.min(items.length, 8)) % Math.min(items.length, 8))
+      } else if (e.key === 'Enter' && onEnter && !(multiline && e.shiftKey)) onEnter(e)
+      else if (e.key === 'Escape') (e.target as HTMLElement).blur()
+    },
+    className,
+  }
+  return (
+    <span className={cn('relative block', wrapClassName)}>
+      {multiline ? <textarea rows={3} {...props} /> : <input {...props} />}
+      {items.length > 0 && <SuggestionList items={items} sel={sel} onPick={insert} />}
+    </span>
+  )
+}
+
 // ---------------------------------------------------------------- expanded editor
+
+// Variant C: references attached to the Todo, like Tags.
+function LinkEditor({ todo }: { todo: Todo }) {
+  const { update } = useStore()
+  const [value, setValue] = useState('')
+  const links = todo.links ?? []
+  const addLink = (t: string) => !links.includes(t) && update(todo.id, { links: [...links, t] })
+  return (
+    <div className="flex flex-wrap items-center gap-1">
+      <Link2 className="size-3.5 text-muted-foreground" />
+      {links.map((l) => (
+        <RefChip key={l} r={parseToken(l)!} wide onRemove={() => update(todo.id, { links: links.filter((x) => x !== l) })} />
+      ))}
+      <TokenInput
+        value={value}
+        onChange={setValue}
+        onLink={(t) => (addLink(t), setValue(''))}
+        placeholder="+ link  (!812, PAY-, or paste a URL)"
+        wrapClassName="w-56"
+        className="h-5 w-full bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70"
+      />
+    </div>
+  )
+}
+
+function StoredAs({ todo }: { todo: Todo }) {
+  const [open, setOpen] = useState(false)
+  const json = JSON.stringify({ title: todo.title, description: todo.description, links: todo.links }, null, 2)
+  return (
+    <div className="flex flex-col gap-1">
+      <button type="button" onClick={() => setOpen(!open)} className="self-start text-[10px] uppercase tracking-wide text-muted-foreground/70 hover:text-foreground">
+        {open ? '▾' : '▸'} stored in todos.json (variant {VARIANT})
+      </button>
+      {open && <pre className="overflow-x-auto whitespace-pre-wrap rounded-md bg-muted px-2 py-1 font-mono text-[10.5px] leading-snug">{json}</pre>}
+    </div>
+  )
+}
+
 
 function TagEditor({ todo }: { todo: Todo }) {
   const { update, tags } = useStore()
@@ -361,16 +552,26 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
   const [editingDesc, setEditingDesc] = useState(false)
   return (
     <div className={cn('mb-1 flex flex-col gap-1 pr-2', depth === 0 ? 'ml-12' : 'ml-[4.5rem]')}>
-      {editingDesc ? (
-        <textarea
+      {VARIANT !== 'A' ? (
+        // B and C: the description is rich text, edited in place (Milkdown, saved as Markdown).
+        <RichEditor
+          key={todo.id}
+          value={todo.description ?? ''}
+          refMode="link"
+          compact
+          placeholder="Description, links, @mentions…  (type ! or PAY-, ⌘K on a selection)"
+          onBlur={(md) => md !== (todo.description ?? '') && update(todo.id, { description: md || undefined })}
+          className="ostraka-desc rounded-md border-l-2 border-border"
+        />
+      ) : editingDesc ? (
+        <TokenInput
           autoFocus
+          multiline
           value={desc}
-          onChange={(e) => setDesc(e.target.value)}
+          onChange={setDesc}
           onBlur={() => (update(todo.id, { description: desc.trim() || undefined }), setEditingDesc(false))}
-          onKeyDown={(e) => e.key === 'Escape' && (e.target as HTMLTextAreaElement).blur()}
-          rows={3}
-          placeholder="Description, links, @mentions…"
-          className="rounded-md border bg-card px-2 py-1 text-xs outline-none focus:border-ring"
+          placeholder="Description, links, @mentions…  (type ! or PAY-, or paste a URL)"
+          className="w-full rounded-md border bg-card px-2 py-1 text-xs outline-none focus:border-ring"
         />
       ) : (
         <div
@@ -381,7 +582,9 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
         </div>
       )}
       {todo.dropReason && <div className="text-xs italic text-muted-foreground">Dropped: {todo.dropReason}</div>}
+      {VARIANT === 'C' && <LinkEditor todo={todo} />}
       <TagEditor todo={todo} />
+      <StoredAs todo={todo} />
     </div>
   )
 }
@@ -391,15 +594,33 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
 function TitleInput({ todo }: { todo: Todo }) {
   const { update } = useStore()
   const [title, setTitle] = useState(todo.title)
+  const save = (t = title) => t.trim() && t !== todo.title && update(todo.id, { title: t.trim() })
+  if (VARIANT === 'B') {
+    // B: the title is a one-line rich text field; ↵ saves.
+    return (
+      <span className="min-w-0 flex-1" onClick={stop}>
+        <RichEditor
+          key={todo.id}
+          inline
+          value={todo.title}
+          refMode="link"
+          placeholder="Title"
+          onBlur={(md) => save(md)}
+          onEnter={(md) => save(md)}
+          className="-ml-1 rounded border border-transparent hover:border-border focus-within:border-ring"
+        />
+      </span>
+    )
+  }
   return (
-    <input
+    <TokenInput
       value={title}
-      onClick={stop}
-      onChange={(e) => setTitle(e.target.value)}
-      onBlur={() => title.trim() && title !== todo.title && update(todo.id, { title: title.trim() })}
-      onKeyDown={(e) => e.key === 'Enter' && (e.target as HTMLInputElement).blur()}
-      title="Edit title (@mentions allowed)"
-      className="-ml-1 h-6 min-w-0 flex-1 rounded border border-transparent bg-transparent px-1 text-sm outline-none hover:border-border focus:border-ring"
+      onChange={setTitle}
+      onBlur={() => save()}
+      onEnter={(e) => (e.target as HTMLInputElement).blur()}
+      onLink={VARIANT === 'C' ? (t) => !(todo.links ?? []).includes(t) && update(todo.id, { links: [...(todo.links ?? []), t] }) : undefined}
+      wrapClassName="min-w-0 flex-1"
+      className="-ml-1 h-6 w-full rounded border border-transparent bg-transparent px-1 text-sm outline-none hover:border-border focus:border-ring"
     />
   )
 }
@@ -433,6 +654,7 @@ function TodoLine({ todo, depth, dimmed, doneCount }: { todo: Todo; depth: 0 | 1
         )}
         <span className="flex shrink-0 items-center gap-1">
           {todo.description && !open && <AlignLeftIcon />}
+          {VARIANT === 'C' && !open && (todo.links ?? []).map((l) => <RefChip key={l} r={parseToken(l)!} />)}
           {doneCount && (
             <span className="flex items-center gap-0.5 text-[11px] tabular-nums text-muted-foreground">
               <ListTreeIcon />
@@ -528,66 +750,60 @@ export function TodoList({ statuses = ['open'], empty }: { statuses?: Todo['stat
 
 // ---------------------------------------------------------------- quick entry
 
+// #17: `!812` / `PAY-` / a pasted URL suggest open MRs and sprint tickets. A keeps the token, B turns it into
+// a Markdown link on save, C moves it out of the text into the Todo's links.
 export function QuickEntry({ className, autoFocus }: { className?: string; autoFocus?: boolean }) {
   const { add, tags } = useStore()
   const [value, setValue] = useState('')
   const [desc, setDesc] = useState<string | null>(null)
-  const [sel, setSel] = useState(0)
-  const titleRef = useRef<HTMLInputElement>(null)
+  const [links, setLinks] = useState<string[]>([])
+  const titleRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const last = value.split(/\s/).pop() ?? ''
-  const items = suggestFor(last, tags)
   const parsed = parseQuickEntry(value)
-  const complete = (s: string) => (setValue(value.slice(0, value.length - last.length) + s + ' '), setSel(0))
+  const onLink = VARIANT === 'C' ? (t: string) => setLinks((ls) => (ls.includes(t) ? ls : [...ls, t])) : undefined
   const submit = () => {
-    add(value, desc ?? undefined)
+    add(value, desc ?? undefined, undefined, links)
     setValue('')
     setDesc(null)
+    setLinks([])
     titleRef.current?.focus()
   }
   const newTag = last.startsWith('#') && last.length > 1 && !tags.some((t) => t.startsWith(last.slice(1).toLowerCase()))
   return (
     <div className={cn('relative rounded-lg border bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30', className)}>
-      <input
-        ref={titleRef}
+      <TokenInput
+        inputRef={titleRef}
         autoFocus={autoFocus}
         value={value}
-        onChange={(e) => (setValue(e.target.value), setSel(0))}
-        onKeyDown={(e) => {
-          if (items.length && (e.key === 'Tab' || (e.key === 'Enter' && !e.shiftKey))) {
-            e.preventDefault()
-            complete(items[sel] ?? items[0])
-          } else if (items.length && e.key === 'ArrowDown') {
-            e.preventDefault()
-            setSel((sel + 1) % items.length)
-          } else if (items.length && e.key === 'ArrowUp') {
-            e.preventDefault()
-            setSel((sel - 1 + items.length) % items.length)
-          } else if (e.key === 'Enter' && e.shiftKey) {
-            e.preventDefault()
-            setDesc(desc ?? '')
-          } else if (e.key === 'Enter') submit()
+        onChange={setValue}
+        onLink={onLink}
+        onEnter={(e) => {
+          e.preventDefault()
+          if (e.shiftKey) setDesc(desc ?? '')
+          else submit()
         }}
-        placeholder="Add Todo   #tag  !high  ^fri  @person"
+        placeholder="Add Todo   #tag  !high  ^fri  @person  !812  PAY-"
         className="h-9 w-full bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground"
       />
       {desc !== null && (
-        <textarea
+        <TokenInput
           autoFocus
+          multiline
           value={desc}
-          onChange={(e) => setDesc(e.target.value)}
-          onKeyDown={(e) => {
-            if (e.key === 'Enter' && !e.shiftKey) (e.preventDefault(), submit())
-            if (e.key === 'Escape' || (e.key === 'Backspace' && !desc)) (e.preventDefault(), setDesc(null), titleRef.current?.focus())
-          }}
-          rows={2}
+          onChange={setDesc}
+          onLink={onLink}
+          onEnter={(e) => (e.preventDefault(), submit())}
           placeholder="Description, links, @mentions…  (⇧↵ new line, ↵ add, Esc back)"
           className="block w-full resize-none border-t bg-transparent px-2.5 py-1.5 text-xs outline-none placeholder:text-muted-foreground/80"
         />
       )}
-      <SuggestionList items={items} sel={sel} onPick={complete} footer={newTag ? <div className="px-2 py-1 text-xs text-muted-foreground">New Tag “{last.slice(1).toLowerCase()}” on save</div> : undefined} />
-      {value && !items.length && (
+      {newTag && <div className="px-2.5 py-1 text-xs text-muted-foreground">New Tag “{last.slice(1).toLowerCase()}” on save</div>}
+      {(value || links.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 border-t px-2.5 py-1 text-[11px] text-muted-foreground">
-          <span className="truncate">“{parsed.title || '…'}”</span>
+          <span className="truncate">“{(VARIANT === 'B' ? parsed.title.replace(TOKEN_RE, (m) => `[${resolve(parseToken(m)!).title}]`) : parsed.title) || '…'}”</span>
+          {links.map((l) => (
+            <RefChip key={l} r={parseToken(l)!} onRemove={() => setLinks(links.filter((x) => x !== l))} />
+          ))}
           {parsed.priority && <PrioIcon p={parsed.priority} className="size-3" />}
           {parsed.due && <DueLabel due={parsed.due} />}
           {parsed.tags.map((t) => (
