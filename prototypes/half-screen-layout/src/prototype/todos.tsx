@@ -343,48 +343,15 @@ function StoredAs({ todo }: { todo: Todo }) {
 }
 
 
-function TagEditor({ todo }: { todo: Todo }) {
-  const { update, tags } = useStore()
-  const [value, setValue] = useState('')
-  const [sel, setSel] = useState(0)
-  const items = value ? suggestFor('#' + value.replace(/^#/, ''), tags, todo.tags) : []
-  const addTag = (t: string) => {
-    const tag = t.replace(/^#/, '').toLowerCase().replace(/[^a-z0-9-]/g, '')
-    if (tag && !todo.tags.includes(tag)) update(todo.id, { tags: [...todo.tags, tag].sort() })
-    setValue('')
-    setSel(0)
-  }
+// Tags are added by typing `#tag` in the title or description; here they can only be removed.
+function TagList({ todo }: { todo: Todo }) {
+  const { update } = useStore()
+  if (!todo.tags.length) return null
   return (
     <div className="flex flex-wrap items-center gap-1">
       {todo.tags.map((t) => (
         <TagPill key={t} tag={t} onRemove={() => update(todo.id, { tags: todo.tags.filter((x) => x !== t) })} />
       ))}
-      <span className="relative">
-        <input
-          value={value}
-          onChange={(e) => (setValue(e.target.value), setSel(0))}
-          onKeyDown={(e) => {
-            if ((e.key === 'Tab' || e.key === 'Enter') && items.length) {
-              e.preventDefault()
-              addTag(items[sel])
-            } else if (e.key === 'Enter') addTag(value)
-            else if (e.key === 'ArrowDown' && items.length) setSel((sel + 1) % items.length)
-            else if (e.key === 'Backspace' && !value && todo.tags.length) update(todo.id, { tags: todo.tags.slice(0, -1) })
-          }}
-          placeholder="+ tag"
-          className="h-5 w-20 bg-transparent text-[11px] outline-none placeholder:text-muted-foreground/70"
-        />
-        {value && (
-          <span className="absolute left-0 top-full z-30 w-44">
-            <SuggestionList
-              items={items}
-              sel={sel}
-              onPick={addTag}
-              footer={!items.length ? <div className="px-2 py-1 text-xs text-muted-foreground">↵ new Tag “{value.replace(/^#/, '').toLowerCase()}”</div> : undefined}
-            />
-          </span>
-        )}
-      </span>
     </div>
   )
 }
@@ -415,7 +382,7 @@ function TodoEditor({ todo, depth, descOpen, setDescOpen }: { todo: Todo; depth:
         />
       )}
       {todo.dropReason && <div className="text-xs italic text-muted-foreground">Dropped: {todo.dropReason}</div>}
-      <TagEditor todo={todo} />
+      <TagList todo={todo} />
       <StoredAs todo={todo} />
     </div>
   )
