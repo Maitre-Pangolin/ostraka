@@ -547,7 +547,12 @@ function TagEditor({ todo }: { todo: Todo }) {
   )
 }
 
-function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
+// #17 round 3: `#tag`, `*prio` and `^date` typed in a Todo's title or description change the Todo itself.
+const applyProp = (update: ReturnType<typeof useStore>['update'], id: string) => (p: Prop) =>
+  // Functional update: several tokens can arrive in one go.
+  update(id, (cur) => (p.kind === 'tag' ? { tags: [...new Set([...cur.tags, p.value])].sort() } : p.kind === 'priority' ? { priority: p.value } : { due: p.value }))
+
+function TodoEditor({ todo, depth, descOpen, setDescOpen }: { todo: Todo; depth: 0 | 1; descOpen: boolean; setDescOpen: (o: boolean) => void }) {
   const { update } = useStore()
   return (
     <div className={cn('mb-1 flex flex-col gap-1 pr-2', depth === 0 ? 'ml-12' : 'ml-[4.5rem]')}>
@@ -562,14 +567,19 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
           onBlur={(md) => md !== (todo.description ?? '') && update(todo.id, { description: md || undefined })}
           className="ostraka-desc rounded-md border-l-2 border-border"
         />
-      ) : (
+      ) : (todo.description || descOpen) && (
         // A: plain text, edited in place with references and mentions as chips (same look as when not editing).
+        // No empty field: ⇧↵ in the title opens it, and emptying it closes it again.
         <TokenEditor
           key={todo.id}
           multiline
+          autoFocus={descOpen && !todo.description}
           value={todo.description ?? ''}
-          onBlur={(text) => text.trim() !== (todo.description ?? '') && update(todo.id, { description: text.trim() || undefined })}
-          placeholder="Add description…  (! for MRs, PAY- for tickets, @ for people)"
+          onProp={applyProp(update, todo.id)}
+          onBlur={(text) => {
+            if (text.trim() !== (todo.description ?? '')) update(todo.id, { description: text.trim() || undefined })
+            if (!text.trim()) setDescOpen(false)
+          }}
           className="rounded-md border-l-2 border-border text-xs text-muted-foreground [--tok-pad:2px_8px] hover:bg-muted/60 focus-within:bg-card"
         />
       )}
@@ -583,7 +593,7 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
 
 // ---------------------------------------------------------------- rows
 
-function TitleInput({ todo }: { todo: Todo }) {
+function TitleInput({ todo, onShiftEnter }: { todo: Todo; onShiftEnter: () => void }) {
   const { update } = useStore()
   const [title, setTitle] = useState(todo.title)
   const save = (t = title) => t.trim() && t !== todo.title && update(todo.id, { title: t.trim() })
@@ -610,11 +620,8 @@ function TitleInput({ todo }: { todo: Todo }) {
         key={todo.id}
         value={todo.title}
         onBlur={(t) => save(t)}
-        onProp={(p) => {
-          // Functional update: several tokens can arrive in one go.
-          update(todo.id, (cur) => (p.kind === 'tag' ? { tags: [...new Set([...cur.tags, p.value])].sort() } : p.kind === 'priority' ? { priority: p.value } : { due: p.value }))
-        }}
-        onEnter={() => ((document.activeElement as HTMLElement | null)?.blur(), true)}
+        onProp={applyProp(update, todo.id)}
+        onEnter={(e) => (e.shiftKey ? onShiftEnter() : (document.activeElement as HTMLElement | null)?.blur(), true)}
         className="-ml-1 min-w-0 flex-1 rounded border border-transparent text-sm leading-6 [--tok-pad:0_4px] hover:border-border focus-within:border-ring"
       />
     )
@@ -632,6 +639,7 @@ function TitleInput({ todo }: { todo: Todo }) {
 }
 
 function TodoLine({ todo, depth, dimmed, doneCount }: { todo: Todo; depth: 0 | 1; dimmed?: boolean; doneCount?: string }) {
+  const [descOpen, setDescOpen] = useState(false)
   const { toggleDone, openIds, toggleOpen } = useStore()
   const finished = todo.status !== 'open'
   const open = openIds.has(todo.id)
@@ -654,7 +662,7 @@ function TodoLine({ todo, depth, dimmed, doneCount }: { todo: Todo; depth: 0 | 1
           )}
         </span>
         {open && !finished ? (
-          <TitleInput todo={todo} />
+          <TitleInput todo={todo} onShiftEnter={() => setDescOpen(true)} />
         ) : (
           <RichText text={todo.title} className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through decoration-muted-foreground/50')} />
         )}
@@ -693,7 +701,7 @@ function TodoLine({ todo, depth, dimmed, doneCount }: { todo: Todo; depth: 0 | 1
           )}
         </span>
       </div>
-      {open && <TodoEditor todo={todo} depth={depth} />}
+      {open && <TodoEditor todo={todo} depth={depth} descOpen={descOpen} setDescOpen={setDescOpen} />}
     </>
   )
 }
@@ -820,6 +828,7 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
           multiline
           value={desc}
           onChange={setDesc}
+          onProp={onProp}
           onEnter={(e) => (e.shiftKey ? false : (submit(), true))}
           placeholder="Description, links, @mentions…  (⇧↵ new line, ↵ add)"
           className="border-t text-xs [--tok-pad:6px_10px]"
