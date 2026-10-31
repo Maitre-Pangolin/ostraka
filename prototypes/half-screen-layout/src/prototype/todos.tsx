@@ -26,7 +26,7 @@ import {
 } from 'lucide-react'
 import { useRef, useState, type ClipboardEvent, type KeyboardEvent, type ReactNode } from 'react'
 import { PEOPLE, TODAY, type Priority, type Todo } from './data'
-import { dueLabel, isFiltering, mentions, parseQuickEntry, tagSlot, visibleTodos, EMPTY_FILTER, type PrioKey, type VisibleTodo } from './logic'
+import { dueLabel, isFiltering, type Prop, mentions, parseQuickEntry, tagSlot, visibleTodos, EMPTY_FILTER, type PrioKey, type VisibleTodo } from './logic'
 import { useStore } from './store'
 import { RichEditor } from './linking'
 import { TokenEditor } from './tokeneditor'
@@ -610,6 +610,10 @@ function TitleInput({ todo }: { todo: Todo }) {
         key={todo.id}
         value={todo.title}
         onBlur={(t) => save(t)}
+        onProp={(p) => {
+          // Functional update: several tokens can arrive in one go.
+          update(todo.id, (cur) => (p.kind === 'tag' ? { tags: [...new Set([...cur.tags, p.value])].sort() } : p.kind === 'priority' ? { priority: p.value } : { due: p.value }))
+        }}
         onEnter={() => ((document.activeElement as HTMLElement | null)?.blur(), true)}
         className="-ml-1 min-w-0 flex-1 rounded border border-transparent text-sm leading-6 [--tok-pad:0_4px] hover:border-border focus-within:border-ring"
       />
@@ -760,12 +764,19 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
   const [desc, setDesc] = useState<string | null>(null)
   const [links, setLinks] = useState<string[]>([])
   const [round, setRound] = useState(0) // remounts the A editors after adding
+  // A: #tag / *prio / ^date pulled out of the text while typing, shown as chips until the Todo is added.
+  const [props, setProps] = useState<{ tags: string[]; priority: Priority; due?: string }>({ tags: [], priority: null })
+  const onProp = (p: Prop) =>
+    setProps((x) =>
+      p.kind === 'tag' ? { ...x, tags: x.tags.includes(p.value) ? x.tags : [...x.tags, p.value] } : p.kind === 'priority' ? { ...x, priority: p.value } : { ...x, due: p.value },
+    )
   const titleRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const last = value.split(/\s/).pop() ?? ''
   const parsed = parseQuickEntry(value)
   const onLink = VARIANT === 'C' ? (t: string) => setLinks((ls) => (ls.includes(t) ? ls : [...ls, t])) : undefined
   const submit = () => {
-    add(value, desc ?? undefined, undefined, links)
+    add(value, desc ?? undefined, undefined, links, props)
+    setProps({ tags: [], priority: null })
     setValue('')
     setDesc(null)
     setLinks([])
@@ -781,6 +792,7 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
           autoFocus={autoFocus || round > 0}
           value=""
           onChange={setValue}
+          onProp={onProp}
           onEnter={(e) => (e.shiftKey ? setDesc(desc ?? '') : submit(), true)}
           placeholder="Add Todo   #tag  *high  ^fri  @person  !812  PAY-"
           className="text-sm leading-9 [--tok-pad:0_10px]"
@@ -826,16 +838,25 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
         />
       )}
       {newTag && <div className="px-2.5 py-1 text-xs text-muted-foreground">New Tag “{last.slice(1).toLowerCase()}” on save</div>}
-      {(value || links.length > 0) && (
+      {(value || links.length > 0 || props.tags.length > 0 || props.priority || props.due) && (
         <div className="flex flex-wrap items-center gap-1.5 border-t px-2.5 py-1 text-[11px] text-muted-foreground">
           <span className="truncate">“{VARIANT === 'A' ? <RichText text={parsed.title} /> : (VARIANT === 'B' ? parsed.title.replace(TOKEN_RE, (m) => `[${resolve(parseToken(m)!).title}]`) : parsed.title) || '…'}”</span>
           {links.map((l) => (
             <RefChip key={l} r={parseToken(l)!} onRemove={() => setLinks(links.filter((x) => x !== l))} />
           ))}
-          {parsed.priority && <PrioIcon p={parsed.priority} className="size-3" />}
-          {parsed.due && <DueLabel due={parsed.due} />}
-          {parsed.tags.map((t) => (
-            <TagPill key={t} tag={t} />
+          {(parsed.priority ?? props.priority) && (
+            <button type="button" onClick={() => setProps({ ...props, priority: null })} title="Remove priority" className="flex items-center">
+              <PrioIcon p={(parsed.priority ?? props.priority)!} className="size-3" />
+            </button>
+          )}
+          {(parsed.due ?? props.due) && (
+            <button type="button" onClick={() => setProps({ ...props, due: undefined })} title="Remove date" className="flex items-center gap-0.5">
+              <CalendarDays className="size-3" />
+              <DueLabel due={(parsed.due ?? props.due)!} />
+            </button>
+          )}
+          {[...new Set([...props.tags, ...parsed.tags])].map((t) => (
+            <TagPill key={t} tag={t} onRemove={props.tags.includes(t) ? () => setProps({ ...props, tags: props.tags.filter((x) => x !== t) }) : undefined} />
           ))}
           <span className="ml-auto whitespace-nowrap">{desc === null ? '⇧↵ description · ↵ add' : '↵ add'}</span>
         </div>

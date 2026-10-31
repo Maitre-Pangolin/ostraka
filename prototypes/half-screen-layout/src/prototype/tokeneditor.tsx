@@ -14,6 +14,7 @@ import { EditorView } from '@milkdown/kit/prose/view'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MRS, PEOPLE } from './data'
+import { parseProp, type Prop } from './logic'
 import { dotClass, parseToken, parseUrl, refShort, refToken, RefCard, resolve, TOKEN_RE, type Ref } from './refs'
 import { useStore } from './store'
 import { SuggestionList, suggestFor } from './todos'
@@ -122,6 +123,7 @@ export function TokenEditor({
   onChange,
   onEnter,
   onBlur,
+  onProp,
   multiline,
   placeholder,
   autoFocus,
@@ -131,6 +133,7 @@ export function TokenEditor({
   onChange?: (text: string) => void
   onEnter?: (e: { shiftKey: boolean }) => boolean | void // return true when handled; multiline fields fall back to a new line
   onBlur?: (text: string) => void
+  onProp?: (p: Prop) => void // when set, completed `#tag` / `*prio` / `^date` leave the text and come here
   multiline?: boolean
   placeholder?: string
   autoFocus?: boolean
@@ -143,8 +146,8 @@ export function TokenEditor({
   const [empty, setEmpty] = useState(!value)
   const popRef = useRef(pop)
   popRef.current = pop
-  const cb = useRef({ onChange, onEnter, onBlur, tags })
-  cb.current = { onChange, onEnter, onBlur, tags }
+  const cb = useRef({ onChange, onEnter, onBlur, tags, onProp })
+  cb.current = { onChange, onEnter, onBlur, tags, onProp }
   const viewRef = useRef<EditorView | null>(null)
   const hideT = useRef(0)
 
@@ -175,11 +178,36 @@ export function TokenEditor({
       setPop({ x: c.left, y: c.bottom + 4, from: $from.pos - last.length, to: $from.pos, items, sel: prev && prev.from === $from.pos - last.length ? Math.min(prev.sel, items.length - 1) : 0 })
     }
 
+    // A completed property token followed by a space leaves the text and becomes a property (title fields only).
+    const extractProps = new Plugin({
+      appendTransaction(trs, _old, state) {
+        if (!cb.current.onProp || !trs.some((t) => t.docChanged)) return null
+        const tr = state.tr
+        const found: Prop[] = []
+        state.doc.descendants((node, pos) => {
+          if (!node.isText) return
+          for (const m of node.text!.matchAll(/(^|\s)([#*^][\w-]+)(?=\s)/g)) {
+            const prop = parseProp(m[2])
+            if (!prop) continue
+            const start = pos + m.index! + m[1].length
+            // Drop the token and one surrounding space so the text doesn't collect double spaces.
+            const end = start + m[2].length + 1
+            tr.delete(tr.mapping.map(start), tr.mapping.map(end))
+            found.push(prop)
+          }
+        })
+        if (!found.length) return null
+        queueMicrotask(() => found.forEach((p) => cb.current.onProp?.(p)))
+        return tr
+      },
+    })
+
     const view = new EditorView(root.current!, {
       state: EditorState.create({
         doc: toDoc(value),
         plugins: [
           autolink,
+          extractProps,
           history(),
           keymap({ 'Mod-z': undo, 'Mod-Shift-z': redo }),
           keymap({

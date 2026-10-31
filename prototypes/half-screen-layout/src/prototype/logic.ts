@@ -18,7 +18,7 @@ export function dueLabel(due: string): { text: string; tone: 'overdue' | 'today'
   return { text: date.toLocaleDateString('en-GB', { day: 'numeric', month: 'short' }), tone: 'later' }
 }
 
-function parseDue(word: string): string | undefined {
+export function parseDue(word: string): string | undefined {
   const w = word.toLowerCase()
   const today = toDate(TODAY)
   if (w === 'today') return TODAY
@@ -33,6 +33,15 @@ function parseDue(word: string): string | undefined {
 }
 
 const PRIO: Record<string, Priority> = { high: 'high', h: 'high', med: 'med', m: 'med', low: 'low', l: 'low' }
+
+// One quick-entry property token (`#tag`, `*high`, `^fri`), or null. (#17 round 3: these leave the text as you type.)
+export type Prop = { kind: 'tag'; value: string } | { kind: 'priority'; value: Priority } | { kind: 'due'; value: string }
+export function parseProp(word: string): Prop | null {
+  if (/^#[a-z0-9-]+$/i.test(word)) return { kind: 'tag', value: word.slice(1).toLowerCase() }
+  if (word.startsWith('*') && PRIO[word.slice(1).toLowerCase()]) return { kind: 'priority', value: PRIO[word.slice(1).toLowerCase()] }
+  if (word.startsWith('^') && parseDue(word.slice(1))) return { kind: 'due', value: parseDue(word.slice(1))! }
+  return null
+}
 
 export type Parsed = { title: string; tags: string[]; priority: Priority; due?: string }
 
