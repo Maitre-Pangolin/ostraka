@@ -15,7 +15,7 @@ import { Unlink } from 'lucide-react'
 import { useEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { MRS, PEOPLE, SPRINT } from './data'
-import { parseToken, parseUrl, refItems, refQuery, refToken, refUrl, resolve, RefCard, RefPickerList, TOKEN_RE, type Ref, type Resolved } from './refs'
+import { dotClass, parseToken, parseUrl, refItems, refQuery, refToken, refUrl, resolve, RefCard, RefPickerList, TOKEN_RE, type Ref, type Resolved } from './refs'
 
 type Picker = { x: number; y: number; from: number; to: number; items: Resolved[]; sel: number; wrap: boolean }
 type Hover = { x: number; y: number; r: Ref; link?: HTMLAnchorElement }
@@ -39,8 +39,15 @@ const tokenDecorations = (tokens: boolean) =>
               for (const m of node.text.matchAll(re)) {
                 const isMention = m[0].startsWith('@')
                 if (isMention && !PEOPLE[m[0].slice(1)]) continue
+                const end = pos + m.index! + m[0].length
+                const ref = !isMention && parseToken(m[0])
+                // Keep the status dot while editing (round 2 feedback).
+                if (ref)
+                  decos.push(
+                    Decoration.widget(end, () => Object.assign(document.createElement('span'), { className: dotClass(resolve(ref)) + ' ml-0.5 align-middle' }), { side: -1 }),
+                  )
                 decos.push(
-                  Decoration.inline(pos + m.index!, pos + m.index! + m[0].length, {
+                  Decoration.inline(pos + m.index!, end, {
                     class: isMention ? 'ostraka-mention' : 'ostraka-token',
                     'data-token': m[0],
                   }),

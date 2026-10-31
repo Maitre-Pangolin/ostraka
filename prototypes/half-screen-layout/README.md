@@ -12,7 +12,7 @@ Work (GitLab MRs + Jira sprint) and Settings. In-memory mock data only.
 
 Three variants of how references are typed and stored, on the same shell: `?variant=A|B|C`, or the floating bar at the bottom (← / → when not typing). Switching reloads, because the seed data is stored differently per variant.
 
-- **A, plain-text tokens:** title and description stay plain text. `!81…` or `PAY-…` (or a pasted URL) offers open MRs and sprint tickets, and picking inserts the GitLab/Jira token (`pay/api!812`, `PAY-1432`), rendered as a chip with live status.
+- **A, plain-text tokens:** title and description are stored as plain text with GitLab/Jira tokens (`pay/api!812`, `PAY-1432`). Round 2: they are edited in a small ProseMirror field where references and @mentions are atomic chips (status dot included), and a complete `!809 ` / `PAY-1432 ` / `@lea-martin ` becomes a chip on space or punctuation. Priority moved from `!high` to `*high`, since `!` now means an MR.
 - **B, Markdown links (rich text):** title and description are Milkdown. Picking inserts a link on the item's title, and the text stays editable. ⌘K on a selection links that text; pasting an MR/Jira URL over a selection does the same. Quick entry keeps tokens and turns them into links on save.
 - **C, links as properties:** references leave the text and go to `todo.links`, shown as chips with status like Tags (`+ link` in the expanded row). The description is Milkdown with ordinary links.
 

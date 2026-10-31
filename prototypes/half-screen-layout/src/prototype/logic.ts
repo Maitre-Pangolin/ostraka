@@ -36,7 +36,7 @@ const PRIO: Record<string, Priority> = { high: 'high', h: 'high', med: 'med', m:
 
 export type Parsed = { title: string; tags: string[]; priority: Priority; due?: string }
 
-// `#tag`, `!high|!med|!low`, `^today|^fri|^2026-11-05` become properties and leave the title.
+// `#tag`, `*high|*med|*low` (#17: `!` is for MRs), `^today|^fri|^2026-11-05` become properties and leave the title.
 export function parseQuickEntry(input: string): Parsed {
   const tags: string[] = []
   let priority: Priority = null
@@ -44,7 +44,7 @@ export function parseQuickEntry(input: string): Parsed {
   const rest: string[] = []
   for (const word of input.split(/\s+/).filter(Boolean)) {
     if (/^#[a-z0-9-]+$/i.test(word)) tags.push(word.slice(1).toLowerCase())
-    else if (word.startsWith('!') && PRIO[word.slice(1).toLowerCase()]) priority = PRIO[word.slice(1).toLowerCase()]
+    else if (word.startsWith('*') && PRIO[word.slice(1).toLowerCase()]) priority = PRIO[word.slice(1).toLowerCase()]
     else if (word.startsWith('^') && parseDue(word.slice(1))) due = parseDue(word.slice(1))
     else rest.push(word)
   }

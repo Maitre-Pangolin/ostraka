@@ -29,6 +29,7 @@ import { PEOPLE, TODAY, type Priority, type Todo } from './data'
 import { dueLabel, isFiltering, mentions, parseQuickEntry, tagSlot, visibleTodos, EMPTY_FILTER, type PrioKey, type VisibleTodo } from './logic'
 import { useStore } from './store'
 import { RichEditor } from './linking'
+import { TokenEditor } from './tokeneditor'
 import { parseToken, parseUrl, refItems, refQuery, refToken, RefCard, RefChip, RefIcon, RefRow, resolve, StatusDot, TOKEN_RE } from './refs'
 import { VARIANT } from './variant'
 
@@ -321,23 +322,23 @@ function DropMenu({ todo }: { todo: Todo }) {
   )
 }
 
-// ---------------------------------------------------------------- suggestions (#tag, @person, !prio, ^date)
+// ---------------------------------------------------------------- suggestions (#tag, @person, *prio, ^date, !MR, KEY-ticket)
 
-function suggestFor(last: string, tags: string[], exclude: string[] = []) {
+export function suggestFor(last: string, tags: string[], exclude: string[] = []) {
   const q = last.slice(1).toLowerCase()
   const rq = refQuery(last)
   if (rq) {
     const refs = refItems(rq).map((r) => refToken(r.ref))
-    return last.startsWith('!') ? [...['!high', '!med', '!low'].filter((p) => p.startsWith(last) && p !== last), ...refs] : refs
+    return refs
   }
   if (last.startsWith('#')) return tags.filter((t) => t.startsWith(q) && t !== q && !exclude.includes(t)).map((t) => `#${t}`)
   if (last.startsWith('@')) return Object.keys(PEOPLE).filter((p) => p.startsWith(q) || PEOPLE[p].name.toLowerCase().includes(q)).map((p) => `@${p}`)
-  if (last.startsWith('!')) return ['!high', '!med', '!low'].filter((p) => p.startsWith(last) && p !== last)
+  if (last.startsWith('*')) return ['*high', '*med', '*low'].filter((p) => p.startsWith(last) && p !== last)
   if (last.startsWith('^')) return ['^today', '^tomorrow', '^mon', '^fri', '^2026-11-05'].filter((p) => p.startsWith(last) && p !== last)
   return []
 }
 
-function SuggestionList({ items, sel, onPick, footer }: { items: string[]; sel: number; onPick: (s: string) => void; footer?: ReactNode }) {
+export function SuggestionList({ items, sel, onPick, footer }: { items: string[]; sel: number; onPick: (s: string) => void; footer?: ReactNode }) {
   if (!items.length && !footer) return null
   return (
     <div className="absolute inset-x-0 top-full z-30 mt-1 max-h-56 overflow-auto rounded-lg border bg-popover p-1 shadow-md">
@@ -548,8 +549,6 @@ function TagEditor({ todo }: { todo: Todo }) {
 
 function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
   const { update } = useStore()
-  const [desc, setDesc] = useState(todo.description ?? '')
-  const [editingDesc, setEditingDesc] = useState(false)
   return (
     <div className={cn('mb-1 flex flex-col gap-1 pr-2', depth === 0 ? 'ml-12' : 'ml-[4.5rem]')}>
       {VARIANT !== 'A' ? (
@@ -563,23 +562,16 @@ function TodoEditor({ todo, depth }: { todo: Todo; depth: 0 | 1 }) {
           onBlur={(md) => md !== (todo.description ?? '') && update(todo.id, { description: md || undefined })}
           className="ostraka-desc rounded-md border-l-2 border-border"
         />
-      ) : editingDesc ? (
-        <TokenInput
-          autoFocus
-          multiline
-          value={desc}
-          onChange={setDesc}
-          onBlur={() => (update(todo.id, { description: desc.trim() || undefined }), setEditingDesc(false))}
-          placeholder="Description, links, @mentions…  (type ! or PAY-, or paste a URL)"
-          className="w-full rounded-md border bg-card px-2 py-1 text-xs outline-none focus:border-ring"
-        />
       ) : (
-        <div
-          onClick={() => setEditingDesc(true)}
-          className="cursor-text whitespace-pre-line rounded-md border-l-2 border-border px-2 py-0.5 text-xs text-muted-foreground hover:bg-muted/60"
-        >
-          {todo.description ? <RichText text={todo.description} /> : <span className="opacity-60">Add description…</span>}
-        </div>
+        // A: plain text, edited in place with references and mentions as chips (same look as when not editing).
+        <TokenEditor
+          key={todo.id}
+          multiline
+          value={todo.description ?? ''}
+          onBlur={(text) => text.trim() !== (todo.description ?? '') && update(todo.id, { description: text.trim() || undefined })}
+          placeholder="Add description…  (! for MRs, PAY- for tickets, @ for people)"
+          className="rounded-md border-l-2 border-border text-xs text-muted-foreground [--tok-pad:2px_8px] hover:bg-muted/60 focus-within:bg-card"
+        />
       )}
       {todo.dropReason && <div className="text-xs italic text-muted-foreground">Dropped: {todo.dropReason}</div>}
       {VARIANT === 'C' && <LinkEditor todo={todo} />}
@@ -612,6 +604,16 @@ function TitleInput({ todo }: { todo: Todo }) {
       </span>
     )
   }
+  if (VARIANT === 'A')
+    return (
+      <TokenEditor
+        key={todo.id}
+        value={todo.title}
+        onBlur={(t) => save(t)}
+        onEnter={() => ((document.activeElement as HTMLElement | null)?.blur(), true)}
+        className="-ml-1 min-w-0 flex-1 rounded border border-transparent text-sm leading-6 [--tok-pad:0_4px] hover:border-border focus-within:border-ring"
+      />
+    )
   return (
     <TokenInput
       value={title}
@@ -724,7 +726,7 @@ function TodoItem({ v }: { v: VisibleTodo }) {
           <input
             value={sub}
             onChange={(e) => setSub(e.target.value)}
-            placeholder="Add Sub-todo  #tag !prio ^date"
+            placeholder="Add Sub-todo  #tag *prio ^date"
             className="h-7 flex-1 bg-transparent text-sm outline-none placeholder:text-muted-foreground/70"
           />
         </form>
@@ -757,6 +759,7 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
   const [value, setValue] = useState('')
   const [desc, setDesc] = useState<string | null>(null)
   const [links, setLinks] = useState<string[]>([])
+  const [round, setRound] = useState(0) // remounts the A editors after adding
   const titleRef = useRef<HTMLInputElement | HTMLTextAreaElement>(null)
   const last = value.split(/\s/).pop() ?? ''
   const parsed = parseQuickEntry(value)
@@ -766,11 +769,23 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
     setValue('')
     setDesc(null)
     setLinks([])
+    setRound((r) => r + 1)
     titleRef.current?.focus()
   }
   const newTag = last.startsWith('#') && last.length > 1 && !tags.some((t) => t.startsWith(last.slice(1).toLowerCase()))
   return (
     <div className={cn('relative rounded-lg border bg-card focus-within:border-ring focus-within:ring-3 focus-within:ring-ring/30', className)}>
+      {VARIANT === 'A' ? (
+        <TokenEditor
+          key={`t${round}`}
+          autoFocus={autoFocus || round > 0}
+          value=""
+          onChange={setValue}
+          onEnter={(e) => (e.shiftKey ? setDesc(desc ?? '') : submit(), true)}
+          placeholder="Add Todo   #tag  *high  ^fri  @person  !812  PAY-"
+          className="text-sm leading-9 [--tok-pad:0_10px]"
+        />
+      ) : (
       <TokenInput
         inputRef={titleRef}
         autoFocus={autoFocus}
@@ -782,10 +797,23 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
           if (e.shiftKey) setDesc(desc ?? '')
           else submit()
         }}
-        placeholder="Add Todo   #tag  !high  ^fri  @person  !812  PAY-"
+        placeholder="Add Todo   #tag  *high  ^fri  @person  !812  PAY-"
         className="h-9 w-full bg-transparent px-2.5 text-sm outline-none placeholder:text-muted-foreground"
       />
-      {desc !== null && (
+      )}
+      {desc !== null && VARIANT === 'A' && (
+        <TokenEditor
+          key={`d${round}`}
+          autoFocus
+          multiline
+          value={desc}
+          onChange={setDesc}
+          onEnter={(e) => (e.shiftKey ? false : (submit(), true))}
+          placeholder="Description, links, @mentions…  (⇧↵ new line, ↵ add)"
+          className="border-t text-xs [--tok-pad:6px_10px]"
+        />
+      )}
+      {desc !== null && VARIANT !== 'A' && (
         <TokenInput
           autoFocus
           multiline
@@ -800,7 +828,7 @@ export function QuickEntry({ className, autoFocus }: { className?: string; autoF
       {newTag && <div className="px-2.5 py-1 text-xs text-muted-foreground">New Tag “{last.slice(1).toLowerCase()}” on save</div>}
       {(value || links.length > 0) && (
         <div className="flex flex-wrap items-center gap-1.5 border-t px-2.5 py-1 text-[11px] text-muted-foreground">
-          <span className="truncate">“{(VARIANT === 'B' ? parsed.title.replace(TOKEN_RE, (m) => `[${resolve(parseToken(m)!).title}]`) : parsed.title) || '…'}”</span>
+          <span className="truncate">“{VARIANT === 'A' ? <RichText text={parsed.title} /> : (VARIANT === 'B' ? parsed.title.replace(TOKEN_RE, (m) => `[${resolve(parseToken(m)!).title}]`) : parsed.title) || '…'}”</span>
           {links.map((l) => (
             <RefChip key={l} r={parseToken(l)!} onRemove={() => setLinks(links.filter((x) => x !== l))} />
           ))}

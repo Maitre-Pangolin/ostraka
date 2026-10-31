@@ -56,16 +56,12 @@ export function resolve(r: Ref): Resolved {
 // ---------------------------------------------------------------- picker items
 
 // What is being typed right before the caret, if it looks like a reference.
-// `!` + digits or words searches open MRs (but `!h`, `!med`… stay priorities); `ABC-` searches sprint tickets.
+// `!` + digits or words searches open MRs; `ABC-` searches sprint tickets. (Priority moved to `*high`.)
 export function refQuery(before: string): { q: string; kind: 'mr' | 'jira' } | null {
   const m = before.match(/(?:^|\s)(![\w-]*|[A-Z][A-Z0-9]+-\d*)$/)
   if (!m) return null
   const q = m[1]
-  if (q.startsWith('!')) {
-    const w = q.slice(1).toLowerCase()
-    if (w && ['high', 'med', 'low', 'h', 'm', 'l', 'hi', 'hig', 'me', 'lo'].includes(w)) return null
-    return { q, kind: 'mr' }
-  }
+  if (q.startsWith('!')) return { q, kind: 'mr' }
   return { q, kind: 'jira' }
 }
 
@@ -83,9 +79,10 @@ export function refItems(query: { q: string; kind: 'mr' | 'jira' }): Resolved[] 
 const PIPE = { passed: 'bg-emerald-500', failed: 'bg-destructive', running: 'bg-amber-500' } as const
 const CAT = { todo: 'bg-muted-foreground/60', doing: 'bg-sky-500', done: 'bg-emerald-500' } as const
 
+export const dotClass = (r: Resolved) => cn('inline-block size-1.5 shrink-0 rounded-full', r.mr ? PIPE[r.mr.pipeline] : r.issue ? CAT[r.issue.category] : 'bg-muted-foreground/30')
+
 export function StatusDot({ r }: { r: Resolved }) {
-  const c = r.mr ? PIPE[r.mr.pipeline] : r.issue ? CAT[r.issue.category] : 'bg-muted-foreground/30'
-  return <span className={cn('inline-block size-1.5 shrink-0 rounded-full', c)} />
+  return <span className={dotClass(r)} />
 }
 
 export const RefIcon = ({ r, className }: { r: Ref; className?: string }) =>
