@@ -10,11 +10,12 @@ describe('contentPath', () => {
     ['devlogs', '/content/devlogs'],
     ['sketches', '/content/sketches'],
     ['people', '/content/people.json'],
+    ['tags', '/content/tags.yml'],
   ] as const)('puts %s at %s', async (kind, expected) => {
     expect(await contentPath(kind, { env })).toBe(expected)
   })
 
   it('lists every kind', () => {
-    expect(CONTENT_KINDS).toEqual(['todos', 'notes', 'devlogs', 'sketches', 'people'])
+    expect(CONTENT_KINDS).toEqual(['todos', 'notes', 'devlogs', 'sketches', 'people', 'tags'])
   })
 })

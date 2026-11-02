@@ -1,9 +1,10 @@
 // Todos over the server API, as TanStack Query hooks. The server sorts; the cache holds its answer as is.
+import { defaultTagColor, type Tag, type TagColor } from '@ostraka/core/tag-color'
 import type { DropTodo, NewTodo, Todo, TodoChange } from '@ostraka/core/todo-schema'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { patch, post, request } from '@/lib/api'
 
-export type { Todo, TodoChange }
+export type { Tag, TagColor, Todo, TodoChange }
 
 const TODOS = ['todos'] as const
 const OPEN_TODOS = ['todos', 'open'] as const
@@ -14,9 +15,22 @@ export function useOpenTodos() {
   return useQuery({ queryKey: OPEN_TODOS, queryFn: () => request<Todo[]>('/todos') })
 }
 
-/** The Tags in use, for `#` suggestions. */
+/** The Tags in use with their colours, sorted by name. */
 export function useTags() {
-  return useQuery({ queryKey: TAGS, queryFn: () => request<string[]>('/tags') })
+  return useQuery({ queryKey: TAGS, queryFn: () => request<Tag[]>('/tags') })
+}
+
+const names = (tags: Tag[]) => tags.map((tag) => tag.name)
+const NO_NAMES: string[] = []
+
+/** The names of the Tags in use, for `#` suggestions. */
+export function useTagNames(): string[] {
+  return useQuery({ queryKey: TAGS, queryFn: () => request<Tag[]>('/tags'), select: names }).data ?? NO_NAMES
+}
+
+/** A Tag's colour from `tags.yml`; a Tag not in use yet (typed in quick entry) gets the one its name hashes to. */
+export function useTagColor(name: string): TagColor {
+  return useTags().data?.find((tag) => tag.name === name)?.color ?? defaultTagColor(name)
 }
 
 /** Done and Dropped Todos, newest-finished first. */

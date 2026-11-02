@@ -7,6 +7,7 @@ const LOCATIONS = {
   devlogs: 'devlogs',
   sketches: 'sketches',
   people: 'people.json',
+  tags: 'tags.yml',
 } as const
 
 export type ContentKind = keyof typeof LOCATIONS
@@ -17,7 +18,7 @@ export function isContentKind(value: string): value is ContentKind {
   return Object.hasOwn(LOCATIONS, value)
 }
 
-/** Where a kind of content lives: a file for todos and people, a folder for the Markdown kinds. */
+/** Where a kind of content lives: a file for todos, people and Tag colours, a folder for the Markdown kinds. */
 export async function contentPath(kind: ContentKind, options?: ContentRootOptions): Promise<string> {
   return join(await resolveContentRoot(options), LOCATIONS[kind])
 }

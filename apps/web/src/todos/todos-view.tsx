@@ -16,7 +16,7 @@ import {
   useOpenTodos,
   useReopenTodo,
   useRestoreTodo,
-  useTags,
+  useTagNames,
   useUpdateTodo,
   type Todo,
 } from './api'
@@ -42,7 +42,7 @@ const UNDO_TOAST = { duration: 5000 } as const
 
 function OpenTodos() {
   const { data: todos, error, isPending } = useOpenTodos()
-  const tags = useTags().data ?? []
+  const tags = useTagNames()
   const complete = useCompleteTodo()
   const drop = useDropTodo()
   const remove = useDeleteTodo()
