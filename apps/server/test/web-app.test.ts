@@ -12,6 +12,7 @@ beforeAll(async () => {
   await mkdir(join(webDist, 'assets'))
   await writeFile(join(webDist, 'index.html'), INDEX)
   await writeFile(join(webDist, 'assets', 'app.js'), 'console.log("app")')
+  await writeFile(join(webDist, 'manifest.webmanifest'), '{"name":"Ostraka"}')
 })
 
 afterAll(async () => {
@@ -32,6 +33,12 @@ describe('serving the web app', () => {
     const res = await get('/assets/app.js')
     expect(res.status).toBe(200)
     expect(await res.text()).toBe('console.log("app")')
+  })
+
+  it('serves the web-app manifest as a manifest, so the browser offers to install the app', async () => {
+    const res = await get('/manifest.webmanifest')
+    expect(res.status).toBe(200)
+    expect(res.headers.get('content-type')).toMatch(/^application\/manifest\+json/)
   })
 
   it.each(['/todos', '/devlogs', '/settings'])('serves index.html for the client route %s', async (path) => {

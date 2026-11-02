@@ -1,6 +1,9 @@
+export { configPath, ConfigSchema, loadConfig, type Config, type ConfigOptions } from './config.ts'
 export { CONTENT_KINDS, contentPath, isContentKind, type ContentKind } from './content-path.ts'
-export { configPath, resolveContentRoot, type ContentRootOptions } from './content-root.ts'
+export { locateContentRoot, resolveContentRoot, type ContentRootOptions, type ContentRootSource } from './content-root.ts'
 export {
+  DropTodoSchema,
+  FinishedQuerySchema,
   formatTodosFile,
   NewTodoSchema,
   PRIORITIES,
@@ -9,6 +12,8 @@ export {
   TodoSchema,
   TodoChangeSchema,
   TodosFileSchema,
+  type DropTodo,
+  type FinishedQuery,
   type NewTodo,
   type TodoChange,
   type Priority,
@@ -31,9 +36,14 @@ export {
 export {
   addTodo,
   completeTodo,
+  deleteTodo,
+  dropTodo,
+  listFinishedTodos,
   listTags,
   listTodos,
   reopenTodo,
+  restoreTodo,
+  TodoExistsError,
   TodoInputError,
   TodoNotFoundError,
   TodosFileError,

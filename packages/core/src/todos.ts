@@ -5,12 +5,17 @@ import { z } from 'zod'
 import { contentPath } from './content-path.ts'
 import type { ContentRootOptions } from './content-root.ts'
 import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
-import { compareOpenTodos, localDay } from './todo-order.ts'
+import { compareFinishedTodos, compareOpenTodos, localDay } from './todo-order.ts'
 import {
+  DropTodoSchema,
+  FinishedQuerySchema,
   formatTodosFile,
   NewTodoSchema,
   TodoChangeSchema,
+  TodoSchema,
   TodosFileSchema,
+  type DropTodo,
+  type FinishedQuery,
   type NewTodo,
   type SubTodo,
   type Todo,
@@ -29,6 +34,7 @@ const clock = (options: TodoOptions) => (options.now ?? (() => new Date()))()
 
 export class TodosFileError extends Error {}
 export class TodoNotFoundError extends Error {}
+export class TodoExistsError extends Error {}
 /** The Todo asked for can't be: no title left once its tokens are pulled out. */
 export class TodoInputError extends Error {}
 
@@ -158,6 +164,20 @@ export async function completeTodo(id: string, options: TodoOptions = {}): Promi
   })
 }
 
+/** Drops a Todo: abandoned without being done, with an optional reason, and its finished timestamp set. */
+export async function dropTodo(id: string, input: DropTodo, options: TodoOptions = {}): Promise<Todo> {
+  const reason = DropTodoSchema.parse(input).reason?.trim()
+  const now = clock(options)
+  return updateTodos(options, (file) => {
+    const todo = findTodo(file, id)
+    todo.status = 'dropped'
+    todo.finishedAt = now.toISOString()
+    if (reason) todo.dropReason = reason
+    else delete todo.dropReason
+    return structuredClone(todo)
+  })
+}
+
 /** Puts a done or Dropped Todo back on the open list, clearing its finished timestamp (Undo). */
 export async function reopenTodo(id: string, options: TodoOptions = {}): Promise<Todo> {
   return updateTodos(options, (file) => {
@@ -197,6 +217,27 @@ export async function updateTodo(id: string, input: TodoChange, options: TodoOpt
   })
 }
 
+/** Removes a Todo for good (for mistakes) and returns it, so the caller can offer Undo through `restoreTodo`. */
+export async function deleteTodo(id: string, options: TodoOptions = {}): Promise<Todo> {
+  return updateTodos(options, (file) => {
+    const todo = findTodo(file, id)
+    file.todos.splice(file.todos.indexOf(todo), 1)
+    return todo
+  })
+}
+
+/** Puts a deleted Todo back as it was (Undo of delete). Refused if any of its ids is taken meanwhile. */
+export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promise<Todo> {
+  const todo = TodoSchema.parse(input)
+  return updateTodos(options, (file) => {
+    const taken = allIds(file)
+    const clash = [todo.id, ...todo.subTodos.map((sub) => sub.id)].find((id) => taken.has(id))
+    if (clash) throw new TodoExistsError(`A Todo with id ${clash} already exists`)
+    file.todos.push(todo)
+    return structuredClone(todo)
+  })
+}
+
 /** Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. */
 export async function listTags(options: TodoOptions = {}): Promise<string[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
@@ -209,4 +250,14 @@ export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   const today = localDay(clock(options))
   return todos.filter((todo) => todo.status === 'open').toSorted(compareOpenTodos(today))
+}
+
+/** Done and Dropped Todos, kept forever, newest-finished first; `finishedOn` narrows to one local day. */
+export async function listFinishedTodos(query: FinishedQuery, options: TodoOptions = {}): Promise<Todo[]> {
+  const { finishedOn } = FinishedQuerySchema.parse(query)
+  const { todos } = await readTodosFile(await contentPath('todos', options))
+  return todos
+    .filter((todo) => todo.status !== 'open' && todo.finishedAt !== undefined)
+    .filter((todo) => finishedOn === undefined || localDay(new Date(todo.finishedAt!)) === finishedOn)
+    .toSorted(compareFinishedTodos)
 }

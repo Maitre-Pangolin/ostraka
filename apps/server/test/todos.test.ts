@@ -29,6 +29,7 @@ const post = (path: string, body?: unknown) =>
   })
 const patch = (path: string, body: unknown) =>
   app.request(path, { method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) })
+const del = (path: string) => app.request(path, { method: 'DELETE', headers })
 const json = async <T = Todo>(res: Response | Promise<Response>) => (await (await res).json()) as T
 
 const fixture = (id: string, extra: object) => ({
@@ -120,14 +121,78 @@ describe('Todo routes', () => {
     expect(await json<string[]>(get('/api/tags'))).toEqual(['api', 'auth', 'infra'])
   })
 
+  it('Drops a Todo with an optional reason, lists it as finished, and reopens it (Undo)', async () => {
+    const todo = await json(post('/api/todos', { title: 'Migrate the old CI' }))
+
+    const dropped = await post(`/api/todos/${todo.id}/drop`, { reason: 'Superseded' })
+    expect(dropped.status).toBe(200)
+    expect(await dropped.json()).toEqual({ ...todo, status: 'dropped', dropReason: 'Superseded', finishedAt: NOW.toISOString() })
+    expect(await json(get('/api/todos'))).toEqual([])
+    expect(await json(get('/api/todos/finished'))).toEqual([
+      { ...todo, status: 'dropped', dropReason: 'Superseded', finishedAt: NOW.toISOString() },
+    ])
+
+    await post(`/api/todos/${todo.id}/reopen`)
+    expect(await json(get('/api/todos/finished'))).toEqual([])
+    expect(await json(get('/api/todos'))).toEqual([todo])
+  })
+
+  it('Drops without a reason when no body is sent', async () => {
+    const todo = await json(post('/api/todos', { title: 'Migrate the old CI' }))
+    expect(await json(post(`/api/todos/${todo.id}/drop`))).toEqual({ ...todo, status: 'dropped', finishedAt: NOW.toISOString() })
+  })
+
+  it('rejects a reason that is not text', async () => {
+    const todo = await json(post('/api/todos', { title: 'Migrate the old CI' }))
+    expect((await post(`/api/todos/${todo.id}/drop`, { reason: 42 })).status).toBe(400)
+  })
+
+  it('lists done and Dropped Todos newest-finished first', async () => {
+    await writeFile(
+      join(contentRoot, 'todos.json'),
+      JSON.stringify({
+        todos: [
+          fixture('older', { status: 'done', finishedAt: '2026-10-30T10:00:00.000Z' }),
+          fixture('stays', {}),
+          fixture('newer', { status: 'dropped', finishedAt: '2026-11-01T10:00:00.000Z' }),
+        ],
+      }),
+    )
+    expect((await json<Todo[]>(get('/api/todos/finished'))).map((todo) => todo.id)).toEqual(['newer', 'older'])
+  })
+
+  it('deletes a Todo, and restores it (Undo)', async () => {
+    const todo = await json(post('/api/todos', { title: 'Typo' }))
+
+    const deleted = await del(`/api/todos/${todo.id}`)
+    expect(deleted.status).toBe(200)
+    expect(await deleted.json()).toEqual(todo)
+    expect(await json(get('/api/todos'))).toEqual([])
+
+    const restored = await post('/api/todos/restore', todo)
+    expect(restored.status).toBe(201)
+    expect(await restored.json()).toEqual(todo)
+    expect(await json(get('/api/todos'))).toEqual([todo])
+
+    const again = await post('/api/todos/restore', todo)
+    expect(again.status).toBe(409)
+    expect(await again.json()).toEqual({ error: `A Todo with id ${todo.id} already exists` })
+  })
+
+  it('rejects restoring something that is not a Todo', async () => {
+    const res = await post('/api/todos/restore', { id: 'aaaaa', title: 'No fields' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: expect.any(String) })
+  })
+
   it.each([[{}], [{ title: '   ' }], [{ title: 42 }], [{ title: '#auth *high' }]])('rejects %j as a new Todo', async (body) => {
     const res = await post('/api/todos', body)
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: expect.any(String) })
   })
 
-  it('answers 404 for an unknown Todo', async () => {
-    const res = await post('/api/todos/zzzzz/done')
+  it.each([['done'], ['drop'], ['delete']])('answers 404 for an unknown Todo (%s)', async (action) => {
+    const res = action === 'delete' ? await del('/api/todos/zzzzz') : await post(`/api/todos/zzzzz/${action}`)
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: 'No Todo with id zzzzz' })
   })

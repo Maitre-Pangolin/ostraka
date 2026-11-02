@@ -1,6 +1,6 @@
 import type { TokenProps } from '@ostraka/core/todo-tokens'
 import { AlignLeft, ChevronRight } from 'lucide-react'
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import type { Todo, TodoChange } from './api'
@@ -16,6 +16,8 @@ export type TodoRowProps = {
   /** Tags in use, for `#` suggestions. */
   tags: string[]
   today: string
+  /** Row actions at the end, such as Drop or delete. */
+  actions?: ReactNode
 }
 
 const PRIORITY_RING: Record<Todo['priority'], string> = {
@@ -38,7 +40,7 @@ function tokenChange(tags: string[], props: TokenProps): TodoChange {
  * One open Todo. Collapsed, it shows indicators for description, due date, priority and Tags. Expanded, its title and
  * description are edited in place and its Tags can be removed. The date and the flag open their pickers either way.
  */
-export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today }: TodoRowProps) {
+export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions }: TodoRowProps) {
   const [describing, setDescribing] = useState(false)
   const showDescription = open && (todo.description !== undefined || describing)
   // The Tags as last sent, so tokens typed in quick succession add up before the list has caught up.
@@ -83,6 +85,7 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today }:
         {!open && <Indicators todo={todo} />}
         <DuePicker due={todo.due} today={today} quiet onChange={(due) => onChange({ due })} />
         <PriorityPicker priority={todo.priority} quiet onChange={(priority) => onChange({ priority })} />
+        {actions}
       </div>
       {open && (showDescription || todo.tags.length > 0) && (
         <div className="mb-1 ml-11 flex flex-col gap-1 pr-2">

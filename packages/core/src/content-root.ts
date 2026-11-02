@@ -1,35 +1,10 @@
-import { readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
-import { parse } from 'yaml'
-import { z } from 'zod'
+import { loadConfig } from './config.ts'
 
 export type ContentRootOptions = {
   env?: Record<string, string | undefined>
   homeDir?: string
-}
-
-// Only the keys core reads so far; later keys (gitlab, jira) are added as they are used.
-const ConfigSchema = z.looseObject({
-  contentDir: z.string().min(1).optional(),
-})
-
-export function configPath(homeDir: string = homedir()): string {
-  return join(homeDir, '.config', 'ostraka', 'config.yml')
-}
-
-async function readConfig(homeDir: string) {
-  const file = configPath(homeDir)
-  let text: string
-  try {
-    text = await readFile(file, 'utf8')
-  } catch (error) {
-    if ((error as NodeJS.ErrnoException).code === 'ENOENT') return {}
-    throw error
-  }
-  const result = ConfigSchema.safeParse(parse(text) ?? {})
-  if (!result.success) throw new Error(`Invalid ${file}:\n${z.prettifyError(result.error)}`)
-  return result.data
 }
 
 function expandHome(path: string, homeDir: string): string {
@@ -38,10 +13,21 @@ function expandHome(path: string, homeDir: string): string {
   return resolve(homeDir, path)
 }
 
+/** Where the content root was set: the OSTRAKA_HOME env var, contentDir in config.yml, or the default. */
+export type ContentRootSource = 'env' | 'config' | 'default'
+
+/** Content root and where it was set: OSTRAKA_HOME, then contentDir in ~/.config/ostraka/config.yml, then ~/ostraka-content. */
+export async function locateContentRoot({ env = process.env, homeDir = homedir() }: ContentRootOptions = {}): Promise<{
+  path: string
+  source: ContentRootSource
+}> {
+  if (env.OSTRAKA_HOME) return { path: expandHome(env.OSTRAKA_HOME, homeDir), source: 'env' }
+  const { contentDir } = await loadConfig({ homeDir })
+  if (contentDir) return { path: expandHome(contentDir, homeDir), source: 'config' }
+  return { path: join(homeDir, 'ostraka-content'), source: 'default' }
+}
+
 /** Content root: OSTRAKA_HOME, then contentDir in ~/.config/ostraka/config.yml, then ~/ostraka-content. */
-export async function resolveContentRoot({ env = process.env, homeDir = homedir() }: ContentRootOptions = {}): Promise<string> {
-  if (env.OSTRAKA_HOME) return expandHome(env.OSTRAKA_HOME, homeDir)
-  const { contentDir } = await readConfig(homeDir)
-  if (contentDir) return expandHome(contentDir, homeDir)
-  return join(homeDir, 'ostraka-content')
+export async function resolveContentRoot(options?: ContentRootOptions): Promise<string> {
+  return (await locateContentRoot(options)).path
 }
