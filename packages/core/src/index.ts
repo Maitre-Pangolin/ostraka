@@ -1,4 +1,4 @@
-export { CONTENT_KINDS, contentPath, isContentKind, type ContentKind } from './content-path.ts'
+export { CONTENT_KINDS, contentChangeAt, contentPath, isContentKind, type ContentChange, type ContentKind } from './content-path.ts'
 export { configPath, resolveContentRoot, type ContentRootOptions } from './content-root.ts'
 export {
   formatTodosFile,

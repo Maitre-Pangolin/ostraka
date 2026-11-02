@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
+import { contentEvents } from './content-events.ts'
 import { todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
@@ -39,6 +41,21 @@ export function createApp({ webDist, content = {} }: AppOptions) {
 
   app.get('/api/health', (c) => c.json({ ok: true }))
   app.route('/api/todos', todoRoutes(content))
+
+  // Live updates: one stream of `{kind, id?}` changes. `ready` comes first, once changes are being watched.
+  const events = contentEvents(content)
+  app.get('/api/events', (c) =>
+    streamSSE(c, async (stream) => {
+      const closed = new Promise<void>((resolve) => stream.onAbort(resolve))
+      const unsubscribe = await events.subscribe((change) => void stream.writeSSE({ data: JSON.stringify(change) }))
+      try {
+        await stream.writeSSE({ event: 'ready', data: '' })
+        await closed
+      } finally {
+        unsubscribe()
+      }
+    }),
+  )
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
   // The built web app, same origin as the API. Unknown paths are client routes, so they get index.html.
