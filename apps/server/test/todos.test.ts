@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -21,12 +21,17 @@ afterEach(async () => {
 
 const headers = { host: '127.0.0.1:4747', origin: 'http://127.0.0.1:4747' }
 const get = (path: string) => app.request(path, { headers })
-const post = (path: string, body?: unknown) =>
+const post = (path: string, body?: unknown, ifMatch?: string) =>
   app.request(path, {
     method: 'POST',
-    headers: { ...headers, ...(body !== undefined && { 'content-type': 'application/json' }) },
+    headers: {
+      ...headers,
+      ...(body !== undefined && { 'content-type': 'application/json' }),
+      ...(ifMatch !== undefined && { 'if-match': ifMatch }),
+    },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
+type VersionedTodo = Todo & { version: string }
 const json = async <T = Todo>(res: Response | Promise<Response>) => (await (await res).json()) as T
 
 const fixture = (id: string, extra: object) => ({
@@ -87,6 +92,32 @@ describe('Todo routes', () => {
     const res = await post('/api/todos/zzzzz/done')
     expect(res.status).toBe(404)
     expect(await res.json()).toEqual({ error: 'No Todo with id zzzzz' })
+  })
+
+  it('refuses a change made from a stale copy of a Todo, and takes one made from the current copy', async () => {
+    const loaded = await json<VersionedTodo>(post('/api/todos', { title: 'Call Bob' }))
+    const [listed] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(listed).toEqual(loaded)
+
+    const file = join(contentRoot, 'todos.json')
+    const agentEdit = (await readFile(file, 'utf8')).replace('"Call Bob"', '"Call Bob about the contract"')
+    await writeFile(file, agentEdit)
+
+    const stale = await post(`/api/todos/${loaded.id}/done`, undefined, `"${loaded.version}"`)
+    expect(stale.status).toBe(412)
+    expect(await stale.json()).toEqual({ error: 'The Todo “Call Bob about the contract” changed since it was loaded.' })
+    expect(await readFile(file, 'utf8')).toBe(agentEdit)
+
+    const [current] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(current!.version).not.toBe(loaded.version)
+    const done = await post(`/api/todos/${loaded.id}/done`, undefined, `"${current!.version}"`)
+    expect(done.status).toBe(200)
+    const doneTodo = await json<VersionedTodo>(done)
+    expect(doneTodo.status).toBe('done')
+
+    // Undo sends the version the done answer carried.
+    const reopened = await post(`/api/todos/${loaded.id}/reopen`, undefined, `"${doneTodo.version}"`)
+    expect(reopened.status).toBe(200)
   })
 
   it('reports an invalid todos.json instead of overwriting it', async () => {
