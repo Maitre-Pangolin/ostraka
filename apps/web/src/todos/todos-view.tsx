@@ -2,6 +2,7 @@ import { CornerDownLeft } from 'lucide-react'
 import { useState, type FormEvent } from 'react'
 import { toast } from 'sonner'
 import { Checkbox } from '@/components/ui/checkbox'
+import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/shell/shell'
@@ -62,18 +63,29 @@ function OpenTodos() {
   if (!todos.length) return <EmptyState>No open Todos. Type one above and press ↵ to add it.</EmptyState>
 
   const markDone = (todo: Todo) => {
-    complete.mutate(todo.id)
-    toast('Todo done', {
+    // Undo reopens the done Todo the server answers, with its new version.
+    let done: Promise<Todo | undefined> = Promise.resolve(undefined)
+    const toastId = toast('Todo done', {
       description: todo.title,
       duration: 5000,
-      action: { label: 'Undo', onClick: () => reopen.mutate(todo.id) },
+      action: { label: 'Undo', onClick: () => void done.then((finished) => finished && reopen.mutate(finished)) },
+    })
+    // A failed done (say, the Todo changed elsewhere) shows in place instead, with nothing to undo.
+    done = complete.mutateAsync(todo).catch(() => {
+      toast.dismiss(toastId)
+      return undefined
     })
   }
 
   const changeError = complete.error ?? reopen.error
   return (
     <>
-      {changeError && <p className="text-destructive px-1 text-xs">{changeError.message}</p>}
+      {changeError && (
+        <p className="text-destructive px-1 text-xs">
+          {changeError.message}
+          {isStale(changeError) && ' Showing the newer version.'}
+        </p>
+      )}
       <ul className="flex flex-col">
         {todos.map((todo) => (
           <TodoRow key={todo.id} todo={todo} onDone={() => markDone(todo)} />

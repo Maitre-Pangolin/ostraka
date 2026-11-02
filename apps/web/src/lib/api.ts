@@ -17,11 +17,22 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body
 }
 
-export const post = <T>(path: string, body?: unknown) =>
+/**
+ * A change to an existing item passes the `version` of the copy it was made from: the server refuses it (412) if
+ * the item changed since, and `isStale` tells that apart. Live updates have already refetched the newer copy.
+ */
+export const post = <T>(path: string, body?: unknown, { version }: { version?: string } = {}) =>
   request<T>(path, {
     method: 'POST',
-    ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+    headers: {
+      ...(body !== undefined && { 'content-type': 'application/json' }),
+      ...(version !== undefined && { 'if-match': `"${version}"` }),
+    },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
   })
+
+/** The change was refused because the item changed elsewhere (an agent, the CLI, another tab) since it was loaded. */
+export const isStale = (error: Error) => error instanceof ApiError && error.status === 412
 
 /** TanStack Query retry policy: retry a dropped connection a couple of times, never an answer such as a broken file. */
 export const retryUnanswered = (failures: number, error: Error) => !(error instanceof ApiError) && failures < 2
