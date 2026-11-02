@@ -1,10 +1,11 @@
 import type { TokenProps } from '@ostraka/core/todo-tokens'
-import { AlignLeft, ChevronRight } from 'lucide-react'
+import type { SubTodo } from '@ostraka/core/todo-schema'
+import { AlignLeft, Ban, Check, ChevronRight } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import type { Todo, TodoChange } from './api'
-import { DuePicker, PriorityPicker, TagDot, TagPill } from './properties'
+import { DuePicker, DueText, PriorityFlag, PriorityPicker, TagDot, TagPill } from './properties'
 import { TokenField } from './token-field'
 
 export type TodoRowProps = {
@@ -18,7 +19,14 @@ export type TodoRowProps = {
   today: string
   /** Row actions at the end, such as Drop or delete. */
   actions?: ReactNode
+  /** Shown only for context: the Todo doesn't match the filter, some of its Sub-todos do. */
+  dimmed?: boolean
+  /** Under the row, such as the Sub-todos a filter matched. */
+  children?: ReactNode
 }
+
+/** A row shown only for context around what a filter matched. */
+export const DIMMED = 'opacity-50 hover:opacity-100 focus-within:opacity-100'
 
 const PRIORITY_RING: Record<Todo['priority'], string> = {
   high: 'border-prio-high',
@@ -40,7 +48,7 @@ function tokenChange(tags: string[], props: TokenProps): TodoChange {
  * One open Todo. Collapsed, it shows indicators for description, due date, priority and Tags. Expanded, its title and
  * description are edited in place and its Tags can be removed. The date and the flag open their pickers either way.
  */
-export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions }: TodoRowProps) {
+export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, dimmed, children }: TodoRowProps) {
   const [describing, setDescribing] = useState(false)
   const showDescription = open && (todo.description !== undefined || describing)
   // The Tags as last sent, so tokens typed in quick succession add up before the list has caught up.
@@ -59,7 +67,7 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
   }
   return (
     <li className="flex flex-col">
-      <div className="group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1">
+      <div className={cn('group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1', dimmed && DIMMED)}>
         <button
           type="button"
           onClick={onToggle}
@@ -108,7 +116,44 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
           )}
         </div>
       )}
+      {children}
     </li>
+  )
+}
+
+const PRIORITY_DOT: Record<SubTodo['priority'], string> = { ...PRIORITY_RING, none: 'border-input' }
+
+/**
+ * Sub-todos under their parent, as a filter matched them: read-only lines with a guide from the parent's checkbox.
+ * Editing and finishing Sub-todos come with their own rows.
+ */
+export function SubTodoLines({ subTodos, today }: { subTodos: SubTodo[]; today: string }) {
+  if (!subTodos.length) return null
+  return (
+    <ul aria-label="Matching Sub-todos" className="border-border mb-1 ml-8 flex flex-col border-l pl-2">
+      {subTodos.map((subTodo) => {
+        const finished = subTodo.status !== 'open'
+        return (
+          <li key={subTodo.id} className="flex min-h-7 items-center gap-1.5 px-1">
+            {subTodo.status === 'done' ? (
+              <Check aria-label="Done" className="text-muted-foreground size-3.5 shrink-0" />
+            ) : subTodo.status === 'dropped' ? (
+              <Ban aria-label="Dropped" className="text-muted-foreground size-3.5 shrink-0" />
+            ) : (
+              <span aria-hidden className={cn('size-3.5 shrink-0 rounded-full border', PRIORITY_DOT[subTodo.priority])} />
+            )}
+            <span className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through')}>{subTodo.title}</span>
+            <span className="hidden shrink-0 items-center gap-1 @md:flex">
+              {subTodo.tags.map((tag) => (
+                <TagPill key={tag} tag={tag} />
+              ))}
+            </span>
+            {subTodo.due && !finished && <DueText due={subTodo.due} today={today} />}
+            {subTodo.priority !== 'none' && <PriorityFlag priority={subTodo.priority} className="shrink-0" />}
+          </li>
+        )
+      })}
+    </ul>
   )
 }
 

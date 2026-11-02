@@ -26,7 +26,7 @@ export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { defaultTagColor, TAG_COLORS, type Tag, type TagColor } from './tag-color.ts'
 export { TagSettingsSchema, TagsFileSchema, type TagSettings, type TagsFile } from './tag-schema.ts'
 export { readTagsFile, TagsFileError } from './tags.ts'
-export { filterTodos, parseTodoFilter, type FilteredTodo, type TodoFilter } from './todo-filter.ts'
+export { filterTodos, isFiltering, parseTodoFilter, type FilteredTodo, type TodoFilter } from './todo-filter.ts'
 export {
   normalizeTag,
   pullCompletedTokens,

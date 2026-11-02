@@ -22,6 +22,9 @@ function matches(todo: SubTodo, { priority = [], tag = [], match }: TodoFilter):
   return (!priority.length || priority.includes(todo.priority)) && (!tag.length || (match === 'any' ? tag.some(hasTag) : tag.every(hasTag)))
 }
 
+/** Whether the filter narrows anything: a priority or a Tag is chosen. */
+export const isFiltering = (filter: TodoFilter) => Boolean(filter.priority?.length || filter.tag?.length)
+
 // The schema's PRIORITIES come with zod; this module stays free of it.
 const PRIORITIES: readonly Priority[] = ['high', 'medium', 'low', 'none']
 const isPriority = (value: unknown): value is Priority => PRIORITIES.includes(value as Priority)

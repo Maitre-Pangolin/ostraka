@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubTodo, Todo } from '../src/todo-schema.ts'
-import { filterTodos, parseTodoFilter } from '../src/todo-filter.ts'
+import { filterTodos, isFiltering, parseTodoFilter } from '../src/todo-filter.ts'
 
 let created = 0
 const sub = (title: string, props: Partial<SubTodo> = {}): SubTodo => ({
@@ -60,6 +60,15 @@ describe('filterTodos', () => {
 
   it('keeps everything when nothing is chosen', () => {
     expect(titles(tagged, { priority: [], tag: [] })).toEqual(['Both', 'Api', 'Auth', 'None'])
+  })
+})
+
+describe('isFiltering', () => {
+  it('is true only once a priority or a Tag is chosen', () => {
+    expect(isFiltering({})).toBe(false)
+    expect(isFiltering({ priority: [], tag: [], match: 'any' })).toBe(false)
+    expect(isFiltering({ priority: ['low'] })).toBe(true)
+    expect(isFiltering({ tag: ['api'] })).toBe(true)
   })
 })
 
