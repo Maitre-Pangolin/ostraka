@@ -3,7 +3,7 @@ import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import type { TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
-import { todoRoutes } from './todos.ts'
+import { tagRoutes, todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -39,6 +39,7 @@ export function createApp({ webDist, content = {} }: AppOptions) {
 
   app.get('/api/health', (c) => c.json({ ok: true }))
   app.route('/api/todos', todoRoutes(content))
+  app.route('/api/tags', tagRoutes(content))
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
   // The built web app, same origin as the API. Unknown paths are client routes, so they get index.html.
