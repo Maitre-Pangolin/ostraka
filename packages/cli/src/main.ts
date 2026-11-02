@@ -1,11 +1,17 @@
 import { homedir } from 'node:os'
+import { delimiter, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import { CONTENT_KINDS, contentPath, isContentKind } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
+import { install as installAgent, realSystem, type System } from './install.ts'
+
+export type { System } from './install.ts'
 
 export type Io = {
   env: Record<string, string | undefined>
   homeDir?: string
+  /** launchd, node and the platform, for `install`. Tests pass a fake. */
+  system?: System
   stdout: (text: string) => void
   stderr: (text: string) => void
 }
@@ -14,6 +20,7 @@ const KINDS = CONTENT_KINDS.join('|')
 
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
+  ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
 `
@@ -27,6 +34,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await path(rest, io)
       case 'serve':
         return await serve(io)
+      case 'install':
+        return await install(io)
       default:
         io.stderr(USAGE)
         return 1
@@ -56,5 +65,15 @@ async function serve(io: Io): Promise<number> {
   const stop = () => server.close()
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
+  return 0
+}
+
+async function install(io: Io): Promise<number> {
+  const { plist, shim, logs } = await installAgent(io.homeDir ?? homedir(), io.system ?? realSystem())
+  io.stdout(`LaunchAgent: ${plist} (starts at login, restarts after a crash; logs in ${logs})\n`)
+  io.stdout(`CLI shim:    ${shim}\n`)
+  if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
+    io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
+  }
   return 0
 }
