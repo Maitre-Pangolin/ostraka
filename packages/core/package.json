@@ -3,7 +3,9 @@
   "private": true,
   "type": "module",
   "exports": {
-    ".": "./src/index.ts"
+    ".": "./src/index.ts",
+    "./config-schema": "./src/config-schema.ts",
+    "./todo-schema": "./src/todo-schema.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

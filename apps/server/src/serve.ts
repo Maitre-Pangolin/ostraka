@@ -26,7 +26,7 @@ export async function startServer({
   warn,
 }: StartOptions): Promise<ServerType> {
   const credentials = await readCredentials(keychain, warn)
-  const app = createApp({ webDist, env, homeDir, credentials })
+  const app = createApp({ webDist, content: { env, homeDir }, credentials })
   return new Promise((resolve, reject) => {
     const server = serve({ fetch: app.fetch, hostname: HOSTNAME, port }, () => resolve(server))
     server.once('error', reject)

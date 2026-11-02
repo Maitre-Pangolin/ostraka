@@ -1,17 +1,8 @@
-import { useQuery } from '@tanstack/react-query'
 import { CircleCheck, CircleDashed } from 'lucide-react'
 import type { ReactNode } from 'react'
-import { getJson } from '@/lib/api'
-import { DelayedSkeleton } from '@/shell/delayed-skeleton'
-
-/** GET /api/settings (apps/server/src/app.ts). Never carries a token, only whether each Keychain item was found. */
-type Settings = {
-  configFile: string
-  content: { path: string; source: 'env' | 'config' | 'default' }
-  gitlab: { base_url?: string }
-  jira: { site?: string; cloud_id?: string; board_id?: number; my_tickets_jql?: string }
-  keychain: { name: 'gitlab' | 'jira' | 'push'; item: string; found: boolean }[]
-}
+import { Skeleton } from '@/components/ui/skeleton'
+import { useAfter } from '@/lib/use-after'
+import { useSettings } from './api'
 
 const SOURCE = {
   env: 'from OSTRAKA_HOME',
@@ -27,18 +18,24 @@ const TOKEN_LABEL = {
 
 /** Settings: what the app reads from config.yml, and which Keychain items the server found at startup. Read-only. */
 export function SettingsView() {
-  const { data, error, isPending } = useQuery({ queryKey: ['settings'], queryFn: () => getJson<Settings>('/settings') })
+  const { data, error, isPending } = useSettings()
+  const showSkeleton = useAfter(300, isPending)
 
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-4 p-3">
       <h1 className="font-heading text-base font-semibold">Settings</h1>
-      {isPending ? (
-        <DelayedSkeleton rows={6} />
-      ) : error ? (
-        <div role="alert" className="border-destructive/40 text-destructive rounded-lg border p-3 text-sm">
-          <p className="font-medium">Could not read the settings.</p>
-          <pre className="mt-1 font-mono text-xs wrap-anywhere whitespace-pre-wrap">{error.message}</pre>
-        </div>
+      {error ? (
+        <p role="alert" className="text-destructive text-sm wrap-anywhere whitespace-pre-wrap">
+          Couldn’t load the settings: {error.message}
+        </p>
+      ) : isPending ? (
+        showSkeleton && (
+          <div aria-label="Loading settings" className="flex flex-col gap-2">
+            {[40, 70, 55, 65].map((width) => (
+              <Skeleton key={width} className="h-4" style={{ width: `${width}%` }} />
+            ))}
+          </div>
+        )
       ) : (
         <>
           <Section title="Content">

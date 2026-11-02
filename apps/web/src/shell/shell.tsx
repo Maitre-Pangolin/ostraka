@@ -1,5 +1,6 @@
 import { Outlet } from '@tanstack/react-router'
 import type { ReactNode } from 'react'
+import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { Rail } from './rail'
 
@@ -16,6 +17,7 @@ export function Shell() {
           </main>
         </div>
       </div>
+      <Toaster />
     </TooltipProvider>
   )
 }

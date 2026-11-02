@@ -1,13 +1,27 @@
-import { QueryClient } from '@tanstack/react-query'
+// Calls to the server API under /api, which answers JSON and `{ error }` on failure.
 
-export const queryClient = new QueryClient({
-  defaultOptions: { queries: { retry: false, refetchOnWindowFocus: true } },
-})
+/** The server answered with an error: retrying won't change its answer. */
+export class ApiError extends Error {
+  readonly status: number
 
-/** GETs a JSON route under /api. A non-2xx answer throws with the server's `error` message when it sends one. */
-export async function getJson<T>(path: string): Promise<T> {
-  const res = await fetch(`/api${path}`, { headers: { accept: 'application/json' } })
-  const body = (await res.json().catch(() => undefined)) as (T & { error?: string }) | undefined
-  if (!res.ok) throw new Error(body?.error ?? `${res.status} ${res.statusText}`)
-  return body as T
+  constructor(status: number, message: string) {
+    super(message)
+    this.status = status
+  }
 }
+
+export async function request<T>(path: string, init?: RequestInit): Promise<T> {
+  const res = await fetch(`/api${path}`, init)
+  const body = (await res.json().catch(() => ({}))) as T & { error?: string }
+  if (!res.ok) throw new ApiError(res.status, body.error ?? `${res.status} ${res.statusText}`)
+  return body
+}
+
+export const post = <T>(path: string, body?: unknown) =>
+  request<T>(path, {
+    method: 'POST',
+    ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
+  })
+
+/** TanStack Query retry policy: retry a dropped connection a couple of times, never an answer such as a broken file. */
+export const retryUnanswered = (failures: number, error: Error) => !(error instanceof ApiError) && failures < 2

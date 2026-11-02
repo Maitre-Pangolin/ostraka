@@ -1,10 +1,10 @@
 import { existsSync } from 'node:fs'
-import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { configPath, loadConfig, locateContentRoot } from '@ostraka/core'
+import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
+import { todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -12,9 +12,8 @@ export const PORT = 4747
 export type AppOptions = {
   /** Folder holding the built web app (index.html and assets). */
   webDist: string
-  /** Environment and home folder used to find config.yml and the content root. */
-  env?: Record<string, string | undefined>
-  homeDir?: string
+  /** Where content and config.yml live (env and home folder) and the clock; defaults to the real ones. Tests point it at a temp folder. */
+  content?: TodoOptions
   /** Read from the Keychain once at startup. Routes may say whether one exists, never return it. */
   credentials?: Credentials
 }
@@ -23,7 +22,7 @@ const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist, env = process.env, homeDir = homedir(), credentials = {} }: AppOptions) {
+export function createApp({ webDist, content = {}, credentials = {} }: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -42,14 +41,15 @@ export function createApp({ webDist, env = process.env, homeDir = homedir(), cre
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
+  app.route('/api/todos', todoRoutes(content))
 
   // Read on each request, so the Settings view shows edits to config.yml without a restart.
   app.get('/api/settings', async (c) => {
     try {
-      const config = await loadConfig({ homeDir })
+      const config = await loadConfig({ homeDir: content.homeDir })
       return c.json({
-        configFile: configPath(homeDir),
-        content: await locateContentRoot({ env, homeDir }),
+        configFile: configPath(content.homeDir),
+        content: await locateContentRoot(content),
         gitlab: config.gitlab ?? {},
         jira: config.jira ?? {},
         keychain: (Object.entries(KEYCHAIN_ITEMS) as [CredentialName, string][]).map(([name, item]) => ({

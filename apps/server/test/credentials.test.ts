@@ -65,7 +65,7 @@ describe('no route returns a token', () => {
     await mkdir(join(home, '.config', 'ostraka'), { recursive: true })
     await writeFile(join(home, '.config', 'ostraka', 'config.yml'), 'gitlab:\n  base_url: https://gitlab.com\n')
     const credentials = await readCredentials(fakeKeychain(TOKENS).keychain)
-    const app = createApp({ webDist: '/nonexistent', env: {}, homeDir: home, credentials })
+    const app = createApp({ webDist: '/nonexistent', content: { env: {}, homeDir: home }, credentials })
 
     const paths = new Set(['/', '/settings', '/api/nope', ...app.routes.map((route) => route.path.replace(/\*$/, 'anything'))])
     for (const path of paths) {

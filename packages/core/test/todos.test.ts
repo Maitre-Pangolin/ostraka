@@ -1,0 +1,237 @@
+import { spawnSync } from 'node:child_process'
+import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from '../src/index.ts'
+
+let contentRoot: string
+let options: TodoOptions
+
+// Monday 2 November 2026, 09:30 local time.
+const NOW = new Date(2026, 10, 2, 9, 30)
+
+beforeEach(async () => {
+  contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))
+  options = { env: { OSTRAKA_HOME: contentRoot }, now: () => NOW }
+})
+
+afterEach(async () => {
+  await rm(contentRoot, { recursive: true, force: true })
+})
+
+const todosFile = () => join(contentRoot, 'todos.json')
+const lockFile = () => `${todosFile()}.lock`
+const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid
+const writeLock = (pid: number, createdAt: Date) => writeFile(lockFile(), JSON.stringify({ pid, createdAt: createdAt.toISOString() }))
+
+describe('addTodo', () => {
+  it('adds an open Todo with a short random id and a created timestamp', async () => {
+    const todo = await addTodo({ title: '  Review the release notes ' }, options)
+    expect(todo).toEqual({
+      id: expect.stringMatching(/^[a-z0-9]{5}$/),
+      title: 'Review the release notes',
+      priority: 'none',
+      tags: [],
+      status: 'open',
+      createdAt: NOW.toISOString(),
+      subTodos: [],
+    })
+    expect(await listTodos(options)).toEqual([todo])
+  })
+
+  it('writes todos.json formatted, keys in a stable order', async () => {
+    const { id } = await addTodo({ title: 'Ship it' }, options)
+    expect(await readFile(todosFile(), 'utf8')).toBe(`{
+  "todos": [
+    {
+      "id": "${id}",
+      "title": "Ship it",
+      "priority": "none",
+      "tags": [],
+      "status": "open",
+      "createdAt": "${NOW.toISOString()}",
+      "subTodos": []
+    }
+  ]
+}
+`)
+  })
+
+  it('rewrites a hand-edited file in the stable key order', async () => {
+    await writeFile(
+      todosFile(),
+      JSON.stringify({
+        todos: [
+          {
+            subTodos: [],
+            status: 'open',
+            due: '2026-11-05',
+            tags: ['infra'],
+            createdAt: '2026-11-01T10:00:00.000Z',
+            priority: 'high',
+            title: 'Old',
+            id: 'aaaaa',
+          },
+        ],
+      }),
+    )
+    await addTodo({ title: 'New' }, options)
+    const { todos } = JSON.parse(await readFile(todosFile(), 'utf8')) as { todos: { id: string }[] }
+    const old = todos.find((todo) => todo.id === 'aaaaa')
+    expect(Object.keys(old ?? {})).toEqual(['id', 'title', 'priority', 'due', 'tags', 'status', 'createdAt', 'subTodos'])
+  })
+
+  it('rejects an empty title', async () => {
+    await expect(addTodo({ title: '   ' }, options)).rejects.toThrow(/title/i)
+  })
+
+  it('gives every Todo its own id', async () => {
+    const ids = new Set<string>()
+    for (let i = 0; i < 20; i++) ids.add((await addTodo({ title: `Todo ${i}` }, options)).id)
+    expect(ids.size).toBe(20)
+  })
+})
+
+type Fixture = { id: string; priority?: string; due?: string; createdAt?: string; status?: string; finishedAt?: string }
+
+async function writeTodos(fixtures: Fixture[]) {
+  const todos = fixtures.map(({ id, priority = 'none', due, createdAt = '2026-10-01T10:00:00.000Z', status = 'open', finishedAt }) => ({
+    id,
+    title: `Todo ${id}`,
+    priority,
+    ...(due && { due }),
+    tags: [],
+    status,
+    createdAt,
+    ...(finishedAt && { finishedAt }),
+    subTodos: [],
+  }))
+  await writeFile(todosFile(), JSON.stringify({ todos }, null, 2))
+}
+
+describe('listTodos', () => {
+  it('is empty when there is no todos.json yet', async () => {
+    expect(await listTodos(options)).toEqual([])
+  })
+
+  it('sorts open Todos overdue, due today, priority (none last), due date, newest', async () => {
+    await writeTodos([
+      { id: 'nopri', createdAt: '2026-10-20T10:00:00.000Z' },
+      { id: 'older', createdAt: '2026-10-01T10:00:00.000Z' },
+      { id: 'lowpr', priority: 'low' },
+      { id: 'medpr', priority: 'medium' },
+      { id: 'hilat', priority: 'high', due: '2026-12-01' },
+      { id: 'hisoo', priority: 'high', due: '2026-11-04' },
+      { id: 'hinod', priority: 'high' },
+      { id: 'today', priority: 'low', due: '2026-11-02' },
+      { id: 'tdhig', priority: 'high', due: '2026-11-02' },
+      { id: 'late1', due: '2026-11-01' },
+      { id: 'late2', priority: 'high', due: '2026-10-15' },
+      { id: 'donee', status: 'done', finishedAt: '2026-11-01T10:00:00.000Z' },
+    ])
+    expect((await listTodos(options)).map((todo) => todo.id)).toEqual([
+      'late2', // overdue, high
+      'late1', // overdue, no priority
+      'tdhig', // due today, high
+      'today', // due today, low
+      'hisoo', // high, due sooner
+      'hilat', // high, due later
+      'hinod', // high, no due date
+      'medpr',
+      'lowpr',
+      'nopri', // no priority, newer
+      'older', // no priority, older
+    ])
+  })
+
+  it('counts a Todo due yesterday as overdue by the local calendar day', async () => {
+    await writeTodos([
+      { id: 'hipri', priority: 'high' },
+      { id: 'yestr', due: '2026-11-01' },
+    ])
+    // Five past midnight local: in UTC (behind or ahead) the date may differ, the local day does not.
+    expect((await listTodos({ ...options, now: () => new Date(2026, 10, 2, 0, 5) })).map((todo) => todo.id)).toEqual(['yestr', 'hipri'])
+  })
+})
+
+describe('completeTodo', () => {
+  it('marks a Todo done with a finished timestamp and takes it off the open list', async () => {
+    const todo = await addTodo({ title: 'Ship it' }, options)
+    const later = new Date(2026, 10, 2, 11, 0)
+    const done = await completeTodo(todo.id, { ...options, now: () => later })
+    expect(done).toEqual({ ...todo, status: 'done', finishedAt: later.toISOString() })
+    expect(await listTodos(options)).toEqual([])
+    expect(JSON.parse(await readFile(todosFile(), 'utf8')).todos).toEqual([done])
+  })
+
+  it('reports an unknown id', async () => {
+    await addTodo({ title: 'Ship it' }, options)
+    await expect(completeTodo('zzzzz', options)).rejects.toThrow(TodoNotFoundError)
+  })
+})
+
+describe('writing todos.json', () => {
+  it.each([
+    ['not JSON', '{"todos": [ {"id": '],
+    ['not the schema', JSON.stringify({ todos: [{ id: 'aaaaa', title: '' }] })],
+  ])('rejects a file that is %s and leaves it as it is', async (_, text) => {
+    await writeFile(todosFile(), text)
+    await expect(addTodo({ title: 'Ship it' }, options)).rejects.toThrow(TodosFileError)
+    await expect(listTodos(options)).rejects.toThrow(/todos\.json/)
+    expect(await readFile(todosFile(), 'utf8')).toBe(text)
+  })
+
+  it('leaves no lock or temp file behind', async () => {
+    await addTodo({ title: 'Ship it' }, options)
+    expect(await readdir(contentRoot)).toEqual(['todos.json'])
+  })
+
+  it('keeps every Todo when several are added at once', async () => {
+    const titles = Array.from({ length: 10 }, (_, i) => `Todo ${i}`)
+    await Promise.all(titles.map((title) => addTodo({ title }, options)))
+    expect((await listTodos(options)).map((todo) => todo.title).toSorted()).toEqual(titles)
+  })
+
+  it('waits for a lock held by a running process, then gives up naming it', async () => {
+    await writeLock(process.pid, new Date())
+    await expect(addTodo({ title: 'Ship it' }, { ...options, lock: { timeoutMs: 100 } })).rejects.toThrow(
+      new RegExp(`locked by process ${process.pid}`),
+    )
+    await expect(readFile(todosFile())).rejects.toThrow(/ENOENT/)
+  })
+
+  it('writes once a held lock is released', async () => {
+    await writeLock(process.pid, new Date())
+    setTimeout(() => void rm(lockFile()), 50)
+    await addTodo({ title: 'Ship it' }, { ...options, lock: { timeoutMs: 2000 } })
+    expect(await listTodos(options)).toHaveLength(1)
+  })
+
+  it('takes over a lock left by a process that is gone', async () => {
+    await writeLock(deadPid(), new Date())
+    await addTodo({ title: 'Ship it' }, { ...options, lock: { timeoutMs: 100 } })
+    expect(await readdir(contentRoot)).toEqual(['todos.json'])
+  })
+
+  it('takes over a lock older than the stale age', async () => {
+    await writeLock(process.pid, new Date(Date.now() - 60_000))
+    await addTodo({ title: 'Ship it' }, { ...options, lock: { timeoutMs: 100, staleMs: 30_000 } })
+    expect(await readdir(contentRoot)).toEqual(['todos.json'])
+  })
+
+  it('releases the lock when a change fails', async () => {
+    await addTodo({ title: 'Ship it' }, options)
+    await expect(completeTodo('zzzzz', options)).rejects.toThrow(TodoNotFoundError)
+    expect(await readdir(contentRoot)).toEqual(['todos.json'])
+  })
+})
+
+describe('reopenTodo', () => {
+  it('puts a done Todo back on the open list as it was (Undo)', async () => {
+    const todo = await addTodo({ title: 'Ship it' }, options)
+    await completeTodo(todo.id, options)
+    expect(await reopenTodo(todo.id, options)).toEqual(todo)
+    expect(await listTodos(options)).toEqual([todo])
+  })
+})

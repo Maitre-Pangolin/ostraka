@@ -22,7 +22,7 @@ async function writeConfig(yaml: string) {
 
 async function getSettings(env: Record<string, string> = {}, items: Record<string, string> = {}) {
   const credentials = await readCredentials(fakeKeychain(items).keychain)
-  const app = createApp({ webDist: '/nonexistent', env, homeDir: home, credentials })
+  const app = createApp({ webDist: '/nonexistent', content: { env, homeDir: home }, credentials })
   return app.request('/api/settings', { headers: { host: '127.0.0.1:4747' } })
 }
 
