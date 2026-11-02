@@ -12,7 +12,8 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Server state lives only in TanStack Query, with no second client store. Each section keeps its queries and mutations as hooks in one `api.ts` (see `src/todos/api.ts`), calling the server through `src/lib/api.ts`. The server's answer (order included) is shown as is. An immediate change updates the cache in `onMutate`, rolls back on error, and invalidates on settle.
 - Live updates: `src/lib/live-updates.tsx` turns the server's `{kind, id?}` change stream (`/api/events`) into query invalidations, whoever changed the file. So every content query key starts with its kind (`['todos', …]`, `['notes', id]`), and content is never polled.
 - A change to an existing item sends the `version` the server answered with that item (`post(path, body, { version })`, sent as `If-Match`). If the item changed elsewhere since, the server refuses it with 412 (`isStale(error)`): the error line in place adds “Showing the newer version.”, and the invalidation on settle shows it.
-- Content types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
+- Content and config types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`, `Config` from `@ostraka/core/config-schema`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
+- The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`; a changed icon updates all of them.
 
 ## Layout
 
@@ -37,9 +38,12 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - Edit inline, where the thing is shown. Pickers (date, priority, Tags, People) open in a Popover anchored to what they change.
 - Forms live inline too; a Dialog is never a form.
-- Single-item done, Drop or delete happens at once, with a 5-second Undo toast: sonner's `toast(what happened, { description: item title, duration: 5000, action: { label: 'Undo', … } })`, as in `src/todos/todos-view.tsx`. The `<Toaster />` lives in the shell.
+- Single-item done, Drop or delete happens at once, with a 5-second Undo toast: sonner's `toast(what happened, { description: item title, duration: 5000, action: { label: 'Undo', … } })`, as in `src/todos/todos-view.tsx`. The `<Toaster />` lives in the shell. Undo of a delete posts the item back as it was (`useRestoreTodo`).
+- Row actions that would clutter the list (Drop or delete) sit at the row's end, shown on row hover or keyboard focus (`group/row`, `opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100`), and open a Popover, as `DropOrDelete` in `src/todos/todos-view.tsx`. An optional field in it (the Drop reason) is skippable: ↵ on the empty field still acts.
+- Finished items (Done & Dropped) are kept, in a section collapsed by default below the open ones: a muted disclosure button with a chevron and the count, `aria-expanded`. Finished rows are muted and struck through, show when they finished, and reopen from their checkbox or Dropped icon.
 - A confirmation Dialog guards only bulk or hard-to-reverse changes (merging Tags, finishing a parent with open Sub-todos).
 - Toasts exist only for Undo.
+- Read-only settings sit in bordered definition lists, label then value (monospace for paths, URLs and ids), as in `src/settings/settings-view.tsx`. Settings has no form: `config.yml` is edited by hand.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.
 
 ## Keyboard
@@ -55,7 +59,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - **Empty**: one muted line naming the next action (`EmptyState` in `src/shell/shell.tsx`). No illustrations.
 - **Loading**: skeleton rows, shown only after 300 ms (`useAfter(300, isPending)` from `src/lib/use-after.ts`).
-- **Errors**: shown where they happen: a broken file in its own list, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
+- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
 
 ## Visuals and copy
 

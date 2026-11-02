@@ -12,3 +12,10 @@ export function loadedVersion(c: Context): string | undefined {
   if (!header || header === '*') return undefined
   return header.replace(/^W\//, '').replace(/^"(.*)"$/, '$1')
 }
+
+/** An item posted back as the API answered it, without the `version` the API added. */
+export function withoutVersion(value: unknown): unknown {
+  if (typeof value !== 'object' || value === null || !('version' in value)) return value
+  const { version: _version, ...item } = value
+  return item
+}

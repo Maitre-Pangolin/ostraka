@@ -6,8 +6,20 @@ import { contentPath } from './content-path.ts'
 import { assertCurrentVersion, contentVersion } from './content-version.ts'
 import type { ContentRootOptions } from './content-root.ts'
 import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
-import { compareOpenTodos, localDay } from './todo-order.ts'
-import { formatTodosFile, NewTodoSchema, TodosFileSchema, type NewTodo, type Todo, type TodosFile } from './todo-schema.ts'
+import { compareFinishedTodos, compareOpenTodos, localDay } from './todo-order.ts'
+import {
+  DropTodoSchema,
+  FinishedQuerySchema,
+  formatTodosFile,
+  NewTodoSchema,
+  TodoSchema,
+  TodosFileSchema,
+  type DropTodo,
+  type FinishedQuery,
+  type NewTodo,
+  type Todo,
+  type TodosFile,
+} from './todo-schema.ts'
 
 export type TodoOptions = ContentRootOptions & {
   /** The clock; tests pass a fixed one. */
@@ -22,6 +34,7 @@ const clock = (options: TodoOptions) => (options.now ?? (() => new Date()))()
 
 export class TodosFileError extends Error {}
 export class TodoNotFoundError extends Error {}
+export class TodoExistsError extends Error {}
 
 async function readTodosFile(file: string): Promise<TodosFile> {
   let text: string
@@ -118,6 +131,20 @@ export async function completeTodo(id: string, options: TodoChangeOptions = {}):
   })
 }
 
+/** Drops a Todo: abandoned without being done, with an optional reason, and its finished timestamp set. */
+export async function dropTodo(id: string, input: DropTodo, options: TodoChangeOptions = {}): Promise<Todo> {
+  const reason = DropTodoSchema.parse(input).reason?.trim()
+  const now = clock(options)
+  return updateTodos(options, (file) => {
+    const todo = findTodo(file, id, options.ifVersion)
+    todo.status = 'dropped'
+    todo.finishedAt = now.toISOString()
+    if (reason) todo.dropReason = reason
+    else delete todo.dropReason
+    return structuredClone(todo)
+  })
+}
+
 /** Puts a done or Dropped Todo back on the open list, clearing its finished timestamp (Undo). */
 export async function reopenTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
   return updateTodos(options, (file) => {
@@ -129,9 +156,40 @@ export async function reopenTodo(id: string, options: TodoChangeOptions = {}): P
   })
 }
 
+/** Removes a Todo for good (for mistakes) and returns it, so the caller can offer Undo through `restoreTodo`. */
+export async function deleteTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
+  return updateTodos(options, (file) => {
+    const todo = findTodo(file, id, options.ifVersion)
+    file.todos.splice(file.todos.indexOf(todo), 1)
+    return todo
+  })
+}
+
+/** Puts a deleted Todo back as it was (Undo of delete). Refused if any of its ids is taken meanwhile. */
+export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promise<Todo> {
+  const todo = TodoSchema.parse(input)
+  return updateTodos(options, (file) => {
+    const taken = allIds(file)
+    const clash = [todo.id, ...todo.subTodos.map((sub) => sub.id)].find((id) => taken.has(id))
+    if (clash) throw new TodoExistsError(`A Todo with id ${clash} already exists`)
+    file.todos.push(todo)
+    return structuredClone(todo)
+  })
+}
+
 /** Open Todos in their automatic order. */
 export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   const today = localDay(clock(options))
   return todos.filter((todo) => todo.status === 'open').toSorted(compareOpenTodos(today))
+}
+
+/** Done and Dropped Todos, kept forever, newest-finished first; `finishedOn` narrows to one local day. */
+export async function listFinishedTodos(query: FinishedQuery, options: TodoOptions = {}): Promise<Todo[]> {
+  const { finishedOn } = FinishedQuerySchema.parse(query)
+  const { todos } = await readTodosFile(await contentPath('todos', options))
+  return todos
+    .filter((todo) => todo.status !== 'open' && todo.finishedAt !== undefined)
+    .filter((todo) => finishedOn === undefined || localDay(new Date(todo.finishedAt!)) === finishedOn)
+    .toSorted(compareFinishedTodos)
 }

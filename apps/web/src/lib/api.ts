@@ -18,15 +18,17 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
 }
 
 /**
- * A change to an existing item passes the `version` of the copy it was made from: the server refuses it (412) if
- * the item changed since, and `isStale` tells that apart. Live updates have already refetched the newer copy.
+ * A change to an existing item passes the `version` of the copy it was made from, as `If-Match`: the server refuses
+ * it (412) if the item changed since, and `isStale` tells that apart. Live updates have already refetched the newer copy.
  */
+export const ifMatch = (version: string): HeadersInit => ({ 'if-match': `"${version}"` })
+
 export const post = <T>(path: string, body?: unknown, { version }: { version?: string } = {}) =>
   request<T>(path, {
     method: 'POST',
     headers: {
       ...(body !== undefined && { 'content-type': 'application/json' }),
-      ...(version !== undefined && { 'if-match': `"${version}"` }),
+      ...(version !== undefined && ifMatch(version)),
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
