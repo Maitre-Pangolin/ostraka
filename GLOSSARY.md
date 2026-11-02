@@ -53,6 +53,10 @@ _Avoid_: Contact, user, member
 The machine-wide list of Persons and their identities in each Activity source.
 _Avoid_: Address book, contacts, roster
 
+**Stub Person**:
+A Person created from a new Mention that has no email yet; the `people` skill fills in their identities.
+_Avoid_: Placeholder, draft person
+
 **Mention**:
 A reference to a Person in a Todo or Dev log, written `@<person id>`.
 _Avoid_: Tag (a Tag is a label, not a Person)
