@@ -10,7 +10,7 @@ import {
   isContentKind,
   listFinishedTodos,
   listTodos,
-  type Todo,
+  type SubTodo,
 } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
 import { install as installAgent, realSystem, type System } from './install.ts'
@@ -92,12 +92,12 @@ async function path(args: string[], io: Io): Promise<number> {
 const PRIORITY_TOKENS = { high: '*high', medium: '*med', low: '*low', none: undefined }
 
 /** `id  title  #tag *prio ^date`: the properties written back as the tokens that set them. */
-function todoLine(todo: Todo): string {
+function todoLine(todo: SubTodo): string {
   const tokens = [...todo.tags.map((tag) => `#${tag}`), PRIORITY_TOKENS[todo.priority], todo.due && `^${todo.due}`].filter(Boolean)
   return [`${todo.id}  ${todo.title}`, ...(tokens.length ? [tokens.join(' ')] : [])].join('  ')
 }
 
-const finishedLine = (todo: Todo) =>
+const finishedLine = (todo: SubTodo) =>
   `${todoLine(todo)} (${todo.status === 'dropped' ? `Dropped${todo.dropReason ? `: ${todo.dropReason}` : ''}` : 'done'})`
 
 async function todoCommand(args: string[], io: Io): Promise<number> {

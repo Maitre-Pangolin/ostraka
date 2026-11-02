@@ -7,7 +7,8 @@
     "./config-schema": "./src/config-schema.ts",
     "./todo-schema": "./src/todo-schema.ts",
     "./todo-tokens": "./src/todo-tokens.ts",
-    "./todo-order": "./src/todo-order.ts"
+    "./todo-order": "./src/todo-order.ts",
+    "./sub-todos": "./src/sub-todos.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

@@ -23,6 +23,7 @@ export {
   type TodoStatus,
 } from './todo-schema.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
+export { dueAfterParent } from './sub-todos.ts'
 export {
   normalizeTag,
   pullCompletedTokens,
@@ -34,6 +35,7 @@ export {
   type TokenSuggestion,
 } from './todo-tokens.ts'
 export {
+  addSubTodo,
   addTodo,
   completeTodo,
   deleteTodo,
@@ -42,11 +44,13 @@ export {
   listTags,
   listTodos,
   reopenTodo,
+  restoreSubTodo,
   restoreTodo,
   TodoExistsError,
   TodoInputError,
   TodoNotFoundError,
   TodosFileError,
   updateTodo,
+  type TodoItem,
   type TodoOptions,
 } from './todos.ts'

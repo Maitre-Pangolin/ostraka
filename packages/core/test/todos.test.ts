@@ -12,6 +12,7 @@ import {
   listTags,
   listTodos,
   type NewTodo,
+  type Todo,
   reopenTodo,
   restoreTodo,
   TodoExistsError,
@@ -415,7 +416,7 @@ describe('deleteTodo', () => {
 describe('restoreTodo', () => {
   it('puts a deleted Todo back exactly as it was (Undo)', async () => {
     const todo = await addTodo({ title: 'Typo' }, options)
-    const dropped = await dropTodo(todo.id, { reason: 'Not needed' }, options)
+    const dropped = (await dropTodo(todo.id, { reason: 'Not needed' }, options)) as Todo
     await deleteTodo(todo.id, options)
     expect(await restoreTodo(dropped, options)).toEqual(dropped)
     expect(JSON.parse(await readFile(todosFile(), 'utf8')).todos).toEqual([dropped])
