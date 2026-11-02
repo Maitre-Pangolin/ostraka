@@ -39,6 +39,10 @@ Writing Dev logs for past days that have none.
 A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
 _Avoid_: Drawing, diagram, whiteboard
 
+**Snapshot**:
+A commit of the content folder's history, made after changes settle or by a skill; what the app restores to.
+_Avoid_: Backup, version, save
+
 ## People
 
 **Person**:
