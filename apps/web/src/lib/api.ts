@@ -23,15 +23,34 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
  */
 export const ifMatch = (version: string): HeadersInit => ({ 'if-match': `"${version}"` })
 
-export const post = <T>(path: string, body?: unknown, { version }: { version?: string } = {}) =>
-  request<T>(path, {
-    method: 'POST',
+// The app's own changes move an item from one version to the next. A later change made from a copy older than
+// them goes on from where they left it, so the app never conflicts with itself before its cache refetches.
+const ownChanges = new Map<string, string>()
+const afterOwnChanges = (version: string) => {
+  while (ownChanges.has(version)) version = ownChanges.get(version)!
+  return version
+}
+
+type Send = { version?: string }
+
+async function send<T>(method: string, path: string, body?: unknown, { version }: Send = {}): Promise<T> {
+  const from = version === undefined ? undefined : afterOwnChanges(version)
+  const answer = await request<T>(path, {
+    method,
     headers: {
       ...(body !== undefined && { 'content-type': 'application/json' }),
-      ...(version !== undefined && ifMatch(version)),
+      ...(from !== undefined && ifMatch(from)),
     },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
+  const to = (answer as { version?: unknown }).version
+  if (from !== undefined && typeof to === 'string' && to !== from) ownChanges.set(from, to)
+  return answer
+}
+
+export const post = <T>(path: string, body?: unknown, options?: Send) => send<T>('POST', path, body, options)
+export const patch = <T>(path: string, body: unknown, options?: Send) => send<T>('PATCH', path, body, options)
+export const remove = <T>(path: string, options?: Send) => send<T>('DELETE', path, undefined, options)
 
 /** The change was refused because the item changed elsewhere (an agent, the CLI, another tab) since it was loaded. */
 export const isStale = (error: Error) => error instanceof ApiError && error.status === 412

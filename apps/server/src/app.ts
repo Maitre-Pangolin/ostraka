@@ -6,7 +6,7 @@ import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { contentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
-import { todoRoutes } from './todos.ts'
+import { tagRoutes, todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -44,6 +44,7 @@ export function createApp({ webDist, content = {}, credentials = {} }: AppOption
 
   app.get('/api/health', (c) => c.json({ ok: true }))
   app.route('/api/todos', todoRoutes(content))
+  app.route('/api/tags', tagRoutes(content))
 
   // Live updates: one stream of `{kind, id?}` changes. `ready` comes first, once changes are being watched.
   const events = contentEvents(content)

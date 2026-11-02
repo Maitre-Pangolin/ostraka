@@ -16,7 +16,7 @@ For UI work, run `pnpm ostraka serve` and `pnpm dev` side by side: Vite on http:
 
 `pnpm ostraka path <todos|notes|devlogs|sketches|people>` prints where that content lives (`OSTRAKA_HOME`, else `contentDir` in `~/.config/ostraka/config.yml`, else `~/ostraka-content`).
 
-`pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file. The open app refreshes on its own when content changes on disk, and refuses a change made from a copy that is no longer current instead of overwriting it.
+`pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). In a title, `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` set the Todo's Tags, priority and due date, as in the app: `ostraka todo add "Fix login #auth *high ^fri"`. `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file. The open app refreshes on its own when content changes on disk, and refuses a change made from a copy that is no longer current instead of overwriting it.
 
 ## Install it
 

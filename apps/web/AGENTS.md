@@ -45,6 +45,16 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Toasts exist only for Undo.
 - Read-only settings sit in bordered definition lists, label then value (monospace for paths, URLs and ids), as in `src/settings/settings-view.tsx`. Settings has no form: `config.yml` is edited by hand.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.
+- The priority picker is a Popover of flags (`PriorityPicker`); the date picker is a Popover with quick picks over a Calendar and a Clear date (`DuePicker`), both in `src/todos/properties.tsx`.
+- Tags show as pills coloured `tag-1`…`tag-8` (`TagPill`), with × where one can be removed. Below `@md` a collapsed row shows them as dots.
+- A due date reads relative to today (`DueText`): overdue is highlighted strongly (`destructive` pill), due today lightly (`today` text).
+- An expanded row edits its text in place and shows no empty field: a description appears only once there is one, or after ⇧↵ in the title, and closes again when emptied.
+
+## Quick-entry tokens
+
+- `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` are parsed by core (`@ostraka/core/todo-tokens`), never by the app itself, so the CLI and agents read them the same way.
+- Title and description fields where tokens apply use `TokenField` (`src/todos/token-field.tsx`). A token leaves the text once completed, picked with Tab or ↵ or followed by a space, and suggestions show while one is typed (existing Tags first; a new Tag is offered only when none matches).
+- In quick entry the values wait as removable chips under the input until the Todo is added; in an open Todo they change it straight away.
 
 ## Keyboard
 

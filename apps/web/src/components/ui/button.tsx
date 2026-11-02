@@ -45,4 +45,5 @@ function Button({
   return <ButtonPrimitive data-slot="button" className={cn(buttonVariants({ variant, size, className }))} {...props} />
 }
 
-export { Button }
+// oxlint-disable-next-line react/only-export-components -- shadcn shares the variants with other components
+export { Button, buttonVariants }

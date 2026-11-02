@@ -15,6 +15,8 @@ export function LiveUpdates() {
     events.addEventListener('message', (event) => {
       const { kind } = JSON.parse(event.data as string) as ContentChange
       void queryClient.invalidateQueries({ queryKey: [kind] })
+      // Tags are gathered from every kind's content.
+      void queryClient.invalidateQueries({ queryKey: ['tags'] })
     })
     // `ready` starts every connection, the first and each reconnect: changes made while the stream was down
     // (or before it was up) were never sent, so everything shown is refetched.
