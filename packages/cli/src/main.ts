@@ -107,7 +107,8 @@ async function snapshotCommand(args: string[], io: Io): Promise<number> {
 async function serve(io: Io): Promise<number> {
   const server = await startServer()
   io.stdout(`Ostraka is running on http://${HOSTNAME}:${PORT}\n`)
-  const stop = () => server.close()
+  // Stopping commits pending content changes as a Snapshot before the process exits.
+  const stop = () => void server.stop()
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
   return 0
