@@ -52,3 +52,5 @@ export {
 } from './todos.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
+export { findSecrets } from './secret-scan.ts'
+export { BACKUP_REMOTE, backup, type BackupOptions, type BackupResult } from './backup.ts'
