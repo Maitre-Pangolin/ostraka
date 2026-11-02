@@ -16,7 +16,7 @@ For UI work, run `pnpm ostraka serve` and `pnpm dev` side by side: Vite on http:
 
 `pnpm ostraka path <todos|notes|devlogs|sketches|people>` prints where that content lives (`OSTRAKA_HOME`, else `contentDir` in `~/.config/ostraka/config.yml`, else `~/ostraka-content`).
 
-`pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file.
+`pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). In a title, `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` set the Todo's Tags, priority and due date, as in the app: `ostraka todo add "Fix login #auth *high ^fri"`. `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file.
 
 The content folder is its own git repo (created when missing, no remote). While it runs, the server commits the whole folder as one Snapshot once changes settle: 60 s after the last change, at most every 10 min during steady activity, and on stop. `pnpm ostraka snapshot "<message>"` commits now with that message; skills run it after they write.
 

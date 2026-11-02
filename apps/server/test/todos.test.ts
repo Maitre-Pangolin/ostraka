@@ -27,6 +27,8 @@ const post = (path: string, body?: unknown) =>
     headers: { ...headers, ...(body !== undefined && { 'content-type': 'application/json' }) },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
+const patch = (path: string, body: unknown) =>
+  app.request(path, { method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) })
 const del = (path: string) => app.request(path, { method: 'DELETE', headers })
 const json = async <T = Todo>(res: Response | Promise<Response>) => (await (await res).json()) as T
 
@@ -76,6 +78,47 @@ describe('Todo routes', () => {
     expect(reopened.status).toBe(200)
     expect(await reopened.json()).toEqual(todo)
     expect(await (await get('/api/todos')).json()).toEqual([todo])
+  })
+
+  it('adds a Todo with a description and the properties pulled out in quick entry, plus tokens left in the text', async () => {
+    const res = await post('/api/todos', { title: 'Fix login ^today', description: 'Logs #infra', tags: ['auth'], priority: 'high' })
+    expect(res.status).toBe(201)
+    expect(await res.json()).toMatchObject({
+      title: 'Fix login',
+      description: 'Logs',
+      tags: ['auth', 'infra'],
+      priority: 'high',
+      due: '2026-11-02',
+    })
+  })
+
+  it('changes a Todo: title, description, Tags, priority and due date', async () => {
+    const todo = await json(post('/api/todos', { title: 'Ship it #infra #api ^fri' }))
+    const res = await patch(`/api/todos/${todo.id}`, { title: 'Ship it now *low', description: 'Check first', tags: ['api'], due: null })
+    expect(res.status).toBe(200)
+    const changed = await json(res)
+    expect(changed).toEqual({ ...todo, title: 'Ship it now', description: 'Check first', tags: ['api'], priority: 'low', due: undefined })
+    expect(await json<Todo[]>(get('/api/todos'))).toEqual([changed])
+  })
+
+  it.each([[{ title: '#only-a-tag' }], [{ priority: 'urgent' }], [{ due: 'friday' }], [{ id: 'zzzzz' }]])(
+    'rejects %j as a change',
+    async (body) => {
+      const todo = await json(post('/api/todos', { title: 'Ship it' }))
+      const res = await patch(`/api/todos/${todo.id}`, body)
+      expect(res.status).toBe(400)
+      expect(await res.json()).toEqual({ error: expect.any(String) })
+    },
+  )
+
+  it('answers 404 when changing an unknown Todo', async () => {
+    expect((await patch('/api/todos/zzzzz', { priority: 'high' })).status).toBe(404)
+  })
+
+  it('lists the Tags in use', async () => {
+    await post('/api/todos', { title: 'One #infra #api' })
+    await post('/api/todos', { title: 'Two #auth' })
+    expect(await json<string[]>(get('/api/tags'))).toEqual(['api', 'auth', 'infra'])
   })
 
   it('Drops a Todo with an optional reason, lists it as finished, and reopens it (Undo)', async () => {
@@ -142,7 +185,7 @@ describe('Todo routes', () => {
     expect(await res.json()).toEqual({ error: expect.any(String) })
   })
 
-  it.each([[{}], [{ title: '   ' }], [{ title: 42 }]])('rejects %j as a new Todo', async (body) => {
+  it.each([[{}], [{ title: '   ' }], [{ title: 42 }], [{ title: '#auth *high' }]])('rejects %j as a new Todo', async (body) => {
     const res = await post('/api/todos', body)
     expect(res.status).toBe(400)
     expect(await res.json()).toEqual({ error: expect.any(String) })

@@ -17,11 +17,14 @@ export async function request<T>(path: string, init?: RequestInit): Promise<T> {
   return body
 }
 
-export const post = <T>(path: string, body?: unknown) =>
+const send = <T>(method: string, path: string, body?: unknown) =>
   request<T>(path, {
-    method: 'POST',
+    method,
     ...(body !== undefined && { headers: { 'content-type': 'application/json' }, body: JSON.stringify(body) }),
   })
+
+export const post = <T>(path: string, body?: unknown) => send<T>('POST', path, body)
+export const patch = <T>(path: string, body: unknown) => send<T>('PATCH', path, body)
 
 /** TanStack Query retry policy: retry a dropped connection a couple of times, never an answer such as a broken file. */
 export const retryUnanswered = (failures: number, error: Error) => !(error instanceof ApiError) && failures < 2

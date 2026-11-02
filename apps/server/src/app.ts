@@ -4,7 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
-import { todoRoutes } from './todos.ts'
+import { tagRoutes, todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -50,6 +50,7 @@ export function createApp({ webDist, content = {}, credentials = {}, onContentCh
 
   app.get('/api/health', (c) => c.json({ ok: true }))
   app.route('/api/todos', todoRoutes(content))
+  app.route('/api/tags', tagRoutes(content))
 
   // Read on each request, so the Settings view shows edits to config.yml without a restart.
   app.get('/api/settings', async (c) => {

@@ -10,10 +10,12 @@ export {
   SubTodoSchema,
   TODO_STATUSES,
   TodoSchema,
+  TodoChangeSchema,
   TodosFileSchema,
   type DropTodo,
   type FinishedQuery,
   type NewTodo,
+  type TodoChange,
   type Priority,
   type SubTodo,
   type Todo,
@@ -22,17 +24,30 @@ export {
 } from './todo-schema.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export {
+  normalizeTag,
+  pullCompletedTokens,
+  pullTokens,
+  suggestTokens,
+  type Pulled,
+  type TokenPriority,
+  type TokenProps,
+  type TokenSuggestion,
+} from './todo-tokens.ts'
+export {
   addTodo,
   completeTodo,
   deleteTodo,
   dropTodo,
   listFinishedTodos,
+  listTags,
   listTodos,
   reopenTodo,
   restoreTodo,
   TodoExistsError,
+  TodoInputError,
   TodoNotFoundError,
   TodosFileError,
+  updateTodo,
   type TodoOptions,
 } from './todos.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'

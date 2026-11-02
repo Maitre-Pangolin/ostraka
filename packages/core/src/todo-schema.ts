@@ -45,9 +45,31 @@ export type SubTodo = z.infer<typeof SubTodoSchema>
 export type Todo = z.infer<typeof TodoSchema>
 export type TodosFile = z.infer<typeof TodosFileSchema>
 
-/** What adding a Todo takes. Quick-entry tokens come later; for now the title is kept as typed. */
-export const NewTodoSchema = z.strictObject({ title: fields.title })
+/**
+ * What adding a Todo takes. `#tag`, `*prio` and `^date` tokens in the title and description become properties on
+ * add; `tags`, `priority` and `due` are properties already pulled out while typing.
+ */
+export const NewTodoSchema = z.strictObject({
+  title: fields.title,
+  description: z.string().optional(),
+  tags: fields.tags.optional(),
+  priority: fields.priority.optional(),
+  due: fields.due,
+})
 export type NewTodo = z.infer<typeof NewTodoSchema>
+
+/**
+ * A change to a Todo: only the fields given change. Tokens in a new title or description apply as on add.
+ * `due: null` clears the date; an empty description removes it.
+ */
+export const TodoChangeSchema = z.strictObject({
+  title: fields.title.optional(),
+  description: z.string().optional(),
+  tags: fields.tags.optional(),
+  priority: fields.priority.optional(),
+  due: fields.due.unwrap().nullable().optional(),
+})
+export type TodoChange = z.infer<typeof TodoChangeSchema>
 
 /** What Dropping a Todo takes: an optional reason, which can be skipped (blank counts as skipped). */
 export const DropTodoSchema = z.strictObject({ reason: z.string().optional() })

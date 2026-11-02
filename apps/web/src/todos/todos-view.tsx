@@ -1,5 +1,5 @@
-import { Ban, ChevronRight, CornerDownLeft, Trash2 } from 'lucide-react'
-import { useState, type FormEvent } from 'react'
+import { Ban, ChevronRight, Trash2 } from 'lucide-react'
+import { useState } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -9,7 +9,6 @@ import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/shell/shell'
 import {
-  useAddTodo,
   useCompleteTodo,
   useDeleteTodo,
   useDropTodo,
@@ -17,8 +16,13 @@ import {
   useOpenTodos,
   useReopenTodo,
   useRestoreTodo,
+  useTags,
+  useUpdateTodo,
   type Todo,
 } from './api'
+import { useToday } from './due'
+import { QuickEntry } from './quick-entry'
+import { TodoRow } from './todo-row'
 
 /** The Todos view: quick entry on top, open Todos below in their automatic order, Done & Dropped collapsed last. */
 export function TodosView() {
@@ -34,47 +38,20 @@ export function TodosView() {
   )
 }
 
-/** Type a title, ↵ adds it. The field clears at once so the next Todo can follow; a failed add puts the text back. */
-function QuickEntry() {
-  const [title, setTitle] = useState('')
-  const add = useAddTodo()
-
-  const submit = (event: FormEvent) => {
-    event.preventDefault()
-    const typed = title.trim()
-    if (!typed) return
-    setTitle('')
-    add.mutate({ title: typed }, { onError: () => setTitle((current) => current || typed) })
-  }
-
-  return (
-    <form onSubmit={submit} className="flex flex-col gap-1">
-      <div className="bg-card focus-within:border-ring focus-within:ring-ring/50 flex h-9 items-center gap-2 rounded-lg border px-2.5 focus-within:ring-3">
-        <input
-          autoFocus
-          value={title}
-          onChange={(event) => setTitle(event.target.value)}
-          aria-label="New Todo"
-          placeholder="Add a Todo"
-          className="placeholder:text-muted-foreground min-w-0 flex-1 bg-transparent text-sm outline-none"
-        />
-        {title.trim() && <CornerDownLeft aria-hidden className="text-muted-foreground size-3.5 shrink-0" />}
-      </div>
-      {add.error && <p className="text-destructive px-1 text-xs">Couldn’t add the Todo: {add.error.message}</p>}
-    </form>
-  )
-}
-
 const UNDO_TOAST = { duration: 5000 } as const
 
 function OpenTodos() {
   const { data: todos, error, isPending } = useOpenTodos()
+  const tags = useTags().data ?? []
   const complete = useCompleteTodo()
   const drop = useDropTodo()
   const remove = useDeleteTodo()
   const reopen = useReopenTodo()
   const restore = useRestoreTodo()
+  const update = useUpdateTodo()
+  const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set())
   const showSkeleton = useAfter(300, isPending)
+  const today = useToday()
 
   if (error) return <p className="text-destructive px-1 text-sm break-words">Couldn’t load Todos: {error.message}</p>
   if (isPending) return showSkeleton ? <SkeletonRows /> : null
@@ -93,7 +70,14 @@ function OpenTodos() {
     toast('Todo deleted', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => restore.mutate(todo) } })
   }
 
-  const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error
+  const toggle = (id: string) =>
+    setOpenIds((ids) => {
+      const next = new Set(ids)
+      if (!next.delete(id)) next.add(id)
+      return next
+    })
+
+  const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error ?? update.error
   return (
     <>
       {changeError && <p className="text-destructive px-1 text-xs">{changeError.message}</p>}
@@ -102,37 +86,17 @@ function OpenTodos() {
           <TodoRow
             key={todo.id}
             todo={todo}
+            open={openIds.has(todo.id)}
+            onToggle={() => toggle(todo.id)}
             onDone={() => markDone(todo)}
-            onDrop={(reason) => markDropped(todo, reason)}
-            onDelete={() => deleteForGood(todo)}
+            onChange={(change) => update.mutate({ id: todo.id, change })}
+            tags={tags}
+            today={today}
+            actions={<DropOrDelete todo={todo} onDrop={(reason) => markDropped(todo, reason)} onDelete={() => deleteForGood(todo)} />}
           />
         ))}
       </ul>
     </>
-  )
-}
-
-const PRIORITY_RING: Record<Todo['priority'], string> = {
-  high: 'border-prio-high',
-  medium: 'border-prio-med',
-  low: 'border-prio-low',
-  none: '',
-}
-
-type TodoRowProps = { todo: Todo; onDone: () => void; onDrop: (reason: string) => void; onDelete: () => void }
-
-function TodoRow({ todo, onDone, onDrop, onDelete }: TodoRowProps) {
-  return (
-    <li className="group/row hover:bg-muted/70 flex min-h-8 items-center gap-2 rounded-md px-1.5">
-      <Checkbox
-        checked={false}
-        onCheckedChange={onDone}
-        aria-label={`Mark “${todo.title}” done`}
-        className={cn('rounded-full', PRIORITY_RING[todo.priority])}
-      />
-      <span className="min-w-0 flex-1 truncate text-sm">{todo.title}</span>
-      <DropOrDelete todo={todo} onDrop={onDrop} onDelete={onDelete} />
-    </li>
   )
 }
 
