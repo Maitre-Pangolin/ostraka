@@ -1,4 +1,5 @@
 import {
+  addSubTodo,
   addTodo,
   completeTodo,
   deleteTodo,
@@ -10,7 +11,9 @@ import {
   listTodos,
   NewTodoSchema,
   reopenTodo,
+  restoreSubTodo,
   restoreTodo,
+  SubTodoSchema,
   TodoChangeSchema,
   TodoExistsError,
   TodoInputError,
@@ -45,8 +48,9 @@ function onTodoError(error: Error, c: Context) {
 }
 
 /**
- * `/api/todos`: list open and finished Todos, add one, change one, mark one done, Drop one, reopen one (Undo of done
- * or Drop), delete one and restore it (Undo of delete). All writes go through core.
+ * `/api/todos`: list open and finished Todos, add one or a Sub-todo under one, change one, mark one done, Drop one,
+ * reopen one (Undo of done or Drop), delete one and restore it (Undo of delete). Every action on a Todo works on a
+ * Sub-todo by its id, and finishing a parent finishes its open Sub-todos. All writes go through core.
  */
 export function todoRoutes(options: TodoOptions) {
   const routes = new Hono()
@@ -71,6 +75,18 @@ export function todoRoutes(options: TodoOptions) {
     const body = await readBody(c, TodoSchema)
     if (!body.ok) return body.response
     return c.json(await restoreTodo(body.data, options), 201)
+  })
+
+  routes.post('/:id/sub-todos', async (c) => {
+    const body = await readBody(c, NewTodoSchema)
+    if (!body.ok) return body.response
+    return c.json(await addSubTodo(c.req.param('id'), body.data, options), 201)
+  })
+
+  routes.post('/:id/sub-todos/restore', async (c) => {
+    const body = await readBody(c, SubTodoSchema)
+    if (!body.ok) return body.response
+    return c.json(await restoreSubTodo(c.req.param('id'), body.data, options), 201)
   })
 
   routes.post('/:id/done', async (c) => c.json(await completeTodo(c.req.param('id'), options)))
