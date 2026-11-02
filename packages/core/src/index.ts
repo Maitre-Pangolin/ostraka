@@ -18,3 +18,4 @@ export {
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from './todos.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
+export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
