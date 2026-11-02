@@ -28,7 +28,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 ## Colour and theme
 
-- Use semantic colour tokens only: `bg-background`, `text-foreground`, `bg-muted`, `text-muted-foreground`, `bg-primary`, `border`, `ring`, `destructive`, and the app tokens `today`, `prio-*`, `tag-1`…`tag-8`. Raw Tailwind palette colours and hex values stay out of components.
+- Use semantic colour tokens only: `bg-background`, `text-foreground`, `bg-muted`, `text-muted-foreground`, `bg-primary`, `border`, `ring`, `destructive`, and the app tokens `today`, `warning`, `prio-*`, `tag-1`…`tag-8`. Raw Tailwind palette colours and hex values stay out of components.
 - Tokens live in `src/index.css`: values under `:root` (light) and `.dark`, exposed to Tailwind in `@theme inline`. A new token gets a light value, a dark value and a `@theme inline` line.
 - Light/dark is the `.dark` class on `<html>`, defaulting to light. Theme and density are per-browser choices handled by `src/shell/appearance.tsx`.
 
@@ -39,7 +39,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Single-item done, Drop or delete happens at once, with a 5-second Undo toast: sonner's `toast(what happened, { description: item title, duration: 5000, action: { label: 'Undo', … } })`, as in `src/todos/todos-view.tsx`. The `<Toaster />` lives in the shell. Undo of a delete posts the item back as it was (`useRestoreTodo`).
 - Row actions that would clutter the list (Drop or delete) sit at the row's end, shown on row hover or keyboard focus (`group/row`, `opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100`), and open a Popover, as `DropOrDelete` in `src/todos/todos-view.tsx`. An optional field in it (the Drop reason) is skippable: ↵ on the empty field still acts.
 - Finished items (Done & Dropped) are kept, in a section collapsed by default below the open ones: a muted disclosure button with a chevron and the count, `aria-expanded`. Finished rows are muted and struck through, show when they finished, and reopen from their checkbox or Dropped icon.
-- A confirmation Dialog guards only bulk or hard-to-reverse changes (merging Tags, finishing a parent with open Sub-todos).
+- A confirmation Dialog guards only bulk or hard-to-reverse changes (merging Tags, finishing a parent with open Sub-todos). It says what will happen and how to undo it, has Cancel and one primary action, and no close button (`FinishParentDialog` in `src/todos/todos-view.tsx`).
 - Toasts exist only for Undo.
 - Read-only settings sit in bordered definition lists, label then value (monospace for paths, URLs and ids), as in `src/settings/settings-view.tsx`. Settings has no form: `config.yml` is edited by hand.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.
@@ -47,6 +47,10 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Tags show as pills coloured `tag-1`…`tag-8` (`TagPill`), with × where one can be removed. Below `@md` a collapsed row shows them as dots.
 - A due date reads relative to today (`DueText`): overdue is highlighted strongly (`destructive` pill), due today lightly (`today` text).
 - An expanded row edits its text in place and shows no empty field: a description appears only once there is one, or after ⇧↵ in the title, and closes again when emptied.
+- Sub-todos (`src/todos/sub-todos.tsx`) show only under their expanded parent, in creation order, along a `border`-coloured guide line from the parent's checkbox, with an "Add a Sub-todo" entry last. Open ones are full `TodoRow`s; finished ones stay in place, muted and struck through. A collapsed parent shows a `ListTree` indicator with finished/total.
+- A warning on an item is a `TriangleAlert` in `warning` colour before its due date, carrying its text as a title and for screen readers (a Sub-todo due after its parent).
+- An offer the app must not act on by itself (finishing a parent once its last open Sub-todo is finished) is one muted inline line where it applies, with a secondary action and "Not now". It is never a toast or a Dialog.
+- A list with expandable rows has Expand all / Collapse all at its top right (ghost `xs` button); it reads Collapse all while any row is expanded.
 
 ## Quick-entry tokens
 

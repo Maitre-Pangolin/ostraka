@@ -1,8 +1,9 @@
-import { Ban, ChevronRight, Trash2 } from 'lucide-react'
-import { useState } from 'react'
+import { Ban, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from 'lucide-react'
+import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverTrigger } from '@/components/ui/popover'
 import { useAfter } from '@/lib/use-after'
@@ -18,10 +19,12 @@ import {
   useRestoreTodo,
   useTags,
   useUpdateTodo,
+  type SubTodo,
   type Todo,
 } from './api'
 import { useToday } from './due'
 import { QuickEntry } from './quick-entry'
+import { SubTodos } from './sub-todos'
 import { TodoRow } from './todo-row'
 
 /** The Todos view: quick entry on top, open Todos below in their automatic order, Done & Dropped collapsed last. */
@@ -40,6 +43,18 @@ export function TodosView() {
 
 const UNDO_TOAST = { duration: 5000 } as const
 
+type Finish = { status: 'done' | 'dropped'; reason?: string }
+
+/** Finishing a parent with open Sub-todos waits for this confirmation. */
+type PendingFinish = Finish & { todo: Todo; openSubTodos: number }
+
+const toggled = (ids: ReadonlySet<string>, id: string, on?: boolean) => {
+  const next = new Set(ids)
+  if (on ?? !next.has(id)) next.add(id)
+  else next.delete(id)
+  return next
+}
+
 function OpenTodos() {
   const { data: todos, error, isPending } = useOpenTodos()
   const tags = useTags().data ?? []
@@ -50,6 +65,9 @@ function OpenTodos() {
   const restore = useRestoreTodo()
   const update = useUpdateTodo()
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set())
+  // Parents whose last open Sub-todo was just finished: they offer to be marked done.
+  const [offers, setOffers] = useState<ReadonlySet<string>>(new Set())
+  const [pending, setPending] = useState<PendingFinish | null>(null)
   const showSkeleton = useAfter(300, isPending)
   const today = useToday()
 
@@ -57,51 +75,147 @@ function OpenTodos() {
   if (isPending) return showSkeleton ? <SkeletonRows /> : null
   if (!todos.length) return <EmptyState>No open Todos. Type one above and press ↵ to add it.</EmptyState>
 
-  const markDone = (todo: Todo) => {
-    complete.mutate(todo.id)
-    toast('Todo done', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => reopen.mutate(todo.id) } })
+  /** Done or Drop at once, with Undo. Finishing the last open Sub-todo makes its parent offer to be marked done. */
+  const finishNow = (item: SubTodo, { status, reason }: Finish, parent?: Todo) => {
+    if (status === 'done') complete.mutate(item.id)
+    else drop.mutate({ id: item.id, reason })
+    const what = `${parent ? 'Sub-todo' : 'Todo'} ${status === 'done' ? 'done' : 'Dropped'}`
+    toast(what, { ...UNDO_TOAST, description: item.title, action: { label: 'Undo', onClick: () => reopen.mutate(item.id) } })
+    if (parent?.subTodos.every((sub) => sub.id === item.id || sub.status !== 'open')) setOffers((ids) => toggled(ids, parent.id, true))
   }
-  const markDropped = (todo: Todo, reason: string) => {
-    drop.mutate({ id: todo.id, reason })
-    toast('Todo Dropped', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => reopen.mutate(todo.id) } })
+  /** A parent with open Sub-todos asks first, since they are finished with it. */
+  const finish = (item: SubTodo | Todo, how: Finish, parent?: Todo) => {
+    const openSubTodos = 'subTodos' in item ? item.subTodos.filter((sub) => sub.status === 'open').length : 0
+    if ('subTodos' in item && openSubTodos > 0) setPending({ ...how, todo: item, openSubTodos })
+    else finishNow(item, how, parent)
   }
-  const deleteForGood = (todo: Todo) => {
-    remove.mutate(todo.id)
-    toast('Todo deleted', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => restore.mutate(todo) } })
-  }
-
-  const toggle = (id: string) =>
-    setOpenIds((ids) => {
-      const next = new Set(ids)
-      if (!next.delete(id)) next.add(id)
-      return next
+  const deleteForGood = (item: SubTodo | Todo, parent?: Todo) => {
+    remove.mutate(item.id)
+    toast(parent ? 'Sub-todo deleted' : 'Todo deleted', {
+      ...UNDO_TOAST,
+      description: item.title,
+      action: { label: 'Undo', onClick: () => restore.mutate({ todo: item, parentId: parent?.id }) },
     })
+  }
 
+  const row = (item: SubTodo | Todo, parent?: Todo, warning?: string, children?: ReactNode) => (
+    <TodoRow
+      key={item.id}
+      todo={item}
+      open={openIds.has(item.id)}
+      onToggle={() => setOpenIds((ids) => toggled(ids, item.id))}
+      onDone={() => finish(item, { status: 'done' }, parent)}
+      onChange={(change) => update.mutate({ id: item.id, change })}
+      tags={tags}
+      today={today}
+      warning={warning}
+      actions={
+        <DropOrDelete
+          todo={item}
+          onDrop={(reason) => finish(item, { status: 'dropped', reason }, parent)}
+          onDelete={() => deleteForGood(item, parent)}
+        />
+      }
+    >
+      {children}
+    </TodoRow>
+  )
+
+  const dismissOffer = (id: string) => setOffers((ids) => toggled(ids, id, false))
   const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error ?? update.error
   return (
     <>
+      <div className="flex items-center justify-end">
+        <Button
+          size="xs"
+          variant="ghost"
+          className="text-muted-foreground"
+          onClick={() => setOpenIds(openIds.size ? new Set() : new Set(todos.map((todo) => todo.id)))}
+        >
+          {openIds.size ? <ChevronsDownUp /> : <ChevronsUpDown />}
+          {openIds.size ? 'Collapse all' : 'Expand all'}
+        </Button>
+      </div>
       {changeError && <p className="text-destructive px-1 text-xs">{changeError.message}</p>}
       <ul className="flex flex-col">
-        {todos.map((todo) => (
-          <TodoRow
-            key={todo.id}
-            todo={todo}
-            open={openIds.has(todo.id)}
-            onToggle={() => toggle(todo.id)}
-            onDone={() => markDone(todo)}
-            onChange={(change) => update.mutate({ id: todo.id, change })}
-            tags={tags}
-            today={today}
-            actions={<DropOrDelete todo={todo} onDrop={(reason) => markDropped(todo, reason)} onDelete={() => deleteForGood(todo)} />}
-          />
-        ))}
+        {todos.map((todo) =>
+          row(
+            todo,
+            undefined,
+            undefined,
+            <SubTodos
+              parent={todo}
+              tags={tags}
+              today={today}
+              renderOpen={(sub, warning) => row(sub, todo, warning)}
+              onReopen={(sub) => reopen.mutate(sub.id)}
+              offer={
+                offers.has(todo.id)
+                  ? {
+                      onAccept: () => {
+                        dismissOffer(todo.id)
+                        finishNow(todo, { status: 'done' })
+                      },
+                      onDismiss: () => dismissOffer(todo.id),
+                    }
+                  : undefined
+              }
+            />,
+          ),
+        )}
       </ul>
+      <FinishParentDialog
+        pending={pending}
+        onCancel={() => setPending(null)}
+        onConfirm={() => {
+          if (pending) finishNow(pending.todo, pending)
+          setPending(null)
+        }}
+      />
     </>
   )
 }
 
+/** Confirms finishing a parent together with its open Sub-todos. */
+function FinishParentDialog({
+  pending,
+  onCancel,
+  onConfirm,
+}: {
+  pending: PendingFinish | null
+  onCancel: () => void
+  onConfirm: () => void
+}) {
+  // Kept while the Dialog closes, so its text doesn't vanish mid-animation.
+  const [shown, setShown] = useState(pending)
+  if (pending && pending !== shown) setShown(pending)
+  const done = shown?.status === 'done'
+  const count = shown?.openSubTodos ?? 0
+  const subTodos = count === 1 ? '1 open Sub-todo' : `${count} open Sub-todos`
+  return (
+    <Dialog open={pending !== null} onOpenChange={(open) => !open && onCancel()}>
+      <DialogContent showCloseButton={false}>
+        <DialogHeader>
+          <DialogTitle>{done ? 'Mark done with its Sub-todos?' : 'Drop with its Sub-todos?'}</DialogTitle>
+          <DialogDescription>
+            “{shown?.todo.title}” has {subTodos}, {done ? 'to be marked done' : 'to be Dropped'} with it. Undo reopens them together.
+          </DialogDescription>
+        </DialogHeader>
+        <DialogFooter>
+          <Button variant="outline" onClick={onCancel}>
+            Cancel
+          </Button>
+          <Button autoFocus onClick={onConfirm}>
+            {done ? 'Mark all done' : 'Drop all'}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  )
+}
+
 /** The row's Drop or delete Popover: an optional reason, ↵ or Drop to Drop it, Delete to remove a mistake. */
-function DropOrDelete({ todo, onDrop, onDelete }: { todo: Todo; onDrop: (reason: string) => void; onDelete: () => void }) {
+function DropOrDelete({ todo, onDrop, onDelete }: { todo: SubTodo; onDrop: (reason: string) => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
 
