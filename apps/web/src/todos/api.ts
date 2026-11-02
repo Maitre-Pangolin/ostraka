@@ -1,10 +1,12 @@
 // Todos over the server API, as TanStack Query hooks. The server sorts; the cache holds its answer as is.
 import { defaultTagColor, type Tag, type TagColor } from '@ostraka/core/tag-color'
-import type { DropTodo, NewTodo, Todo, TodoChange } from '@ostraka/core/todo-schema'
+import type { DropTodo, NewTodo, Todo as StoredTodo, TodoChange } from '@ostraka/core/todo-schema'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
-import { patch, post, request } from '@/lib/api'
+import { patch, post, remove, request } from '@/lib/api'
 
-export type { Tag, TagColor, Todo, TodoChange }
+/** A Todo as the server answers it, with the version a change made from this copy sends back. */
+export type Todo = StoredTodo & { version: string }
+export type { Tag, TagColor, TodoChange }
 
 const TODOS = ['todos'] as const
 const OPEN_TODOS = ['todos', 'open'] as const
@@ -61,8 +63,10 @@ function changed(todo: Todo, change: TodoChange): Todo {
 export function useUpdateTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, change }: { id: string; change: TodoChange }) => patch<Todo>(`/todos/${id}`, change),
-    onMutate: async ({ id, change }) => {
+    // One edit at a time, so each goes on from the version the one before it left.
+    scope: { id: 'todo-edits' },
+    mutationFn: ({ todo: { id, version }, change }: { todo: Todo; change: TodoChange }) => patch<Todo>(`/todos/${id}`, change, { version }),
+    onMutate: async ({ todo: { id }, change }) => {
       await queryClient.cancelQueries({ queryKey: OPEN_TODOS })
       const before = queryClient.getQueryData<Todo[]>(OPEN_TODOS)
       queryClient.setQueryData<Todo[]>(OPEN_TODOS, (todos) => todos?.map((todo) => (todo.id === id ? changed(todo, change) : todo)))
@@ -96,8 +100,8 @@ function immediate<T>(queryClient: QueryClient, lists: (readonly string[])[], id
 export function useCompleteTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => post<Todo>(`/todos/${id}/done`),
-    ...immediate(queryClient, [OPEN_TODOS], (id: string) => id),
+    mutationFn: ({ id, version }: Todo) => post<Todo>(`/todos/${id}/done`, undefined, { version }),
+    ...immediate(queryClient, [OPEN_TODOS], (todo: Todo) => todo.id),
   })
 }
 
@@ -105,8 +109,8 @@ export function useCompleteTodo() {
 export function useDropTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ id, ...input }: DropTodo & { id: string }) => post<Todo>(`/todos/${id}/drop`, input),
-    ...immediate(queryClient, [OPEN_TODOS], ({ id }: { id: string }) => id),
+    mutationFn: ({ todo: { id, version }, ...input }: DropTodo & { todo: Todo }) => post<Todo>(`/todos/${id}/drop`, input, { version }),
+    ...immediate(queryClient, [OPEN_TODOS], ({ todo }: { todo: Todo }) => todo.id),
   })
 }
 
@@ -114,8 +118,8 @@ export function useDropTodo() {
 export function useDeleteTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => request<Todo>(`/todos/${id}`, { method: 'DELETE' }),
-    ...immediate(queryClient, [OPEN_TODOS, FINISHED_TODOS], (id: string) => id),
+    mutationFn: ({ id, version }: Todo) => remove<Todo>(`/todos/${id}`, { version }),
+    ...immediate(queryClient, [OPEN_TODOS, FINISHED_TODOS], (todo: Todo) => todo.id),
   })
 }
 
@@ -123,8 +127,8 @@ export function useDeleteTodo() {
 export function useReopenTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (id: string) => post<Todo>(`/todos/${id}/reopen`),
-    ...immediate(queryClient, [FINISHED_TODOS], (id: string) => id),
+    mutationFn: ({ id, version }: Todo) => post<Todo>(`/todos/${id}/reopen`, undefined, { version }),
+    ...immediate(queryClient, [FINISHED_TODOS], (todo: Todo) => todo.id),
   })
 }
 

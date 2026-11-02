@@ -14,11 +14,13 @@ import {
   type NewTodo,
   reopenTodo,
   restoreTodo,
+  StaleVersionError,
   TodoExistsError,
   TodoInputError,
   TodoNotFoundError,
   TagsFileError,
   TodosFileError,
+  todoVersion,
   updateTodo,
   type TodoOptions,
 } from '../src/index.ts'
@@ -495,5 +497,30 @@ describe('listFinishedTodos', () => {
   it('rejects a day that is not YYYY-MM-DD', async () => {
     await expect(listFinishedTodos({ finishedOn: '2/11/2026' }, options)).rejects.toThrow(/YYYY-MM-DD/)
     await expect(listFinishedTodos({ finishedOn: '2026-02-30' }, options)).rejects.toThrow(/real day/)
+  })
+})
+
+describe('changing a Todo from a loaded copy', () => {
+  it('refuses when the Todo changed on disk since it was loaded, leaving the file as it is', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    const agentEdit = (await readFile(todosFile(), 'utf8')).replace('"Call Bob"', '"Call Bob about the contract"')
+    await writeFile(todosFile(), agentEdit)
+
+    await expect(completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(dropTodo(loaded.id, {}, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(deleteTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(updateTodo(loaded.id, { title: 'Call Bobby' }, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(
+      StaleVersionError,
+    )
+    expect(await readFile(todosFile(), 'utf8')).toBe(agentEdit)
+  })
+
+  it('goes ahead when the loaded copy is current, whatever happened to other Todos', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    await addTodo({ title: 'Added by an agent' }, options)
+    const done = await completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })
+    expect(done.status).toBe('done')
+    expect(await reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(done) })).toEqual(loaded)
   })
 })

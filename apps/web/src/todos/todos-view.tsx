@@ -7,6 +7,7 @@ import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverTrigger } from '@/components/ui/popover'
+import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/shell/shell'
@@ -50,6 +51,23 @@ export function TodosView() {
 
 const UNDO_TOAST = { duration: 5000 } as const
 
+/**
+ * A change made at once, with an Undo toast. Undo works from the Todo the server answered, so it carries the new
+ * version. A failed change (say, the Todo changed elsewhere) shows in place instead, and its toast goes.
+ */
+function withUndo(what: string, todo: Todo, change: Promise<Todo>, undo: (changed: Todo) => void) {
+  let changed: Promise<Todo | undefined> = Promise.resolve(undefined)
+  const toastId = toast(what, {
+    ...UNDO_TOAST,
+    description: todo.title,
+    action: { label: 'Undo', onClick: () => void changed.then((result) => result && undo(result)) },
+  })
+  changed = change.catch(() => {
+    toast.dismiss(toastId)
+    return undefined
+  })
+}
+
 function OpenTodos({ filter }: { filter: TodoFilter }) {
   const { data: todos, error, isPending } = useOpenTodos()
   const tags = useTagNames()
@@ -71,16 +89,13 @@ function OpenTodos({ filter }: { filter: TodoFilter }) {
   if (!shown.length) return <EmptyState>No open Todos match these filters. Remove one, or clear all.</EmptyState>
 
   const markDone = (todo: Todo) => {
-    complete.mutate(todo.id)
-    toast('Todo done', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => reopen.mutate(todo.id) } })
+    withUndo('Todo done', todo, complete.mutateAsync(todo), (done) => reopen.mutate(done))
   }
   const markDropped = (todo: Todo, reason: string) => {
-    drop.mutate({ id: todo.id, reason })
-    toast('Todo Dropped', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => reopen.mutate(todo.id) } })
+    withUndo('Todo Dropped', todo, drop.mutateAsync({ todo, reason }), (dropped) => reopen.mutate(dropped))
   }
   const deleteForGood = (todo: Todo) => {
-    remove.mutate(todo.id)
-    toast('Todo deleted', { ...UNDO_TOAST, description: todo.title, action: { label: 'Undo', onClick: () => restore.mutate(todo) } })
+    withUndo('Todo deleted', todo, remove.mutateAsync(todo), (deleted) => restore.mutate(deleted))
   }
 
   const toggle = (id: string) =>
@@ -93,7 +108,12 @@ function OpenTodos({ filter }: { filter: TodoFilter }) {
   const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error ?? update.error
   return (
     <>
-      {changeError && <p className="text-destructive px-1 text-xs">{changeError.message}</p>}
+      {changeError && (
+        <p className="text-destructive px-1 text-xs">
+          {changeError.message}
+          {isStale(changeError) && ' Showing the newer version.'}
+        </p>
+      )}
       <ul className="flex flex-col">
         {shown.map(({ todo, dimmed, subTodos }) => (
           <TodoRow
@@ -103,7 +123,7 @@ function OpenTodos({ filter }: { filter: TodoFilter }) {
             open={openIds.has(todo.id)}
             onToggle={() => toggle(todo.id)}
             onDone={() => markDone(todo)}
-            onChange={(change) => update.mutate({ id: todo.id, change })}
+            onChange={(change) => update.mutate({ todo, change })}
             tags={tags}
             today={today}
             actions={<DropOrDelete todo={todo} onDrop={(reason) => markDropped(todo, reason)} onDelete={() => deleteForGood(todo)} />}
@@ -191,10 +211,15 @@ function FinishedTodos({ filter }: { filter: TodoFilter }) {
       </button>
       {expanded && (
         <>
-          {reopen.error && <p className="text-destructive px-1 text-xs">{reopen.error.message}</p>}
+          {reopen.error && (
+            <p className="text-destructive px-1 text-xs">
+              {reopen.error.message}
+              {isStale(reopen.error) && ' Showing the newer version.'}
+            </p>
+          )}
           <ul className="flex flex-col">
             {shown.map(({ todo, dimmed, subTodos }) => (
-              <FinishedRow key={todo.id} todo={todo} dimmed={dimmed} onReopen={() => reopen.mutate(todo.id)}>
+              <FinishedRow key={todo.id} todo={todo} dimmed={dimmed} onReopen={() => reopen.mutate(todo)}>
                 {filtering && <SubTodoLines subTodos={subTodos} today={today} />}
               </FinishedRow>
             ))}

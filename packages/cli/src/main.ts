@@ -10,6 +10,7 @@ import {
   isContentKind,
   listFinishedTodos,
   listTodos,
+  snapshot,
   type Todo,
 } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
@@ -40,12 +41,16 @@ const TODO_USAGE = `  ostraka todo add <title> [--json]
                                 List the Todos done or Dropped that day, newest first
 `
 
+const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
+                                Commit the content folder now (after an agent writes)
+`
+
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}`
+${TODO_USAGE}${SNAPSHOT_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -58,6 +63,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await serve(io)
       case 'install':
         return await install(io)
+      case 'snapshot':
+        return await snapshotCommand(rest, io)
       case 'todo':
         return await todoCommand(rest, io)
       default:
@@ -144,11 +151,25 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   return 1
 }
 
+async function snapshotCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
+  const [message] = positionals
+  if (message === undefined || message.trim() === '' || positionals.length > 1) {
+    io.stderr(`Usage:\n${SNAPSHOT_USAGE}`)
+    return 1
+  }
+  const made = await snapshot(message, { env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (values.json) io.stdout(`${JSON.stringify(made ?? null, null, 2)}\n`)
+  else io.stdout(made ? `Snapshot ${made.commit.slice(0, 7)}  ${made.message}\n` : 'Nothing changed since the last Snapshot.\n')
+  return 0
+}
+
 async function serve(io: Io): Promise<number> {
   // macOS may prompt once per Keychain item here: they are created with `-T ""` so every read asks.
   const server = await startServer({ keychain: macKeychain(), warn: (message) => io.stderr(`${message}\n`) })
   io.stdout(`Ostraka is running on http://${HOSTNAME}:${PORT}\n`)
-  const stop = () => server.close()
+  // Stopping commits pending content changes as a Snapshot before the process exits.
+  const stop = () => void server.stop()
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
   return 0

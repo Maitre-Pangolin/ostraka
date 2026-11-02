@@ -15,7 +15,7 @@ export type TodoFilter = {
  * A Todo the filter keeps, with its matching Sub-todos. `dimmed` marks a parent that doesn't match itself and is
  * there only for context around them.
  */
-export type FilteredTodo = { todo: Todo; dimmed: boolean; subTodos: SubTodo[] }
+export type FilteredTodo<T extends Todo = Todo> = { todo: T; dimmed: boolean; subTodos: SubTodo[] }
 
 function matches(todo: SubTodo, { priority = [], tag = [], match }: TodoFilter): boolean {
   const hasTag = (name: string) => todo.tags.includes(name)
@@ -50,7 +50,7 @@ export function parseTodoFilter(search: Record<string, unknown>): TodoFilter {
 }
 
 /** The Todos the filter keeps, in the order given: those that match, and parents of Sub-todos that match. */
-export function filterTodos(todos: Todo[], filter: TodoFilter): FilteredTodo[] {
+export function filterTodos<T extends Todo>(todos: T[], filter: TodoFilter): FilteredTodo<T>[] {
   return todos.flatMap((todo) => {
     const subTodos = todo.subTodos.filter((subTodo) => matches(subTodo, filter))
     const dimmed = !matches(todo, filter)
