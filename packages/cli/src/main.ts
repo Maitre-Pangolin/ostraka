@@ -1,4 +1,5 @@
 import { homedir } from 'node:os'
+import { delimiter, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
   addTodo,
@@ -11,11 +12,16 @@ import {
   listTodos,
   type Todo,
 } from '@ostraka/core'
-import { HOSTNAME, PORT, startServer } from '@ostraka/server'
+import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
+import { install as installAgent, realSystem, type System } from './install.ts'
+
+export type { System } from './install.ts'
 
 export type Io = {
   env: Record<string, string | undefined>
   homeDir?: string
+  /** launchd, node and the platform, for `install`. Tests pass a fake. */
+  system?: System
   stdout: (text: string) => void
   stderr: (text: string) => void
 }
@@ -35,6 +41,7 @@ const TODO_USAGE = `  ostraka todo add <title> [--json]
 
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
+  ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
 ${TODO_USAGE}`
@@ -48,6 +55,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await path(rest, io)
       case 'serve':
         return await serve(io)
+      case 'install':
+        return await install(io)
       case 'todo':
         return await todoCommand(rest, io)
       default:
@@ -129,10 +138,21 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
 }
 
 async function serve(io: Io): Promise<number> {
-  const server = await startServer()
+  // macOS may prompt once per Keychain item here: they are created with `-T ""` so every read asks.
+  const server = await startServer({ keychain: macKeychain(), warn: (message) => io.stderr(`${message}\n`) })
   io.stdout(`Ostraka is running on http://${HOSTNAME}:${PORT}\n`)
   const stop = () => server.close()
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
+  return 0
+}
+
+async function install(io: Io): Promise<number> {
+  const { plist, shim, logs } = await installAgent(io.homeDir ?? homedir(), io.system ?? realSystem())
+  io.stdout(`LaunchAgent: ${plist} (starts at login, restarts after a crash; logs in ${logs})\n`)
+  io.stdout(`CLI shim:    ${shim}\n`)
+  if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
+    io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
+  }
   return 0
 }

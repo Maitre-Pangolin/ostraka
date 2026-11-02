@@ -10,7 +10,8 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Add components with the shadcn CLI (`pnpm exec shadcn add <name>` from `apps/web`), then edit the copy in `src/components/ui/`. Base UI composes through the `render` prop (see `src/shell/rail.tsx`).
 - Server state comes from the API under `/api`. In development Vite proxies `/api` to `ostraka serve` on 127.0.0.1:4747, so run both. In production the server serves `dist/` from the same origin.
 - Server state lives only in TanStack Query, with no second client store. Each section keeps its queries and mutations as hooks in one `api.ts` (see `src/todos/api.ts`), calling the server through `src/lib/api.ts`. The server's answer (order included) is shown as is. An immediate change updates the cache in `onMutate`, rolls back on error, and invalidates on settle.
-- Content types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
+- Content and config types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`, `Config` from `@ostraka/core/config-schema`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
+- The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`; a changed icon updates all of them.
 
 ## Layout
 
@@ -40,6 +41,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Finished items (Done & Dropped) are kept, in a section collapsed by default below the open ones: a muted disclosure button with a chevron and the count, `aria-expanded`. Finished rows are muted and struck through, show when they finished, and reopen from their checkbox or Dropped icon.
 - A confirmation Dialog guards only bulk or hard-to-reverse changes (merging Tags, finishing a parent with open Sub-todos).
 - Toasts exist only for Undo.
+- Read-only settings sit in bordered definition lists, label then value (monospace for paths, URLs and ids), as in `src/settings/settings-view.tsx`. Settings has no form: `config.yml` is edited by hand.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.
 
 ## Keyboard
@@ -55,7 +57,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - **Empty**: one muted line naming the next action (`EmptyState` in `src/shell/shell.tsx`). No illustrations.
 - **Loading**: skeleton rows, shown only after 300 ms (`useAfter(300, isPending)` from `src/lib/use-after.ts`).
-- **Errors**: shown where they happen: a broken file in its own list, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
+- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
 
 ## Visuals and copy
 
