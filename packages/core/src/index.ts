@@ -16,4 +16,15 @@ export {
   type TodoStatus,
 } from './todo-schema.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
-export { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from './todos.ts'
+export { contentVersion, StaleVersionError } from './content-version.ts'
+export {
+  addTodo,
+  completeTodo,
+  listTodos,
+  reopenTodo,
+  TodoNotFoundError,
+  TodosFileError,
+  todoVersion,
+  type TodoChangeOptions,
+  type TodoOptions,
+} from './todos.ts'

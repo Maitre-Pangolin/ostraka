@@ -3,7 +3,17 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from '../src/index.ts'
+import {
+  addTodo,
+  completeTodo,
+  listTodos,
+  reopenTodo,
+  StaleVersionError,
+  TodoNotFoundError,
+  TodosFileError,
+  todoVersion,
+  type TodoOptions,
+} from '../src/index.ts'
 
 let contentRoot: string
 let options: TodoOptions
@@ -233,5 +243,25 @@ describe('reopenTodo', () => {
     await completeTodo(todo.id, options)
     expect(await reopenTodo(todo.id, options)).toEqual(todo)
     expect(await listTodos(options)).toEqual([todo])
+  })
+})
+
+describe('changing a Todo from a loaded copy', () => {
+  it('refuses when the Todo changed on disk since it was loaded, leaving the file as it is', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    const agentEdit = (await readFile(todosFile(), 'utf8')).replace('"Call Bob"', '"Call Bob about the contract"')
+    await writeFile(todosFile(), agentEdit)
+
+    await expect(completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    expect(await readFile(todosFile(), 'utf8')).toBe(agentEdit)
+  })
+
+  it('goes ahead when the loaded copy is current, whatever happened to other Todos', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    await addTodo({ title: 'Added by an agent' }, options)
+    const done = await completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })
+    expect(done.status).toBe('done')
+    expect(await reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(done) })).toEqual(loaded)
   })
 })
