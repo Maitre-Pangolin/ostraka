@@ -1,5 +1,6 @@
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import { EmptyState, Shell } from './shell/shell'
+import { TodosView } from './todos/todos-view'
 
 const rootRoute = createRootRoute({ component: Shell })
 
@@ -16,7 +17,7 @@ const view = <P extends string>(path: P, empty: string) =>
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  view('/todos', 'No Todos yet. Add one to start your list.'),
+  createRoute({ getParentRoute: () => rootRoute, path: '/todos', component: TodosView }),
   view('/notes', 'No Notes yet. Start one to keep your thoughts.'),
   view('/devlogs', "No Dev logs yet. Run the Dev log skill to write today's."),
   view('/sketches', 'No Sketches yet. Start one to draw a diagram.'),
