@@ -12,7 +12,7 @@ const isRealDay = (day: string) => {
 /** A local calendar day: YYYY-MM-DD. */
 const day = z
   .string()
-  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a day as YYYY-MM-DD')
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Expected a day as YYYY-MM-DD', abort: true })
   .refine(isRealDay, 'Not a real day')
 
 const fields = {

@@ -16,4 +16,4 @@ For UI work, run `pnpm ostraka serve` and `pnpm dev` side by side: Vite on http:
 
 `pnpm ostraka path <todos|notes|devlogs|sketches|people>` prints where that content lives (`OSTRAKA_HOME`, else `contentDir` in `~/.config/ostraka/config.yml`, else `~/ostraka-content`).
 
-`pnpm ostraka todo add "…"`, `todo done <id>` and `todo list` change and show Todos (add `--json` for agents). `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file.
+`pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file.
