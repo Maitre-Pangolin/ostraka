@@ -1,7 +1,9 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
+import type { TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
+import { todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -9,13 +11,15 @@ export const PORT = 4747
 export type AppOptions = {
   /** Folder holding the built web app (index.html and assets). */
   webDist: string
+  /** Where content lives and the clock; defaults to the real ones. Tests point it at a temp folder. */
+  content?: TodoOptions
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist }: AppOptions) {
+export function createApp({ webDist, content = {} }: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -34,6 +38,7 @@ export function createApp({ webDist }: AppOptions) {
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
+  app.route('/api/todos', todoRoutes(content))
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
   // The built web app, same origin as the API. Unknown paths are client routes, so they get index.html.
