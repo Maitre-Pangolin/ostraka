@@ -4,7 +4,9 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
-    "./todo-schema": "./src/todo-schema.ts"
+    "./todo-schema": "./src/todo-schema.ts",
+    "./todo-tokens": "./src/todo-tokens.ts",
+    "./todo-order": "./src/todo-order.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

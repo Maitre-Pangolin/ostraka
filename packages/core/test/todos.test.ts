@@ -3,7 +3,19 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from '../src/index.ts'
+import {
+  addTodo,
+  completeTodo,
+  listTags,
+  listTodos,
+  reopenTodo,
+  TodoInputError,
+  TodoNotFoundError,
+  TodosFileError,
+  updateTodo,
+  type NewTodo,
+  type TodoOptions,
+} from '../src/index.ts'
 
 let contentRoot: string
 let options: TodoOptions
@@ -84,6 +96,39 @@ describe('addTodo', () => {
 
   it('rejects an empty title', async () => {
     await expect(addTodo({ title: '   ' }, options)).rejects.toThrow(/title/i)
+  })
+
+  it('turns #tag, *prio and ^date in the title into properties', async () => {
+    const todo = await addTodo({ title: 'Fix login #Auth *high ^fri' }, options)
+    expect(todo).toMatchObject({ title: 'Fix login', tags: ['auth'], priority: 'high', due: '2026-11-06' })
+  })
+
+  it('adds a description, pulling its tokens out too', async () => {
+    const todo = await addTodo({ title: 'Fix login #auth', description: 'Users get logged out.\nSee the logs #infra ^today\n' }, options)
+    expect(todo).toMatchObject({
+      title: 'Fix login',
+      description: 'Users get logged out.\nSee the logs',
+      tags: ['auth', 'infra'],
+      due: '2026-11-02',
+    })
+  })
+
+  it('leaves out a blank description', async () => {
+    expect(await addTodo({ title: 'Ship it', description: ' #infra\n' }, options)).not.toHaveProperty('description')
+  })
+
+  it('applies properties already pulled out in quick entry, then the tokens still in the text', async () => {
+    const todo = await addTodo({ title: 'Ship it *low #api', tags: ['infra', 'api'], priority: 'high', due: '2026-11-10' }, options)
+    expect(todo).toMatchObject({ title: 'Ship it', tags: ['infra', 'api'], priority: 'low', due: '2026-11-10' })
+  })
+
+  it('rejects a title that is only tokens', async () => {
+    await expect(addTodo({ title: '#auth *high' }, options)).rejects.toThrow(TodoInputError)
+  })
+
+  it.each([[{ tags: ['Not A Tag'] }], [{ priority: 'urgent' }], [{ due: '2026-02-30' }]])('rejects %j', async (extra) => {
+    await expect(addTodo({ title: 'Ship it', ...extra } as NewTodo, options)).rejects.toThrow(/Tags|Invalid option|real day/)
+    await expect(readFile(todosFile())).rejects.toThrow(/ENOENT/)
   })
 
   it('gives every Todo its own id', async () => {
@@ -224,6 +269,89 @@ describe('writing todos.json', () => {
     await addTodo({ title: 'Ship it' }, options)
     await expect(completeTodo('zzzzz', options)).rejects.toThrow(TodoNotFoundError)
     expect(await readdir(contentRoot)).toEqual(['todos.json'])
+  })
+})
+
+describe('updateTodo', () => {
+  it('changes only the fields given', async () => {
+    const todo = await addTodo({ title: 'Ship it #infra *low ^fri', description: 'Details' }, options)
+    const changed = await updateTodo(todo.id, { title: 'Ship it now', priority: 'high' }, options)
+    expect(changed).toEqual({ ...todo, title: 'Ship it now', priority: 'high' })
+    expect(await listTodos(options)).toEqual([changed])
+  })
+
+  it('applies tokens typed in the title or description to the Todo', async () => {
+    const todo = await addTodo({ title: 'Ship it #infra' }, options)
+    const changed = await updateTodo(todo.id, { title: 'Ship it today #api ^today', description: 'Check the logs *high' }, options)
+    expect(changed).toMatchObject({
+      title: 'Ship it today',
+      description: 'Check the logs',
+      tags: ['infra', 'api'],
+      priority: 'high',
+      due: '2026-11-02',
+    })
+  })
+
+  it('removes a Tag, clears the date and the description', async () => {
+    const todo = await addTodo({ title: 'Ship it #infra #api ^fri', description: 'Details' }, options)
+    const changed = await updateTodo(todo.id, { tags: ['api'], due: null, description: '  ' }, options)
+    expect(changed).toEqual({
+      id: todo.id,
+      title: 'Ship it',
+      priority: 'none',
+      tags: ['api'],
+      status: 'open',
+      createdAt: todo.createdAt,
+      subTodos: [],
+    })
+  })
+
+  it('rejects a title that is only tokens and leaves the Todo as it was', async () => {
+    const todo = await addTodo({ title: 'Ship it' }, options)
+    await expect(updateTodo(todo.id, { title: '#infra' }, options)).rejects.toThrow(TodoInputError)
+    expect(await listTodos(options)).toEqual([todo])
+  })
+
+  it('reports an unknown id', async () => {
+    await expect(updateTodo('zzzzz', { priority: 'high' }, options)).rejects.toThrow(TodoNotFoundError)
+  })
+})
+
+describe('listTags', () => {
+  it('lists every Tag in use once, sorted, from Todos and Sub-todos in any state', async () => {
+    await writeFile(
+      todosFile(),
+      JSON.stringify({
+        todos: [
+          {
+            id: 'aaaaa',
+            title: 'Open',
+            priority: 'none',
+            tags: ['infra', 'api'],
+            status: 'open',
+            createdAt: '2026-11-01T10:00:00.000Z',
+            subTodos: [
+              { id: 'bbbbb', title: 'Sub', priority: 'none', tags: ['zz-top'], status: 'open', createdAt: '2026-11-01T10:00:00.000Z' },
+            ],
+          },
+          {
+            id: 'ccccc',
+            title: 'Done',
+            priority: 'none',
+            tags: ['auth', 'api'],
+            status: 'done',
+            createdAt: '2026-11-01T10:00:00.000Z',
+            finishedAt: '2026-11-01T11:00:00.000Z',
+            subTodos: [],
+          },
+        ],
+      }),
+    )
+    expect(await listTags(options)).toEqual(['api', 'auth', 'infra', 'zz-top'])
+  })
+
+  it('is empty without todos.json', async () => {
+    expect(await listTags(options)).toEqual([])
   })
 })
 
