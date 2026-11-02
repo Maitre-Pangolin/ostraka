@@ -1,6 +1,6 @@
 import { homedir } from 'node:os'
 import { parseArgs } from 'node:util'
-import { addTodo, completeTodo, CONTENT_KINDS, contentPath, isContentKind, listTodos, type Todo } from '@ostraka/core'
+import { addTodo, completeTodo, CONTENT_KINDS, contentPath, isContentKind, listTodos, snapshot, type Todo } from '@ostraka/core'
 import { HOSTNAME, PORT, startServer } from '@ostraka/server'
 
 export type Io = {
@@ -19,11 +19,15 @@ const TODO_USAGE = `  ostraka todo add <title> [--json]
   ostraka todo list [--json]    List open Todos, most urgent first
 `
 
+const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
+                                Commit the content folder now (after an agent writes)
+`
+
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}`
+${TODO_USAGE}${SNAPSHOT_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -34,6 +38,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await path(rest, io)
       case 'serve':
         return await serve(io)
+      case 'snapshot':
+        return await snapshotCommand(rest, io)
       case 'todo':
         return await todoCommand(rest, io)
       default:
@@ -83,6 +89,19 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   }
   io.stderr(`Usage:\n${TODO_USAGE}`)
   return 1
+}
+
+async function snapshotCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
+  const [message] = positionals
+  if (message === undefined || message.trim() === '' || positionals.length > 1) {
+    io.stderr(`Usage:\n${SNAPSHOT_USAGE}`)
+    return 1
+  }
+  const made = await snapshot(message, { env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (values.json) io.stdout(`${JSON.stringify(made ?? null, null, 2)}\n`)
+  else io.stdout(made ? `Snapshot ${made.commit.slice(0, 7)}  ${made.message}\n` : 'Nothing changed since the last Snapshot.\n')
+  return 0
 }
 
 async function serve(io: Io): Promise<number> {
