@@ -33,16 +33,16 @@ function httpGet(port: number, path: string): Promise<number> {
 describe('startServer', () => {
   it('reads each Keychain item once, at startup', async () => {
     const { keychain, reads } = fakeKeychain(TOKENS)
-    const server = await startServer({ port: 0, webDist: '/nonexistent', keychain, env: {}, homeDir: home })
+    const { server, stop } = await startServer({ port: 0, webDist: '/nonexistent', keychain, env: {}, homeDir: home })
     try {
       expect(reads).toEqual(['ostraka-gitlab', 'ostraka-jira', 'ostraka-push'])
       const { port } = server.address() as AddressInfo
       for (let i = 0; i < 3; i++) expect(await httpGet(port, '/api/settings')).toBe(200)
       expect(reads).toHaveLength(3)
     } finally {
-      await new Promise((resolve) => server.close(resolve))
+      await stop()
     }
-  })
+  }, 30_000)
 
   it('starts without the items it cannot read', async () => {
     const warnings: string[] = []

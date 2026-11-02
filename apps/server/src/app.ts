@@ -16,6 +16,8 @@ export type AppOptions = {
   webDist: string
   /** Where content and config.yml live (env and home folder) and the clock; defaults to the real ones. Tests point it at a temp folder. */
   content?: TodoOptions
+  /** Called after each successful write to content through the API; the server schedules a Snapshot from it. */
+  onContentChange?: () => void
   /** Read from the Keychain once at startup. Routes may say whether one exists, never return it. */
   credentials?: Credentials
 }
@@ -24,7 +26,7 @@ const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist, content = {}, credentials = {} }: AppOptions) {
+export function createApp({ webDist, content = {}, credentials = {}, onContentChange }: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -40,6 +42,12 @@ export function createApp({ webDist, content = {}, credentials = {} }: AppOption
       return c.text('Forbidden origin', 403)
     }
     await next()
+  })
+
+  // Every API write goes through core to the content folder, so a successful one means the content changed.
+  app.use('/api/*', async (c, next) => {
+    await next()
+    if (!SAFE_METHODS.has(c.req.method) && c.res.ok) onContentChange?.()
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))

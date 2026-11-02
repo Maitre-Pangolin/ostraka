@@ -9,4 +9,4 @@ export {
   type Keychain,
   type RunSecurity,
 } from './keychain.ts'
-export { DEFAULT_WEB_DIST, startServer, type StartOptions } from './serve.ts'
+export { DEFAULT_WEB_DIST, startServer, type RunningServer, type StartOptions } from './serve.ts'

@@ -53,3 +53,5 @@ export {
   updateTodo,
   type TodoOptions,
 } from './todos.ts'
+export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
+export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
