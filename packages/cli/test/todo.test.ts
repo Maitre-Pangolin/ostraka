@@ -52,6 +52,52 @@ describe('ostraka todo', () => {
     expect(JSON.parse((await ostraka('todo', 'list', '--json')).stdout)).toEqual([])
   })
 
+  it('Drops a Todo with or without a reason', async () => {
+    const first = idOf((await ostraka('todo', 'add', 'Migrate the old CI')).stdout)
+    const second = idOf((await ostraka('todo', 'add', 'Write the RFC')).stdout)
+
+    expect(await ostraka('todo', 'drop', first, '--reason', 'Superseded')).toEqual({
+      code: 0,
+      stdout: `Dropped ${first}  Migrate the old CI (Superseded)\n`,
+      stderr: '',
+    })
+    const dropped = JSON.parse((await ostraka('todo', 'drop', second, '--json')).stdout)
+    expect(dropped).toMatchObject({ id: second, status: 'dropped', finishedAt: expect.any(String) })
+    expect(dropped).not.toHaveProperty('dropReason')
+    expect((await ostraka('todo', 'list')).stdout).toBe('No open Todos.\n')
+  })
+
+  it('lists the Todos finished on a day, done and Dropped', async () => {
+    const done = idOf((await ostraka('todo', 'add', 'Ship it')).stdout)
+    const dropped = idOf((await ostraka('todo', 'add', 'Migrate the old CI')).stdout)
+    await ostraka('todo', 'add', 'Still open')
+    await ostraka('todo', 'done', done)
+    await ostraka('todo', 'drop', dropped, '--reason', 'Superseded')
+
+    const today = new Date().toLocaleDateString('sv') // YYYY-MM-DD, local
+    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', today, '--json')).stdout)
+    expect(finished).toEqual([
+      expect.objectContaining({ id: dropped, status: 'dropped', dropReason: 'Superseded' }),
+      expect.objectContaining({ id: done, status: 'done' }),
+    ])
+    expect((await ostraka('todo', 'list', '--finished-on', today)).stdout).toBe(
+      `${dropped}  Migrate the old CI (Dropped: Superseded)\n${done}  Ship it (done)\n`,
+    )
+    expect(await ostraka('todo', 'list', '--finished-on', '2020-01-01')).toEqual({
+      code: 0,
+      stdout: 'No Todos finished on 2020-01-01.\n',
+      stderr: '',
+    })
+  })
+
+  it('rejects a --finished-on that is not a day', async () => {
+    expect(await ostraka('todo', 'list', '--finished-on', 'yesterday')).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: 'Expected a day as YYYY-MM-DD\n',
+    })
+  })
+
   it('joins several words into one title', async () => {
     const { stdout } = await ostraka('todo', 'add', 'Ship', 'it')
     expect(stdout).toMatch(/ Ship it\n$/)
@@ -63,9 +109,12 @@ describe('ostraka todo', () => {
     expect(stderr).toMatch(/No Todo with id zzzzz/)
   })
 
-  it.each([[['todo']], [['todo', 'add']], [['todo', 'done']], [['todo', 'frobnicate']]])('shows usage for %j', async (argv) => {
-    const { code, stderr } = await ostraka(...argv)
-    expect(code).toBe(1)
-    expect(stderr).toMatch(/ostraka todo add/)
-  })
+  it.each([[['todo']], [['todo', 'add']], [['todo', 'done']], [['todo', 'drop']], [['todo', 'frobnicate']]])(
+    'shows usage for %j',
+    async (argv) => {
+      const { code, stderr } = await ostraka(...argv)
+      expect(code).toBe(1)
+      expect(stderr).toMatch(/ostraka todo add/)
+    },
+  )
 })

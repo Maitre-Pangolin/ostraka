@@ -18,3 +18,6 @@ export function compareOpenTodos(today: string): (a: SubTodo, b: SubTodo) => num
     (a.due ?? '9999-99-99').localeCompare(b.due ?? '9999-99-99') ||
     b.createdAt.localeCompare(a.createdAt)
 }
+
+/** Done and Dropped Todos: newest-finished first. */
+export const compareFinishedTodos = (a: SubTodo, b: SubTodo) => (b.finishedAt ?? '').localeCompare(a.finishedAt ?? '')

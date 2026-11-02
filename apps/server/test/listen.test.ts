@@ -5,6 +5,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startServer } from '../src/index.ts'
+import { fakeKeychain } from './fake-keychain.ts'
 
 let contentRoot: string
 
@@ -16,7 +17,8 @@ afterEach(async () => {
   await rm(contentRoot, { recursive: true, force: true })
 })
 
-const start = () => startServer({ port: 0, webDist: '/nonexistent', content: { env: { OSTRAKA_HOME: contentRoot } } })
+const start = () =>
+  startServer({ port: 0, webDist: '/nonexistent', keychain: fakeKeychain({}).keychain, env: { OSTRAKA_HOME: contentRoot } })
 const git = (...args: string[]) => execFileSync('git', ['-C', contentRoot, ...args], { encoding: 'utf8' }).trim()
 
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
