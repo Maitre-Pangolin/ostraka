@@ -6,6 +6,12 @@ Settled before this note: agents use MCP whenever a server exists, and company p
 
 Data items in scope: open MRs, MR pipeline status, review requests, current sprint issues, unanswered Slack mentions and DMs, today's calendar, unread mail.
 
+## Decisions (2026-11-01)
+
+- **v1 covers GitLab and Jira only.** The app polls them directly, with tokens in the macOS Keychain (see "Credentials").
+- **Microsoft 365 and Slack are deferred** to #22 and #20. A possible workaround for both: a skill pulls the data through MCP and writes a state file the app reads.
+- **Poll, don't push.**
+
 ## Recommendation
 
 1. **The app server polls each source's REST or GraphQL API directly, with its own credentials in the macOS Keychain.** It uses plain `fetch` and no SDK wrappers. Agents keep their MCP grants, and the app never borrows them.
@@ -20,7 +26,7 @@ Data items in scope: open MRs, MR pipeline status, review requests, current spri
    | Slack | Own internal Slack app: user token for Web API, plus Socket Mode for push | `xoxp` user token, `xapp` app-level token | Workspace admin, if app approval is on | Optional. Until then, Slack is agent-only (Briefing) |
 
 4. **Don't make the app an MCP client** of the agents' remote servers. It is possible for GitLab, but the other three need extra admin steps or burn paid credits (see "The app as an MCP client"). Keep it as a fallback for GitLab only, if PATs are disabled.
-5. **Don't shell out to CLIs** for data. `glab` and `acli` work and keep credentials in the Keychain, but they add a process per poll and a second credential store that agents can also use. They are fine as manual tools.
+5. **Don't shell out to CLIs** for data. CLIs and direct calls use the same kind of credential, so this is mostly an engineering choice. Direct calls give typed JSON and one GraphQL query instead of a process per poll and CLI output that can change between versions. They also let the app own a narrow read-only token, separate from a CLI login that every agent can use and even print (`gh auth token`). `glab` and `acli` are fine as manual tools.
 6. **Refresh rates:** about 60 s for MRs and review requests while the window is visible, 15 s for running pipelines only, 2 to 5 min for the sprint, calendar and mail, and much slower while hidden or idle. See "Refresh-rate table".
 
 ## The app as an MCP client
@@ -224,8 +230,18 @@ Visibility comes from the Page Visibility API (`document.visibilityState`, `visi
   - Jira: scoped read-only API token
   - Slack: `xoxp` + `xapp`
   - Outlook: MSAL cache
+- **Rule:** agents may have *access* (MCP tools, the app's localhost API), but never *hold* a secret. A raw token in an agent's context can leak through prompt injection (text in a Slack message or Jira ticket) and be used anywhere, later.
+- **Where agents can see secrets:**
+  - Environment: Claude Code's shell loads the user's shell profile, so never `export` tokens in `~/.zshrc` (none today).
+  - Files readable by the user: `.env`, `~/.config/*`, plaintext CLI configs.
+  - Commands that print secrets: `gh auth token`, `security find-generic-password -w`, `op read`.
+- **Correction to #3's Keychain method.** `security add-generic-password -s ostraka-gitlab -w` trusts the creating app (`security`), which may then read the item "without warning" (`man security`). Any agent could run `security find-generic-password -s ostraka-gitlab -w` silently. Create items with `-T ""` so every read prompts, or `-T <path>` for one dedicated signed binary. Never trust plain `node`: that trusts every Node script.
+- **Injecting into the server:** the server fetches its secrets itself at startup from a store that needs the user present, so they exist only in its process, never in an agent's shell:
+  - Keychain items created with `-T ""`: one password prompt per server start (v1 choice for GitLab and Jira).
+  - Or 1Password `op run --env-file=.env.tpl -- node server.js`, where the file holds only `op://` references and unlocking takes Touch ID (not installed today).
+- **Agent-side guardrails:** Claude Code's sandbox limits which files and hosts shell commands reach; that is the real boundary. Deny rules for `gh auth token`, `security find-generic-password`, `op read` and `Read(~/.config/**)` help but match only command prefixes. Running the server as a separate macOS user or in a container is the strongest isolation, likely too much for v1.
 - **Where they live:**
-  - GitLab, Jira and Slack: Keychain items, read at server start (method in #3).
+  - GitLab and Jira (and Slack, if ever): Keychain items, created with `-T ""`, read at server start.
   - Outlook: `msal-node-extensions` Keychain persistence for the MSAL token cache.
   - Never in `.env`, prompts, repo files or logs.
 - **Avoid these stores:** the Slack CLI's `~/.slack/credentials.json`, and `glab --insecure-storage`. Both are plain files that agents can read.
@@ -241,9 +257,21 @@ Visibility comes from the Page Visibility API (`document.visibilityState`, `visi
 - **Outlook:** check whether Graph Web Push subscriptions work for Outlook resources. That would give push without a public endpoint.
 - **Agent endpoint:** whether agents should read work-overview data from the app's local cache (the `/activity` endpoint idea in #3) instead of MCP when the data is already fresh.
 
+## Local data instead of APIs
+
+No dependable route today. The data on the Mac is a cache owned by each app, not an interface.
+
+- **Slack desktop:** an Electron app with undocumented local storage that holds only what was loaded and changes with updates. Off-limits.
+- **Outlook:** the new Outlook for Mac has no scripting interface, as far as we know (unverified). Legacy Outlook had one, but it relies on EWS.
+- **macOS Calendar (EventKit)** would be the clean local route for the calendar, but Apple Calendar reaches Exchange Online through EWS, which Microsoft is retiring from 2026-10-01, fully off in 2027 ([CU Denver IT](https://www.ucdenver.edu/offices/office-of-information-technology/news---projects/oit-news/it-news-and-initiatives-microsoft-exchange-web-services--ews--retired-october-1--2026), [Michael Tsai](https://mjtsai.com/blog/2026/08/20/)). Apple has announced a move to Graph in a macOS 27 update. Revisit then (#22).
+
+## Testing Slack
+
+The free [Slack Developer Program](https://docs.slack.dev/tools/developer-sandboxes/) gives up to 2 sandboxes, each lasting 6 months and extendable. A payment method may be asked for identity checks only. Sign up with a personal email so the sandbox isn't attached to the employer's Slack organisation. As admin there, you can test an internal app, user tokens and Socket Mode (#20).
+
 ## Blockers for the user
 
-- **Outlook:** ask IT whether you may register an Entra public-client app and consent yourself to `Calendars.Read` and `Mail.ReadBasic`, or whether admin consent is needed ([user consent settings](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent)). Without this, there is no Outlook in the app.
-- **Slack (optional):** ask a workspace admin to approve an internal Slack app with the needed user scopes (`search:read`, `im:history`, `im:read`), plus Socket Mode. Without it, Slack stays agent-only, through the Briefing skill.
+- **Outlook (deferred, #22):** ask IT whether you may register an Entra public-client app and consent yourself to `Calendars.Read` and `Mail.ReadBasic`, or whether admin consent is needed ([user consent settings](https://learn.microsoft.com/en-us/entra/identity/enterprise-apps/configure-user-consent)).
+- **Slack (deferred, #20):** a workspace admin must approve an internal Slack app with the needed user scopes (`search:read`, `im:history`, `im:read`), plus Socket Mode. Test in a sandbox first.
 - **GitLab:** confirm the host, and that fine-grained PATs are not disabled by the enterprise group. No Maintainer role is needed, because there are no webhooks.
 - **Jira:** none for REST with a scoped API token. If the org uses an Atlassian IP allowlist, check that your network is on it. The allowlist is documented for MCP tool calls ([admin controls](https://support.atlassian.com/security-and-access-policies/docs/understand-atlassian-mcp-server/)); for REST it is unverified. Avoid needing an admin to allowlist a localhost redirect for Rovo, which only the MCP-client route would require.
