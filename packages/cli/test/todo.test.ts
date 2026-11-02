@@ -52,6 +52,25 @@ describe('ostraka todo', () => {
     expect(JSON.parse((await ostraka('todo', 'list', '--json')).stdout)).toEqual([])
   })
 
+  it('turns #tag, *prio and ^date into properties, and prints them back as tokens', async () => {
+    const added = await ostraka('todo', 'add', 'Fix login #Auth *high ^2026-11-05', '--json')
+    expect(JSON.parse(added.stdout)).toMatchObject({ title: 'Fix login', tags: ['auth'], priority: 'high', due: '2026-11-05' })
+
+    const { stdout } = await ostraka('todo', 'list')
+    expect(stdout).toMatch(/^[a-z0-9]{5} {2}Fix login {2}#auth \*high \^2026-11-05\n$/)
+  })
+
+  it('reads ^fri as the next Friday', async () => {
+    const { due } = JSON.parse((await ostraka('todo', 'add', 'Fix login', '^fri', '--json')).stdout) as { due: string }
+    expect(new Date(`${due}T00:00:00Z`).getUTCDay()).toBe(5)
+  })
+
+  it('refuses a title that is only tokens', async () => {
+    const { code, stderr } = await ostraka('todo', 'add', '#auth')
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/needs a title/)
+  })
+
   it('joins several words into one title', async () => {
     const { stdout } = await ostraka('todo', 'add', 'Ship', 'it')
     expect(stdout).toMatch(/ Ship it\n$/)

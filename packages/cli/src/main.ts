@@ -13,7 +13,8 @@ export type Io = {
 const KINDS = CONTENT_KINDS.join('|')
 
 const TODO_USAGE = `  ostraka todo add <title> [--json]
-                                Add an open Todo
+                                Add an open Todo; #tag, *high|*med|*low and
+                                ^today|^tomorrow|^fri|^2026-11-05 set its properties
   ostraka todo done <id> [--json]
                                 Mark a Todo done
   ostraka todo list [--json]    List open Todos, most urgent first
@@ -58,7 +59,13 @@ async function path(args: string[], io: Io): Promise<number> {
   return 0
 }
 
-const todoLine = (todo: Todo) => `${todo.id}  ${todo.title}`
+const PRIORITY_TOKENS = { high: '*high', medium: '*med', low: '*low', none: undefined }
+
+/** `id  title  #tag *prio ^date`: the properties written back as the tokens that set them. */
+function todoLine(todo: Todo): string {
+  const tokens = [...todo.tags.map((tag) => `#${tag}`), PRIORITY_TOKENS[todo.priority], todo.due && `^${todo.due}`].filter(Boolean)
+  return [`${todo.id}  ${todo.title}`, ...(tokens.length ? [tokens.join(' ')] : [])].join('  ')
+}
 
 async function todoCommand(args: string[], io: Io): Promise<number> {
   const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
