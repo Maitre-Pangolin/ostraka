@@ -2,6 +2,7 @@ import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
+  addSubTodo,
   addTodo,
   completeTodo,
   CONTENT_KINDS,
@@ -11,6 +12,7 @@ import {
   listFinishedTodos,
   listTodos,
   type SubTodo,
+  type Todo,
 } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
 import { install as installAgent, realSystem, type System } from './install.ts'
@@ -28,14 +30,15 @@ export type Io = {
 
 const KINDS = CONTENT_KINDS.join('|')
 
-const TODO_USAGE = `  ostraka todo add <title> [--json]
-                                Add an open Todo; #tag, *high|*med|*low and
-                                ^today|^tomorrow|^fri|^2026-11-05 set its properties
+const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
+                                Add an open Todo, or a Sub-todo under the Todo <id>;
+                                #tag, *high|*med|*low and ^today|^tomorrow|^fri|^2026-11-05
+                                set its properties
   ostraka todo done <id> [--json]
-                                Mark a Todo done
+                                Mark a Todo or Sub-todo done (a Todo's open Sub-todos too)
   ostraka todo drop <id> [--reason <text>] [--json]
-                                Drop a Todo: abandon it, optionally saying why
-  ostraka todo list [--json]    List open Todos, most urgent first
+                                Drop a Todo or Sub-todo: abandon it, optionally saying why
+  ostraka todo list [--json]    List open Todos, most urgent first, their Sub-todos under them
   ostraka todo list --finished-on <YYYY-MM-DD> [--json]
                                 List the Todos done or Dropped that day, newest first
 `
@@ -100,21 +103,39 @@ function todoLine(todo: SubTodo): string {
 const finishedLine = (todo: SubTodo) =>
   `${todoLine(todo)} (${todo.status === 'dropped' ? `Dropped${todo.dropReason ? `: ${todo.dropReason}` : ''}` : 'done'})`
 
+/** An open Todo, then its Sub-todos indented under it in creation order, finished ones marked. */
+const openTodoLines = (todo: Todo) =>
+  [todoLine(todo), ...todo.subTodos.map((sub) => `  ${sub.status === 'open' ? todoLine(sub) : finishedLine(sub)}`)].join('\n')
+
 async function todoCommand(args: string[], io: Io): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { json: { type: 'boolean' }, reason: { type: 'string' }, 'finished-on': { type: 'string' } },
+    options: {
+      json: { type: 'boolean' },
+      reason: { type: 'string' },
+      'finished-on': { type: 'string' },
+      parent: { type: 'string' },
+    },
   })
   const [action, ...words] = positionals
   const finishedOn = values['finished-on']
   const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
   const print = (value: unknown, text: string) => io.stdout(values.json ? `${JSON.stringify(value, null, 2)}\n` : `${text}\n`)
 
+  if (action === 'add' && words.length > 0 && values.parent !== undefined) {
+    const added = await addSubTodo(values.parent, { title: words.join(' ') }, options)
+    print(added, `Added ${todoLine(added)} (Sub-todo of ${values.parent})`)
+    return 0
+  }
   if (action === 'add' && words.length > 0) {
     const added = await addTodo({ title: words.join(' ') }, options)
     print(added, `Added ${todoLine(added)}`)
     return 0
+  }
+  if (values.parent !== undefined) {
+    io.stderr(`Usage:\n${TODO_USAGE}`)
+    return 1
   }
   if (action === 'done' && words.length === 1) {
     const done = await completeTodo(words[0]!, options)
@@ -137,7 +158,7 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   }
   if (action === 'list' && words.length === 0) {
     const todos = await listTodos(options)
-    print(todos, todos.length ? todos.map(todoLine).join('\n') : 'No open Todos.')
+    print(todos, todos.length ? todos.map(openTodoLines).join('\n') : 'No open Todos.')
     return 0
   }
   io.stderr(`Usage:\n${TODO_USAGE}`)
