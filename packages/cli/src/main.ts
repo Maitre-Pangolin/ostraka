@@ -1,7 +1,7 @@
 import { homedir } from 'node:os'
 import { parseArgs } from 'node:util'
 import { CONTENT_KINDS, contentPath, isContentKind } from '@ostraka/core'
-import { HOSTNAME, PORT, startServer } from '@ostraka/server'
+import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
 
 export type Io = {
   env: Record<string, string | undefined>
@@ -50,7 +50,8 @@ async function path(args: string[], io: Io): Promise<number> {
 }
 
 async function serve(io: Io): Promise<number> {
-  const server = await startServer()
+  // macOS may prompt once per Keychain item here: they are created with `-T ""` so every read asks.
+  const server = await startServer({ keychain: macKeychain(), warn: (message) => io.stderr(`${message}\n`) })
   io.stdout(`Ostraka is running on http://${HOSTNAME}:${PORT}\n`)
   const stop = () => server.close()
   process.once('SIGINT', stop)

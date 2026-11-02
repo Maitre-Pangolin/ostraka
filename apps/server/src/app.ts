@@ -1,7 +1,10 @@
 import { existsSync } from 'node:fs'
+import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
+import { configPath, loadConfig, locateContentRoot } from '@ostraka/core'
 import { Hono } from 'hono'
+import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
@@ -9,13 +12,18 @@ export const PORT = 4747
 export type AppOptions = {
   /** Folder holding the built web app (index.html and assets). */
   webDist: string
+  /** Environment and home folder used to find config.yml and the content root. */
+  env?: Record<string, string | undefined>
+  homeDir?: string
+  /** Read from the Keychain once at startup. Routes may say whether one exists, never return it. */
+  credentials?: Credentials
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist }: AppOptions) {
+export function createApp({ webDist, env = process.env, homeDir = homedir(), credentials = {} }: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -34,6 +42,26 @@ export function createApp({ webDist }: AppOptions) {
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
+
+  // Read on each request, so the Settings view shows edits to config.yml without a restart.
+  app.get('/api/settings', async (c) => {
+    try {
+      const config = await loadConfig({ homeDir })
+      return c.json({
+        configFile: configPath(homeDir),
+        content: await locateContentRoot({ env, homeDir }),
+        gitlab: config.gitlab ?? {},
+        jira: config.jira ?? {},
+        keychain: (Object.entries(KEYCHAIN_ITEMS) as [CredentialName, string][]).map(([name, item]) => ({
+          name,
+          item,
+          found: credentials[name] !== undefined,
+        })),
+      })
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
+    }
+  })
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
   // The built web app, same origin as the API. Unknown paths are client routes, so they get index.html.
