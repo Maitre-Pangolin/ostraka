@@ -35,7 +35,9 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - Edit inline, where the thing is shown. Pickers (date, priority, Tags, People) open in a Popover anchored to what they change.
 - Forms live inline too; a Dialog is never a form.
-- Single-item done, Drop or delete happens at once, with a 5-second Undo toast: sonner's `toast(what happened, { description: item title, duration: 5000, action: { label: 'Undo', … } })`, as in `src/todos/todos-view.tsx`. The `<Toaster />` lives in the shell.
+- Single-item done, Drop or delete happens at once, with a 5-second Undo toast: sonner's `toast(what happened, { description: item title, duration: 5000, action: { label: 'Undo', … } })`, as in `src/todos/todos-view.tsx`. The `<Toaster />` lives in the shell. Undo of a delete posts the item back as it was (`useRestoreTodo`).
+- Row actions that would clutter the list (Drop or delete) sit at the row's end, shown on row hover or keyboard focus (`group/row`, `opacity-0 group-hover/row:opacity-100 focus-visible:opacity-100`), and open a Popover, as `DropOrDelete` in `src/todos/todos-view.tsx`. An optional field in it (the Drop reason) is skippable: ↵ on the empty field still acts.
+- Finished items (Done & Dropped) are kept, in a section collapsed by default below the open ones: a muted disclosure button with a chevron and the count, `aria-expanded`. Finished rows are muted and struck through, show when they finished, and reopen from their checkbox or Dropped icon.
 - A confirmation Dialog guards only bulk or hard-to-reverse changes (merging Tags, finishing a parent with open Sub-todos).
 - Toasts exist only for Undo.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.

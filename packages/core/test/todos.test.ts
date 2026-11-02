@@ -313,9 +313,10 @@ describe('restoreTodo', () => {
   })
 })
 
-describe('listFinishedTodos', () => {
-  const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString()
+// A moment in November 2026, local time.
+const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString()
 
+describe('listFinishedTodos', () => {
   it('lists done and Dropped Todos, newest-finished first, kept however old', async () => {
     await writeTodos([
       { id: 'open1' },
