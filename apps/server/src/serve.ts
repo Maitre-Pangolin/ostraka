@@ -1,7 +1,8 @@
 import { fileURLToPath } from 'node:url'
 import { serve, type ServerType } from '@hono/node-server'
-import { startAutoSnapshots } from '@ostraka/core'
+import { startAutoSnapshots, type AutoSnapshotOptions } from '@ostraka/core'
 import { createApp, HOSTNAME, PORT } from './app.ts'
+import { contentEvents } from './content-events.ts'
 import { readCredentials, type Keychain } from './keychain.ts'
 
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url))
@@ -15,6 +16,8 @@ export type StartOptions = {
   homeDir?: string
   /** Where a Keychain item that could not be read is reported. */
   warn?: (message: string) => void
+  /** When automatic Snapshots commit; tests shorten the wait. */
+  snapshots?: Pick<AutoSnapshotOptions, 'quietMs' | 'maxWaitMs'>
 }
 
 export type RunningServer = {
@@ -34,11 +37,15 @@ export async function startServer({
   env,
   homeDir,
   warn,
+  snapshots: snapshotTiming,
 }: StartOptions): Promise<RunningServer> {
   const credentials = await readCredentials(keychain, warn)
   const content = { env, homeDir }
-  const snapshots = await startAutoSnapshots(content)
-  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed })
+  const snapshots = await startAutoSnapshots({ ...content, ...snapshotTiming })
+  // Every change on disk, the CLI's and agents' included, is snapshotted; the same watcher feeds live updates.
+  const events = contentEvents(content)
+  const unwatch = await events.subscribe(() => snapshots.changed())
+  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events })
   try {
     const server = await new Promise<ServerType>((resolve, reject) => {
       const listening = serve({ fetch: app.fetch, hostname: HOSTNAME, port }, () => resolve(listening))
@@ -47,11 +54,16 @@ export async function startServer({
     return {
       server,
       async stop() {
-        await new Promise((resolve) => server.close(resolve))
+        const closed = new Promise((resolve) => server.close(resolve))
+        // Open live-update streams never end on their own; a browser reconnects once the server is back.
+        if ('closeAllConnections' in server) server.closeAllConnections()
+        await closed
+        unwatch()
         await snapshots.stop()
       },
     }
   } catch (error) {
+    unwatch()
     await snapshots.stop()
     throw error
   }

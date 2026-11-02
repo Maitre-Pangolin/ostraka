@@ -12,7 +12,7 @@ export type AutoSnapshotOptions = ContentRootOptions & {
 }
 
 export type AutoSnapshots = {
-  /** Something in the content folder changed (an app write now; file-watcher events later). */
+  /** Something in the content folder changed: an app write, or a file-watcher event (CLI, agents). */
   changed(): void
   /** Resolves once no Snapshot is in progress. */
   idle(): Promise<void>
