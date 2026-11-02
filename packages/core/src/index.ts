@@ -23,6 +23,7 @@ export {
   type TodoStatus,
 } from './todo-schema.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
+export { filterTodos, parseTodoFilter, type FilteredTodo, type TodoFilter } from './todo-filter.ts'
 export {
   normalizeTag,
   pullCompletedTokens,
