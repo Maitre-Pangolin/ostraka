@@ -43,6 +43,22 @@ importers:
         specifier: ~7.0.2
         version: 7.0.2
 
+  packages/cli:
+    dependencies:
+      '@ostraka/core':
+        specifier: workspace:*
+        version: link:../core
+      '@ostraka/server':
+        specifier: workspace:*
+        version: link:../../apps/server
+    devDependencies:
+      '@types/node':
+        specifier: ^24.19.2
+        version: 24.19.2
+      typescript:
+        specifier: ~7.0.2
+        version: 7.0.2
+
   packages/core:
     dependencies:
       yaml:
