@@ -9,17 +9,19 @@ const isRealDay = (day: string) => {
   return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(day)
 }
 
+/** A local calendar day: YYYY-MM-DD. */
+const day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a day as YYYY-MM-DD')
+  .refine(isRealDay, 'Not a real day')
+
 const fields = {
   id: z.string().regex(/^[a-z0-9]{5}$/, 'Expected a 5-character id of a-z and 0-9'),
   title: z.string().trim().min(1, 'A Todo needs a title'),
   description: z.string().optional(),
   priority: z.enum(PRIORITIES),
   /** Day only, local: YYYY-MM-DD. */
-  due: z
-    .string()
-    .regex(/^\d{4}-\d{2}-\d{2}$/, 'Expected a day as YYYY-MM-DD')
-    .refine(isRealDay, 'Not a real day')
-    .optional(),
+  due: day.optional(),
   tags: z.array(z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Tags are lowercase and hyphenated')),
   status: z.enum(TODO_STATUSES),
   dropReason: z.string().optional(),
@@ -46,6 +48,14 @@ export type TodosFile = z.infer<typeof TodosFileSchema>
 /** What adding a Todo takes. Quick-entry tokens come later; for now the title is kept as typed. */
 export const NewTodoSchema = z.strictObject({ title: fields.title })
 export type NewTodo = z.infer<typeof NewTodoSchema>
+
+/** What Dropping a Todo takes: an optional reason, which can be skipped (blank counts as skipped). */
+export const DropTodoSchema = z.strictObject({ reason: z.string().optional() })
+export type DropTodo = z.infer<typeof DropTodoSchema>
+
+/** Which done and Dropped Todos to list: all of them, or those finished on one local day. */
+export const FinishedQuerySchema = z.strictObject({ finishedOn: day.optional() })
+export type FinishedQuery = z.infer<typeof FinishedQuerySchema>
 
 // Every key in its place, so a write never reorders what an agent or git diff sees.
 function ordered(todo: SubTodo): SubTodo {

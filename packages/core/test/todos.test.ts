@@ -3,7 +3,20 @@ import { mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { addTodo, completeTodo, listTodos, reopenTodo, TodoNotFoundError, TodosFileError, type TodoOptions } from '../src/index.ts'
+import {
+  addTodo,
+  completeTodo,
+  deleteTodo,
+  dropTodo,
+  listFinishedTodos,
+  listTodos,
+  reopenTodo,
+  restoreTodo,
+  TodoExistsError,
+  TodoNotFoundError,
+  TodosFileError,
+  type TodoOptions,
+} from '../src/index.ts'
 
 let contentRoot: string
 let options: TodoOptions
@@ -233,5 +246,101 @@ describe('reopenTodo', () => {
     await completeTodo(todo.id, options)
     expect(await reopenTodo(todo.id, options)).toEqual(todo)
     expect(await listTodos(options)).toEqual([todo])
+  })
+})
+
+describe('dropTodo', () => {
+  const later = new Date(2026, 10, 2, 11, 0)
+
+  it('Drops a Todo with a reason and a finished timestamp, taking it off the open list', async () => {
+    const todo = await addTodo({ title: 'Migrate the old CI' }, options)
+    const dropped = await dropTodo(todo.id, { reason: '  Superseded by the new pipeline ' }, { ...options, now: () => later })
+    expect(dropped).toEqual({ ...todo, status: 'dropped', dropReason: 'Superseded by the new pipeline', finishedAt: later.toISOString() })
+    expect(await listTodos(options)).toEqual([])
+    expect(JSON.parse(await readFile(todosFile(), 'utf8')).todos).toEqual([dropped])
+  })
+
+  it.each([[{}], [{ reason: '   ' }]])('Drops without a reason when it is skipped (%j)', async (input) => {
+    const todo = await addTodo({ title: 'Migrate the old CI' }, options)
+    const dropped = await dropTodo(todo.id, input, { ...options, now: () => later })
+    expect(dropped).toEqual({ ...todo, status: 'dropped', finishedAt: later.toISOString() })
+  })
+
+  it('reopens a Dropped Todo as it was, clearing the reason and finished timestamp (Undo)', async () => {
+    const todo = await addTodo({ title: 'Migrate the old CI' }, options)
+    await dropTodo(todo.id, { reason: 'Not needed' }, options)
+    expect(await reopenTodo(todo.id, options)).toEqual(todo)
+    expect(await listTodos(options)).toEqual([todo])
+  })
+
+  it('reports an unknown id', async () => {
+    await expect(dropTodo('zzzzz', {}, options)).rejects.toThrow(TodoNotFoundError)
+  })
+})
+
+describe('deleteTodo', () => {
+  it('removes a Todo for good and returns it', async () => {
+    const keep = await addTodo({ title: 'Keep me' }, options)
+    const mistake = await addTodo({ title: 'Typo' }, options)
+    expect(await deleteTodo(mistake.id, options)).toEqual(mistake)
+    expect(await listTodos(options)).toEqual([keep])
+    expect(JSON.parse(await readFile(todosFile(), 'utf8')).todos).toEqual([keep])
+  })
+
+  it('reports an unknown id', async () => {
+    await expect(deleteTodo('zzzzz', options)).rejects.toThrow(TodoNotFoundError)
+  })
+})
+
+describe('restoreTodo', () => {
+  it('puts a deleted Todo back exactly as it was (Undo)', async () => {
+    const todo = await addTodo({ title: 'Typo' }, options)
+    const dropped = await dropTodo(todo.id, { reason: 'Not needed' }, options)
+    await deleteTodo(todo.id, options)
+    expect(await restoreTodo(dropped, options)).toEqual(dropped)
+    expect(JSON.parse(await readFile(todosFile(), 'utf8')).todos).toEqual([dropped])
+  })
+
+  it('refuses a Todo whose id is already taken, leaving the file as it is', async () => {
+    const todo = await addTodo({ title: 'Ship it' }, options)
+    const before = await readFile(todosFile(), 'utf8')
+    await expect(restoreTodo({ ...todo, title: 'Other' }, options)).rejects.toThrow(TodoExistsError)
+    expect(await readFile(todosFile(), 'utf8')).toBe(before)
+  })
+
+  it('refuses something that is not a Todo', async () => {
+    await expect(restoreTodo({ id: 'aaaaa', title: '' } as never, options)).rejects.toThrow(/title/i)
+  })
+})
+
+describe('listFinishedTodos', () => {
+  const at = (day: number, hour: number, minute = 0) => new Date(2026, 10, day, hour, minute).toISOString()
+
+  it('lists done and Dropped Todos, newest-finished first, kept however old', async () => {
+    await writeTodos([
+      { id: 'open1' },
+      { id: 'done1', status: 'done', finishedAt: at(1, 10) },
+      { id: 'drop1', status: 'dropped', finishedAt: at(2, 9) },
+      { id: 'done2', status: 'done', finishedAt: '2024-01-05T10:00:00.000Z' },
+      { id: 'done3', status: 'done', finishedAt: at(2, 8) },
+    ])
+    expect((await listFinishedTodos({}, options)).map((todo) => todo.id)).toEqual(['drop1', 'done3', 'done1', 'done2'])
+  })
+
+  it('narrows to Todos finished on one local day, done and Dropped alike', async () => {
+    await writeTodos([
+      { id: 'early', status: 'done', finishedAt: at(2, 0, 5) },
+      { id: 'drops', status: 'dropped', finishedAt: at(2, 17) },
+      { id: 'lates', status: 'done', finishedAt: at(2, 23, 55) },
+      { id: 'yestr', status: 'done', finishedAt: at(1, 23, 55) },
+      { id: 'tomor', status: 'dropped', finishedAt: at(3, 0, 5) },
+      { id: 'still' },
+    ])
+    expect((await listFinishedTodos({ finishedOn: '2026-11-02' }, options)).map((todo) => todo.id)).toEqual(['lates', 'drops', 'early'])
+  })
+
+  it('rejects a day that is not YYYY-MM-DD', async () => {
+    await expect(listFinishedTodos({ finishedOn: '2/11/2026' }, options)).rejects.toThrow(/YYYY-MM-DD/)
+    await expect(listFinishedTodos({ finishedOn: '2026-02-30' }, options)).rejects.toThrow(/real day/)
   })
 })
