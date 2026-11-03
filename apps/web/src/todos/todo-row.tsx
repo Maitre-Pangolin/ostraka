@@ -4,6 +4,7 @@ import { AlignLeft, Ban, Check, ChevronRight, ListTree, TriangleAlert } from 'lu
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
+import { ReferenceText } from '@/references/reference-chip'
 import type { TodoChange, TodoItem } from './api'
 import { DuePicker, DueText, PriorityFlag, PriorityPicker, TagDot, TagPill } from './properties'
 import { TokenField } from './token-field'
@@ -91,7 +92,7 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
           <TitleEditor todo={todo} onChange={onChange} onTokens={onTokens} tags={tags} onDescribe={() => setDescribing(true)} />
         ) : (
           <span onClick={onToggle} className="min-w-0 flex-1 cursor-default truncate py-1 pl-1 text-sm">
-            {todo.title}
+            <ReferenceText text={todo.title} />
           </span>
         )}
         {!open && <Indicators todo={todo} />}
@@ -159,7 +160,9 @@ export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; t
             ) : (
               <span aria-hidden className={cn('size-3.5 shrink-0 rounded-full border', PRIORITY_DOT[subTodo.priority])} />
             )}
-            <span className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through')}>{subTodo.title}</span>
+            <span className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through')}>
+              <ReferenceText text={subTodo.title} />
+            </span>
             <span className="hidden shrink-0 items-center gap-1 @md:flex">
               {subTodo.tags.map((tag) => (
                 <TagPill key={tag} tag={tag} />
