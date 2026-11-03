@@ -6,9 +6,9 @@ import {
   DropTodoSchema,
   FileLockedError,
   listFinishedTodos,
-  listNotes,
   listTags,
   listTodos,
+  TagsFileError,
   NewTodoSchema,
   reopenTodo,
   restoreTodo,
@@ -46,7 +46,8 @@ function onTodoError(error: Error, c: Context) {
   // Nothing left of the title once its tokens are pulled out.
   if (error instanceof TodoInputError) return c.json({ error: error.message }, 400)
   // The file is broken, another writer holds it, or the id was taken meanwhile: it conflicts with the file's state.
-  if (error instanceof TodosFileError || error instanceof FileLockedError || error instanceof TodoExistsError) {
+  const broken = error instanceof TodosFileError || error instanceof TagsFileError
+  if (broken || error instanceof FileLockedError || error instanceof TodoExistsError) {
     return c.json({ error: error.message }, 409)
   }
   throw error
@@ -99,14 +100,10 @@ export function todoRoutes(options: TodoOptions) {
   return routes
 }
 
-/** `/api/tags`: the Tags in use by Todos and Notes, for suggestions. */
+/** `/api/tags`: the Tags in use by Todos and Notes with their colours, for suggestions, pills and the Tag filter. */
 export function tagRoutes(options: TodoOptions) {
   const routes = new Hono()
   routes.onError(onTodoError)
-  routes.get('/', async (c) => {
-    const [todoTags, notes] = await Promise.all([listTags(options), listNotes(options)])
-    const noteTags = notes.flatMap((note) => ('tags' in note ? note.tags : []))
-    return c.json([...new Set([...todoTags, ...noteTags])].toSorted())
-  })
+  routes.get('/', async (c) => c.json(await listTags(options)))
   return routes
 }

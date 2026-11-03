@@ -7,31 +7,32 @@ import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
+import { useTagColor, type TagColor } from './api'
 import { dayToDate, dueLabel, localDay, longDate, quickDays } from './due'
 import { PRIORITY_LABEL } from './priority'
 
-// Until Tags get their own colours, a Tag keeps the slot its name hashes to.
-const TAG_STYLES = [
-  'text-tag-1 bg-tag-1/12',
-  'text-tag-2 bg-tag-2/12',
-  'text-tag-3 bg-tag-3/12',
-  'text-tag-4 bg-tag-4/12',
-  'text-tag-5 bg-tag-5/12',
-  'text-tag-6 bg-tag-6/12',
-  'text-tag-7 bg-tag-7/12',
-  'text-tag-8 bg-tag-8/12',
-]
-const TAG_DOTS = ['bg-tag-1', 'bg-tag-2', 'bg-tag-3', 'bg-tag-4', 'bg-tag-5', 'bg-tag-6', 'bg-tag-7', 'bg-tag-8']
-const tagSlot = (tag: string) => [...tag].reduce((sum, char) => sum + char.charCodeAt(0), 0) % TAG_STYLES.length
+// Each Tag colour is one of the `tag-1`…`tag-8` tokens.
+const TAG_STYLES: Record<TagColor, { pill: string; dot: string }> = {
+  orange: { pill: 'text-tag-1 bg-tag-1/12', dot: 'bg-tag-1' },
+  yellow: { pill: 'text-tag-2 bg-tag-2/12', dot: 'bg-tag-2' },
+  green: { pill: 'text-tag-3 bg-tag-3/12', dot: 'bg-tag-3' },
+  teal: { pill: 'text-tag-4 bg-tag-4/12', dot: 'bg-tag-4' },
+  blue: { pill: 'text-tag-5 bg-tag-5/12', dot: 'bg-tag-5' },
+  violet: { pill: 'text-tag-6 bg-tag-6/12', dot: 'bg-tag-6' },
+  pink: { pill: 'text-tag-7 bg-tag-7/12', dot: 'bg-tag-7' },
+  red: { pill: 'text-tag-8 bg-tag-8/12', dot: 'bg-tag-8' },
+}
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
 
+/** A Tag in its colour from `tags.yml`, with × when `onRemove` is given. */
 export function TagPill({ tag, onRemove, className }: { tag: string; onRemove?: () => void; className?: string }) {
+  const color = useTagColor(tag)
   return (
     <span
       className={cn(
         'inline-flex h-5 shrink-0 items-center gap-0.5 rounded-full px-1.5 text-[11px] leading-none font-medium',
-        TAG_STYLES[tagSlot(tag)],
+        TAG_STYLES[color].pill,
         className,
       )}
     >
@@ -51,9 +52,10 @@ export function TagPill({ tag, onRemove, className }: { tag: string; onRemove?: 
 }
 
 /** A Tag as a coloured dot, for narrow rows. */
-export const TagDot = ({ tag }: { tag: string }) => (
-  <span aria-hidden className={cn('ring-background -ml-0.5 size-2 rounded-full ring-2', TAG_DOTS[tagSlot(tag)])} />
-)
+export function TagDot({ tag, className }: { tag: string; className?: string }) {
+  const color = useTagColor(tag)
+  return <span aria-hidden className={cn('ring-background -ml-0.5 size-2 rounded-full ring-2', TAG_STYLES[color].dot, className)} />
+}
 
 const PRIORITY_TEXT: Record<Priority, string> = {
   high: 'text-prio-high',

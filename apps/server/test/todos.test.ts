@@ -129,10 +129,23 @@ describe('Todo routes', () => {
     expect((await patch('/api/todos/zzzzz', { priority: 'high' })).status).toBe(404)
   })
 
-  it('lists the Tags in use', async () => {
+  it('lists the Tags in use with their colours from tags.yml', async () => {
     await post('/api/todos', { title: 'One #infra #api' })
     await post('/api/todos', { title: 'Two #auth' })
-    expect(await json<string[]>(get('/api/tags'))).toEqual(['api', 'auth', 'infra'])
+    await writeFile(join(contentRoot, 'tags.yml'), 'infra:\n  color: teal\n')
+    expect(await json(get('/api/tags'))).toEqual([
+      { name: 'api', color: 'green' },
+      { name: 'auth', color: 'green' },
+      { name: 'infra', color: 'teal' },
+    ])
+  })
+
+  it('answers a broken tags.yml with its error, so the app shows it', async () => {
+    await post('/api/todos', { title: 'One #api' })
+    await writeFile(join(contentRoot, 'tags.yml'), 'api: [not, settings]\n')
+    const res = await get('/api/tags')
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: expect.stringContaining('tags.yml') })
   })
 
   it('Drops a Todo with an optional reason, lists it as finished, and reopens it (Undo)', async () => {

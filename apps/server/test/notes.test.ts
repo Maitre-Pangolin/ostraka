@@ -95,7 +95,7 @@ describe('Note routes', () => {
   it('suggests the Tags used by Notes along with those of Todos', async () => {
     await writeNote('n', '---\ntags: [release-plan]\n---\n')
     await send('POST', '/api/todos', { title: 'Ship #infra' })
-    expect(await json<string[]>(get('/api/tags'))).toEqual(['infra', 'release-plan'])
+    expect((await json<{ name: string }[]>(get('/api/tags'))).map((tag) => tag.name)).toEqual(['infra', 'release-plan'])
   })
 
   it('counts a Note change as a content change, so a Snapshot follows', async () => {
