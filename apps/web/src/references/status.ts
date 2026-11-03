@@ -1,5 +1,6 @@
 // Status dots for things from another system: a Jira ticket by its status category, an MR by its head pipeline.
 import type { StatusCategory } from '@/work/api'
+import type { PolledReference } from './api'
 
 /** A ticket's dot: to do muted, in progress `primary`, done `success`. */
 export const CATEGORY_DOT: Record<StatusCategory, string> = {
@@ -27,3 +28,9 @@ export function pipelineLabel(status: string | undefined): string {
 
 /** A Reference nothing is known about yet: not polled, its details not fetched. */
 export const UNKNOWN_DOT = 'border border-dashed border-muted-foreground/60'
+
+/** A polled Reference's dot and status text: an MR by its pipeline, a ticket by its Jira status. */
+export function polledStatus(polled: PolledReference): { dot: string; label: string } {
+  if (polled.kind === 'mr') return { dot: pipelineDot(polled.mr.pipeline?.status), label: pipelineLabel(polled.mr.pipeline?.status) }
+  return { dot: CATEGORY_DOT[polled.ticket.category], label: polled.ticket.status }
+}

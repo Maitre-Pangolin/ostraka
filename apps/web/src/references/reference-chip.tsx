@@ -8,14 +8,13 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useReferenceDetails, useReferenceIndex, useReferenceSites, type PolledReference, type ReferenceDetails } from './api'
-import { CATEGORY_DOT, pipelineDot, pipelineLabel, UNKNOWN_DOT } from './status'
+import { CATEGORY_DOT, pipelineDot, pipelineLabel, polledStatus, UNKNOWN_DOT } from './status'
 
 /** What the chip knows of a Reference: polled, fetched, or nothing yet. */
 type Known = { polled?: PolledReference; details?: ReferenceDetails }
 
 function statusOf({ polled, details }: Known): { dot: string; label: string } {
-  if (polled?.kind === 'mr') return { dot: pipelineDot(polled.mr.pipeline?.status), label: pipelineLabel(polled.mr.pipeline?.status) }
-  if (polled?.kind === 'jira') return { dot: CATEGORY_DOT[polled.ticket.category], label: polled.ticket.status }
+  if (polled) return polledStatus(polled)
   if (details?.kind === 'mr') return { dot: pipelineDot(details.pipeline?.status), label: pipelineLabel(details.pipeline?.status) }
   if (details?.kind === 'jira') return { dot: CATEGORY_DOT[details.category], label: details.status }
   return { dot: UNKNOWN_DOT, label: 'Status not loaded' }
