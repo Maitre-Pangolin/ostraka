@@ -16,3 +16,4 @@ export {
 } from './keychain.ts'
 export type { ContentEvents } from './content-events.ts'
 export { DEFAULT_WEB_DIST, startServer, type RunningServer, type StartOptions } from './serve.ts'
+export { BACKUP_INTERVAL_MS, startBackups, type Backups, type BackupsOptions } from './backups.ts'

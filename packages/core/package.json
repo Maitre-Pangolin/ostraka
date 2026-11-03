@@ -4,6 +4,7 @@
   "type": "module",
   "exports": {
     ".": "./src/index.ts",
+    "./backup-types": "./src/backup-types.ts",
     "./config-schema": "./src/config-schema.ts",
     "./todo-schema": "./src/todo-schema.ts",
     "./todo-tokens": "./src/todo-tokens.ts",

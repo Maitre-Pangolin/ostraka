@@ -9,9 +9,11 @@ export const KEYCHAIN_ITEMS = {
 
 export type CredentialName = keyof typeof KEYCHAIN_ITEMS
 
-/** Reads one generic password by service name; undefined when there is no such item. */
 export type Keychain = {
+  /** Reads one generic password by service name; undefined when there is no such item. */
   read(service: string): Promise<string | undefined>
+  /** Whether the item exists, from its attributes only: the secret is not read, so there is no prompt. */
+  has(service: string): Promise<boolean>
 }
 
 /**
@@ -46,7 +48,7 @@ export class Secret {
 export type Credentials = Readonly<Partial<Record<CredentialName, Secret>>>
 
 /** Reads every item once, one after the other (each read may prompt). A missing or unreadable item is left out. */
-export async function readCredentials(keychain: Keychain, warn: (message: string) => void = () => {}): Promise<Credentials> {
+export async function readCredentials(keychain: Pick<Keychain, 'read'>, warn: (message: string) => void = () => {}): Promise<Credentials> {
   const credentials: Partial<Record<CredentialName, Secret>> = {}
   for (const [name, service] of Object.entries(KEYCHAIN_ITEMS) as [CredentialName, string][]) {
     try {
@@ -82,6 +84,13 @@ export function macKeychain(run: RunSecurity = runSecurity): Keychain {
       if (code === ITEM_NOT_FOUND) return undefined
       if (code !== 0) throw new Error(`security exited with ${code} (access denied or Keychain locked?)`)
       return stdout.replace(/\n$/, '')
+    },
+    async has(service) {
+      // No -w: the attributes only, which `-T ""` does not guard.
+      const { code } = await run(['find-generic-password', '-s', service])
+      if (code === ITEM_NOT_FOUND) return false
+      if (code !== 0) throw new Error(`security exited with ${code} (Keychain locked?)`)
+      return true
     },
   }
 }

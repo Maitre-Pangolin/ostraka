@@ -1,23 +1,10 @@
 // Snapshots: the content folder is its own git repo, and a Snapshot is one commit across the whole folder.
-import { execFile } from 'node:child_process'
 import { access, appendFile, mkdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { promisify } from 'node:util'
 import { resolveContentRoot, type ContentRootOptions } from './content-root.ts'
-
-const execFileAsync = promisify(execFile)
+import { git } from './git.ts'
 
 export type Snapshot = { commit: string; message: string }
-
-// Variables that would point git at another repo than the content folder (set when called from a git hook, say).
-const REPO_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR', 'GIT_PREFIX']
-
-async function git(root: string, args: string[]): Promise<string> {
-  const env = { ...process.env }
-  for (const name of REPO_LOCATION_VARS) delete env[name]
-  const { stdout } = await execFileAsync('git', ['-C', root, ...args], { encoding: 'utf8', env })
-  return stdout.trim()
-}
 
 /** Makes the content folder its own git repo (no remote) unless it already is one. */
 export async function ensureContentRepo(options: ContentRootOptions = {}): Promise<string> {

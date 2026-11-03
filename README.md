@@ -74,7 +74,7 @@ jira:
 
 ## Credentials
 
-Tokens live only in the macOS Keychain, and only the server reads them, once when it starts. Create each item with `-T ""` so that no app is trusted to read it silently: every read, including an agent running `security find-generic-password`, shows a prompt. Expect one prompt per item when the server starts.
+Tokens live only in the macOS Keychain. The server reads them once when it starts; besides it, only `ostraka backup` and `ostraka init --from` read one, the push token. Create each item with `-T ""` so that no app is trusted to read it silently: every read, including an agent running `security find-generic-password`, shows a prompt. Expect one prompt per item when the server starts.
 
 Paste each token at the silent `read` prompt. Don't let `security` prompt for it itself (`-w` with no value): that prompt silently truncates long tokens, and Atlassian's are about 190 characters, which then shows up as a bare 401.
 
@@ -91,3 +91,20 @@ Paste each token at the silent `read` prompt. Don't let `security` prompt for it
       read -rs TOKEN && security add-generic-password -U -a "$USER" -s ostraka-push -T "" -w "$TOKEN"; unset TOKEN
 
 `-U` replaces an existing item. Restart the server after changing one: `launchctl kickstart -k gui/$(id -u)/com.ostraka.server`. Never put tokens in `.env`, `~/.zshrc` or `config.yml`.
+
+## Back it up
+
+The content repo is backed up by a plain `git push` of its whole history to a private project in your own namespace on the work gitlab.com (content is work data and colleagues' details, so it stays on employer infrastructure). Create the project empty, then point the content repo at it once:
+
+    git -C ~/ostraka-content remote add origin https://gitlab.com/<you>/ostraka-content.git
+
+- The server pushes after an automatic Snapshot, at most once every 15 minutes, and checks at start that the content is on the remote. `pnpm ostraka backup` pushes now, for instance after an agent's `ostraka snapshot`. Both use the `ostraka-push` Keychain item (macOS prompts on each read) and never prompt for anything else.
+- Before each push, every line added since the last backup is scanned for tokens (GitLab `glpat-`, Slack `xox…`, Atlassian `ATATT…`, private keys). A match blocks the push, and the app and `ostraka backup` name the file. Take the secret out of every Snapshot not backed up yet (a secret removed in a later Snapshot is still in history), for example with `git reset --soft` to the last backed-up commit and a new commit.
+- It never force-pushes and never merges. If the remote has commits this machine doesn't, the push is rejected, automatic pushes stop and the top bar shows why. Bring them in by hand (`git -C ~/ostraka-content pull --rebase`), then `pnpm ostraka backup`; automatic pushes resume once the content is on the remote.
+- "Backed up" means the local `HEAD` is on the remote. The top bar warns when a Snapshot has waited more than 24 hours for a backup, and about any content file over 10 MB (plain git, no LFS).
+
+## Restore on a new machine
+
+1. Clone this repo, then `pnpm install && pnpm build` (Node 24+ and pnpm 10, as in [Run it](#run-it)).
+2. `pnpm ostraka init --from https://gitlab.com/<you>/ostraka-content.git`. It walks through recreating the Keychain items ([Credentials](#credentials)), waiting while you run each command in another terminal tab, the push token first; then it clones the content into `~/ostraka-content` (or `OSTRAKA_HOME`) with `origin` set, and writes `~/.config/ostraka/config.yml` with `contentDir` and `gitlab.base_url`, keeping a file that is already there. Fill in the Jira settings ([Configure it](#configure-it)).
+3. `pnpm ostraka install` for the LaunchAgent and the CLI shim ([Install it](#install-it)). The server starts, finds the content backed up and carries on pushing from there.

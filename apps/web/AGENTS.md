@@ -96,6 +96,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - **Empty**: one muted line naming the next action (`EmptyState` in `src/shell/shell.tsx`). No illustrations.
 - **Loading**: skeleton rows, shown only after 300 ms (`useAfter(300, isPending)` from `src/lib/use-after.ts`).
 - **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar (`SourceChip` in `src/work/work-overview.tsx`: `destructive` outline pill with its reason, while its last numbers stay, muted and italic, marked stale), the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
+- **Backup warning** (`BackupWarning` in `src/backup/backup-warning.tsx`): nothing while the content is backed up; otherwise one `destructive` outline pill like `SourceChip`, naming the most serious problem (a secret blocking the push, a rejected push, Snapshots waiting over 24 h, a file over 10 MB) with a count of the others, opening a Popover with all of them and their files. Below `@md` the pill is its icon, its Tooltip carrying the title. The Backup is not content, so no live update reaches it: its status refetches every minute.
 
 ## Visuals and copy
 
