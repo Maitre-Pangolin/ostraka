@@ -7,6 +7,7 @@
 
 @theme inline {
   --color-today: var(--today);
+  --color-success: var(--success);
   --color-prio-high: var(--prio-high);
   --color-prio-med: var(--prio-med);
   --color-prio-low: var(--prio-low);
@@ -77,6 +78,7 @@
   --ring: oklch(0.58 0.14 40);
   --radius: 0.5rem;
   --today: oklch(0.68 0.14 70);
+  --success: oklch(0.55 0.12 145);
   --prio-high: oklch(0.58 0.19 30);
   --prio-med: oklch(0.7 0.14 70);
   --prio-low: oklch(0.6 0.08 240);
@@ -110,6 +112,7 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.7 0.13 42);
   --today: oklch(0.78 0.13 75);
+  --success: oklch(0.74 0.12 145);
   --prio-high: oklch(0.7 0.17 30);
   --prio-med: oklch(0.8 0.13 75);
   --prio-low: oklch(0.72 0.08 240);

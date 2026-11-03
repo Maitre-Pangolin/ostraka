@@ -11,6 +11,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Server state comes from the API under `/api`. In development Vite proxies `/api` to `ostraka serve` on 127.0.0.1:4747, so run both. In production the server serves `dist/` from the same origin.
 - Server state lives only in TanStack Query, with no second client store. Each section keeps its queries and mutations as hooks in one `api.ts` (see `src/todos/api.ts`), calling the server through `src/lib/api.ts`. The server's answer (order included) is shown as is. An immediate change updates the cache in `onMutate`, rolls back on error, and invalidates on settle.
 - Live updates: `src/lib/live-updates.tsx` turns the server's `{kind, id?}` change stream (`/api/events`) into query invalidations, whoever changed the file. So every content query key starts with its kind (`['todos', …]`, `['notes', id]`), and content is never polled.
+- The work overview (GitLab, then Jira) is polled by the server, never by the app: its changes arrive on the same stream as `{ kind: 'activity', id: source }` and invalidate `['activity']` (`src/work/api.ts`). The window only reports whether it is visible (`POST /api/activity/visibility`, from `live-updates.tsx`); the server picks the rates.
 - A change to an existing item sends the `version` the server answered with that item (`post(path, body, { version })`, sent as `If-Match`). If the item changed elsewhere since, the server refuses it with 412 (`isStale(error)`): the error line in place adds “Showing the newer version.”, and the invalidation on settle shows it.
 - Content and config types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`, `Config` from `@ostraka/core/config-schema`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
 - The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`; a changed icon updates all of them.
@@ -18,6 +19,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 ## Layout
 
 - The shell (`src/shell/shell.tsx`) is the left rail, the top bar and the current view. Every view renders inside the content area, which is the `@container`.
+- The top bar is one row: the work overview's counts (a button that expands the MRs in place, below the row, `aria-expanded`), then one item per thing that needs attention, such as a failing source's chip or the backup warning. A new item is another child of that row in `TopBar`.
 - Lay out with container queries on the content area: `@md:`, `@3xl:`. The window is sized by the user, so viewport variants (`md:`, `lg:`) describe the wrong box.
 - `@md` is the single compact breakpoint. Below it, secondary metadata hides and labels become icons with a Tooltip carrying the label. List and detail sit side by side from `@3xl`.
 - The minimum window is 600px wide. At 600px nothing scrolls sideways: long text truncates (`min-w-0` + `truncate`) or wraps.
@@ -30,7 +32,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 ## Colour and theme
 
-- Use semantic colour tokens only: `bg-background`, `text-foreground`, `bg-muted`, `text-muted-foreground`, `bg-primary`, `border`, `ring`, `destructive`, and the app tokens `today`, `prio-*`, `tag-1`…`tag-8`. Raw Tailwind palette colours and hex values stay out of components.
+- Use semantic colour tokens only: `bg-background`, `text-foreground`, `bg-muted`, `text-muted-foreground`, `bg-primary`, `border`, `ring`, `destructive`, and the app tokens `today`, `success` (a passed pipeline), `prio-*`, `tag-1`…`tag-8`. Raw Tailwind palette colours and hex values stay out of components.
 - Tokens live in `src/index.css`: values under `:root` (light) and `.dark`, exposed to Tailwind in `@theme inline`. A new token gets a light value, a dark value and a `@theme inline` line.
 - Light/dark is the `.dark` class on `<html>`, defaulting to light. Theme and density are per-browser choices handled by `src/shell/appearance.tsx`.
 
@@ -69,7 +71,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - **Empty**: one muted line naming the next action (`EmptyState` in `src/shell/shell.tsx`). No illustrations.
 - **Loading**: skeleton rows, shown only after 300 ms (`useAfter(300, isPending)` from `src/lib/use-after.ts`).
-- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
+- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar (`SourceChip` in `src/work/work-overview.tsx`: `destructive` outline pill with its reason, while its last numbers stay, muted and italic, marked stale), the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
 
 ## Visuals and copy
 
