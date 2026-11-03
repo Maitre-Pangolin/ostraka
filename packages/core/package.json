@@ -7,12 +7,17 @@
     "./config-schema": "./src/config-schema.ts",
     "./todo-schema": "./src/todo-schema.ts",
     "./todo-tokens": "./src/todo-tokens.ts",
-    "./todo-order": "./src/todo-order.ts"
+    "./todo-order": "./src/todo-order.ts",
+    "./markdown": "./src/markdown.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
   },
   "dependencies": {
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5",
     "yaml": "^2.9.1",
     "zod": "^4.6.7"
   },
