@@ -132,7 +132,7 @@ function rejectionReason(refusal: string, branch: string): string {
   const behind = /fetch first|non-fast-forward/.test(refusal)
     ? ` The remote's ${branch} has commits this machine doesn't. Ostraka never merges or force-pushes: bring them in by hand in the content folder (git pull --rebase), then run ostraka backup.`
     : ''
-  return `Push ${refusal}.${behind}`
+  return `Push ${refusal.replaceAll(/[[\]]/g, '')}.${behind}`
 }
 
 /**
