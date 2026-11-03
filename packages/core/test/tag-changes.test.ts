@@ -4,9 +4,11 @@ import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   deleteTag,
+  fileHistory,
   mergeTag,
   renameTag,
   setTagColor,
+  snapshot,
   TagExistsError,
   TagNameError,
   TagNotFoundError,
@@ -128,6 +130,16 @@ describe('renameTag', () => {
     await expect(renameTag('nope', 'other', options)).rejects.toThrow(TagNotFoundError)
     await expect(renameTag('infra', '%%', options)).rejects.toThrow(TagNameError)
     expect(await read('notes/plan.md')).toContain('tags: [infra, idea]')
+  })
+
+  it('is picked up whole by the next Snapshot: one commit for every file it rewrote', { timeout: 30_000 }, async () => {
+    await writeContent()
+    await write('tags.yml', 'infra:\n  color: teal\n')
+    await snapshot('before', options)
+    await renameTag('infra', 'platform', options)
+    const made = await snapshot('Automatic snapshot', options)
+    const paths = ['todos.json', 'tags.yml', 'notes/plan.md', 'devlogs/2026-10-29.md', 'devlogs/2026-10.md', 'sketches/flow.md']
+    for (const path of paths) expect((await fileHistory(path, options))[0]?.commit).toBe(made?.commit)
   })
 
   it('leaves a file with a broken header alone', async () => {
