@@ -158,6 +158,29 @@ export {
   type DevlogsView,
   type DevlogWeek,
 } from './devlog-days.ts'
+export {
+  formatPeopleFile,
+  NewPersonSchema,
+  PeopleFileSchema,
+  PERSON_ID,
+  PersonIdentitiesSchema,
+  PersonSchema,
+  type NewPerson,
+  type PeopleFile,
+  type Person,
+  type PersonIdentities,
+} from './person-schema.ts'
+export {
+  addPerson,
+  findPeople,
+  getPerson,
+  listPeople,
+  PeopleFileError,
+  PersonExistsError,
+  PersonNotFoundError,
+  refreshPerson,
+  type PeopleOptions,
+} from './people.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,
