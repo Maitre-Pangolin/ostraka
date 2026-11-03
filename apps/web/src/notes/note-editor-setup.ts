@@ -3,6 +3,8 @@
 import { HOUSE_STYLE } from '@ostraka/core/markdown'
 import { Crepe } from '@milkdown/crepe'
 import { remarkStringifyOptionsCtx } from '@milkdown/kit/core'
+import type { Plugin } from '@milkdown/kit/prose/state'
+import { $prose } from '@milkdown/kit/utils'
 
 export type NoteEditor = Crepe
 
@@ -18,9 +20,11 @@ export type NoteEditorOptions = {
   markdown: string
   /** Renders some code blocks in place (Mermaid); by default none are. */
   renderPreview?: RenderPreview
+  /** ProseMirror plugins that only decorate or suggest (token highlighting), never changing what is serialized. */
+  plugins?: Plugin[]
 }
 
-export function createNoteEditor({ root, markdown, renderPreview }: NoteEditorOptions): NoteEditor {
+export function createNoteEditor({ root, markdown, renderPreview, plugins = [] }: NoteEditorOptions): NoteEditor {
   const crepe = new Crepe({
     root,
     defaultValue: markdown,
@@ -36,5 +40,6 @@ export function createNoteEditor({ root, markdown, renderPreview }: NoteEditorOp
     },
   })
   crepe.editor.config((ctx) => ctx.update(remarkStringifyOptionsCtx, (options) => ({ ...options, ...HOUSE_STYLE })))
+  for (const plugin of plugins) crepe.editor.use($prose(() => plugin))
   return crepe
 }

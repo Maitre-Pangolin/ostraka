@@ -15,7 +15,7 @@ import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { useReferenceIndex, useReferenceSites } from '@/references/api'
-import { ReferenceChip, ReferenceIcon } from '@/references/reference-chip'
+import { ReferenceChip, ReferenceSuggestionLabel } from '@/references/reference-chip'
 import { longDate, useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { PriorityFlag, TagPill } from './properties'
@@ -299,21 +299,7 @@ export function TokenField({
 }
 
 function SuggestionLabel({ suggestion }: { suggestion: Suggestion }) {
-  if (suggestion.kind === 'reference')
-    return (
-      <>
-        <ReferenceIcon reference={suggestion.reference} className="text-muted-foreground" />
-        <span className="shrink-0 text-xs font-medium tabular-nums">
-          {suggestion.reference.kind === 'mr' ? `!${suggestion.reference.iid}` : suggestion.reference.key}
-        </span>
-        <span className="min-w-0 flex-1 truncate">{suggestion.title}</span>
-        {suggestion.reference.kind === 'mr' && (
-          <span className="text-muted-foreground hidden max-w-24 shrink-0 truncate text-[11px] @md:inline">
-            {suggestion.reference.project}
-          </span>
-        )}
-      </>
-    )
+  if (suggestion.kind === 'reference') return <ReferenceSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'tag')
     return (
       <>

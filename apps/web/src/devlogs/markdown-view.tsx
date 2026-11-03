@@ -1,10 +1,18 @@
 // Markdown shown read-only, as plain elements styled by `.ostraka-md` in index.css. Parsed by core (the same parser
 // the house style writes with); raw HTML shows as text, and only web and mail links become links. A Todo link,
-// `[title](todo:<id>)`, is drawn by the app (`todoLink`), so it can show the Todo's current title.
+// `[title](todo:<id>)`, is drawn by the app (`todoLink`), so it can show the Todo's current title, and so is plain
+// text (`text`), so References show as chips.
 import { parseMarkdown, type MarkdownNode } from '@ostraka/core/markdown'
 import { Fragment, type ReactNode } from 'react'
 
 export type TodoLinkRenderer = (id: string, storedText: string) => ReactNode
+
+/** Plain text as shown, outside code and link text: References as chips (`ReferenceText`), later Mentions. */
+export type TextRenderer = (text: string) => ReactNode
+
+type Renderers = { todoLink: TodoLinkRenderer; text: TextRenderer }
+
+const asIs: TextRenderer = (text) => text
 
 const TODO_LINK = /^todo:([a-z0-9]+)$/i
 const SAFE_LINK = /^(https?:|mailto:)/i
@@ -13,12 +21,12 @@ const SAFE_LINK = /^(https?:|mailto:)/i
 const textOf = (node: MarkdownNode): string =>
   'value' in node ? node.value : 'children' in node ? (node.children as MarkdownNode[]).map(textOf).join('') : ''
 
-function render(nodes: MarkdownNode[], todoLink: TodoLinkRenderer): ReactNode[] {
-  return nodes.map((node, index) => <Fragment key={index}>{renderNode(node, todoLink)}</Fragment>)
+function render(nodes: MarkdownNode[], renderers: Renderers): ReactNode[] {
+  return nodes.map((node, index) => <Fragment key={index}>{renderNode(node, renderers)}</Fragment>)
 }
 
-function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
-  const children = () => ('children' in node ? render(node.children as MarkdownNode[], todoLink) : null)
+function renderNode(node: MarkdownNode, renderers: Renderers): ReactNode {
+  const children = (inner = renderers) => ('children' in node ? render(node.children as MarkdownNode[], inner) : null)
   switch (node.type) {
     case 'heading': {
       const Heading = `h${node.depth}` as const
@@ -27,6 +35,7 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
     case 'paragraph':
       return <p>{children()}</p>
     case 'text':
+      return renderers.text(node.value)
     case 'html':
       return node.value
     case 'emphasis':
@@ -56,7 +65,7 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
       const content = node.spread
         ? children()
         : node.children.map((child, index) => (
-            <Fragment key={index}>{child.type === 'paragraph' ? render(child.children, todoLink) : renderNode(child, todoLink)}</Fragment>
+            <Fragment key={index}>{child.type === 'paragraph' ? render(child.children, renderers) : renderNode(child, renderers)}</Fragment>
           ))
       if (node.checked === null || node.checked === undefined) return <li>{content}</li>
       return (
@@ -67,11 +76,12 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
     }
     case 'link': {
       const todo = TODO_LINK.exec(node.url)?.[1]
-      if (todo) return todoLink(todo, textOf(node))
+      if (todo) return renderers.todoLink(todo, textOf(node))
       if (!SAFE_LINK.test(node.url)) return children()
+      // A link's text stays text: a chip's hover card can't sit inside a link.
       return (
         <a href={node.url} target="_blank" rel="noreferrer">
-          {children()}
+          {children({ ...renderers, text: asIs })}
         </a>
       )
     }
@@ -85,7 +95,7 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
             {head && (
               <tr>
                 {head.children.map((cell, index) => (
-                  <th key={index}>{render(cell.children, todoLink)}</th>
+                  <th key={index}>{render(cell.children, renderers)}</th>
                 ))}
               </tr>
             )}
@@ -94,7 +104,7 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
             {body.map((row, index) => (
               <tr key={index}>
                 {row.children.map((cell, cellIndex) => (
-                  <td key={cellIndex}>{render(cell.children, todoLink)}</td>
+                  <td key={cellIndex}>{render(cell.children, renderers)}</td>
                 ))}
               </tr>
             ))}
@@ -108,6 +118,6 @@ function renderNode(node: MarkdownNode, todoLink: TodoLinkRenderer): ReactNode {
 }
 
 /** A Markdown body rendered read-only. */
-export function MarkdownView({ markdown, todoLink }: { markdown: string; todoLink: TodoLinkRenderer }) {
-  return <>{render(parseMarkdown(markdown).children, todoLink)}</>
+export function MarkdownView({ markdown, todoLink, text = asIs }: { markdown: string; todoLink: TodoLinkRenderer; text?: TextRenderer }) {
+  return <>{render(parseMarkdown(markdown).children, { todoLink, text })}</>
 }
