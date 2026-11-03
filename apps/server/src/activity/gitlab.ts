@@ -159,7 +159,9 @@ export function gitlabSource({ fetch, token, baseUrl }: GitLabOptions): Activity
       const { base, headers } = await connection()
       const statuses = new Map<number, PipelineStatus>()
       for (const [id, projectId] of running(data)) {
-        const pipeline = await getJson<{ status: string }>(fetch, `${base}/api/v4/projects/${projectId}/pipelines/${id}`, 'GitLab', { headers })
+        const pipeline = await getJson<{ status: string }>(fetch, `${base}/api/v4/projects/${projectId}/pipelines/${id}`, 'GitLab', {
+          headers,
+        })
         statuses.set(id, pipeline.status)
       }
       const update = (mr: MergeRequest): MergeRequest => {

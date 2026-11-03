@@ -2,6 +2,10 @@
 // The server owns the schedule; the UI only reports whether a window is visible.
 import type { Clock } from './clock.ts'
 
+/** How often the poller checks the wall clock, and how late a check must be to mean the machine slept. */
+const HEARTBEAT_MS = 30_000
+const WAKE_LATENESS_MS = 60_000
+
 /** How often a job runs while a window shows the app, and while none does. */
 export type Rates = { visibleMs: number; hiddenMs: number }
 
@@ -52,6 +56,14 @@ export type Activity = {
 /** A source that is not set up (no base URL, no token): it is off, not failing, and holds no data. */
 export class SourceOffError extends Error {}
 
+/** When a `Retry-After` value (seconds or an HTTP date), carried by an error as `retryAfter`, lets calls resume. */
+function retryAt(error: unknown, now: number): number | undefined {
+  const value = (error as { retryAfter?: unknown } | null)?.retryAfter
+  if (typeof value !== 'string' || !value.trim()) return undefined
+  const at = /^\d+$/.test(value.trim()) ? now + Number(value) * 1000 : Date.parse(value)
+  return Number.isNaN(at) ? undefined : at
+}
+
 type JobState<T> = {
   job: Job<T>
   /** When it last started, or when it became active: the data that made it active is that fresh. */
@@ -68,11 +80,16 @@ type SourceState<T> = {
   data?: T
   updatedAt?: number
   off?: string
+  /** No call before this time: the source answered with `Retry-After`. */
+  notBefore?: number
 }
 
 export function activityPoller({ sources, clock }: { sources: ActivitySource<any>[]; clock: Clock }): Activity {
   const listeners = new Set<ActivityListener>()
-  const states: SourceState<unknown>[] = sources.map((source) => ({ source, jobs: source.jobs.map((job) => ({ job, active: false, running: false })) }))
+  const states: SourceState<unknown>[] = sources.map((source) => ({
+    source,
+    jobs: source.jobs.map((job) => ({ job, active: false, running: false })),
+  }))
   let started = false
   /** Each connected window, and whether it is visible. */
   const windows = new Map<string, boolean>()
@@ -97,7 +114,7 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
     }
     if (!wasActive && jobState.job.active) jobState.lastRun = clock.now()
     if (!started || jobState.running) return
-    const due = jobState.lastRun === undefined ? clock.now() : jobState.lastRun + interval(jobState.job)
+    const due = Math.max(jobState.lastRun === undefined ? clock.now() : jobState.lastRun + interval(jobState.job), state.notBefore ?? 0)
     jobState.cancel = clock.setTimeout(() => run(state, jobState), Math.max(0, due - clock.now()))
   }
 
@@ -120,6 +137,8 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
         state.updatedAt = undefined
       } else {
         jobState.error = error instanceof Error ? error.message : String(error)
+        const resume = retryAt(error, clock.now())
+        if (resume !== undefined) state.notBefore = Math.max(state.notBefore ?? 0, resume)
       }
     } finally {
       jobState.running = false
@@ -131,7 +150,11 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
 
   const status = (state: SourceState<unknown>): SourceStatus => {
     const failure = state.jobs.find((jobState) => jobState.error !== undefined)?.error
-    const base = { source: state.source.name, data: state.data, updatedAt: state.updatedAt === undefined ? undefined : new Date(state.updatedAt).toISOString() }
+    const base = {
+      source: state.source.name,
+      data: state.data,
+      updatedAt: state.updatedAt === undefined ? undefined : new Date(state.updatedAt).toISOString(),
+    }
     if (state.off !== undefined) return { source: state.source.name, state: 'off', reason: state.off, stale: false }
     if (failure !== undefined) return { ...base, state: 'failing', reason: failure, stale: state.data !== undefined }
     if (state.updatedAt === undefined) return { ...base, state: 'loading', stale: false }
@@ -140,6 +163,19 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
 
   const rescheduleAll = () => {
     for (const state of states) for (const jobState of state.jobs) schedule(state, jobState)
+  }
+
+  // Node has no sleep event, but timers stop while the machine sleeps: a heartbeat that fires much later than
+  // planned (by the wall clock) means it just woke, and every source refreshes once, Retry-After permitting.
+  let stopHeartbeat: (() => void) | undefined
+  const heartbeat = (expected: number) => {
+    stopHeartbeat = clock.setTimeout(() => {
+      if (clock.now() - expected > WAKE_LATENESS_MS) {
+        for (const state of states) for (const jobState of state.jobs) if (jobState.active) jobState.lastRun = undefined
+        rescheduleAll()
+      }
+      heartbeat(clock.now() + HEARTBEAT_MS)
+    }, HEARTBEAT_MS)
   }
 
   /** Applies a change to the windows; a change of overall visibility moves every job to its new rate. */
@@ -154,9 +190,11 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
       if (started) return
       started = true
       rescheduleAll()
+      heartbeat(clock.now() + HEARTBEAT_MS)
     },
     stop() {
       started = false
+      stopHeartbeat?.()
       for (const state of states) for (const jobState of state.jobs) jobState.cancel?.()
     },
     statuses: () => states.map(status),

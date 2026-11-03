@@ -67,12 +67,14 @@ export function createApp({
   app.route('/api/todos', todoRoutes(content))
   app.route('/api/tags', tagRoutes(content))
 
-  // Live updates: one stream of `{kind, id?}` changes. `ready` comes first, once changes are being watched.
+  // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
+  // id: source }`). `ready` comes first, once changes are being watched.
   app.get('/api/events', (c) =>
     streamSSE(c, async (stream) => {
       const closed = new Promise<void>((resolve) => stream.onAbort(resolve))
       const send = (change: object) => void stream.writeSSE({ data: JSON.stringify(change) })
       const unsubscribe = await events.subscribe(send)
+      const unsubscribeActivity = activity.subscribe(send)
       // `?client=` names the window, which then reports its visibility to the work overview's schedule.
       const client = c.req.query('client')
       const disconnect = client ? activity.connect(client) : undefined
@@ -81,6 +83,7 @@ export function createApp({
         await closed
       } finally {
         unsubscribe()
+        unsubscribeActivity()
         disconnect?.()
       }
     }),

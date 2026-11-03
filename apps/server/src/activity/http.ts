@@ -5,10 +5,13 @@ export type Fetch = typeof globalThis.fetch
 /** An Activity source answered with an error status. */
 export class SourceHttpError extends Error {
   readonly status: number
+  /** The `Retry-After` header as sent: seconds, or an HTTP date. The poller waits that long. */
+  readonly retryAfter: string | undefined
 
-  constructor(status: number, message: string) {
+  constructor(status: number, message: string, retryAfter?: string) {
     super(message)
     this.status = status
+    this.retryAfter = retryAfter
   }
 }
 
@@ -23,7 +26,7 @@ export async function getJson<T>(fetch: Fetch, url: string, what: string, init: 
   }
   if (!res.ok) {
     await res.body?.cancel()
-    throw new SourceHttpError(res.status, failure(what, res.status))
+    throw new SourceHttpError(res.status, failure(what, res.status), res.headers.get('retry-after') ?? undefined)
   }
   return (await res.json()) as T
 }
