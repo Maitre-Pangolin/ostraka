@@ -1,6 +1,7 @@
 // References: a merge request or Jira issue written as that system's own token, `group/project!<iid>` or
 // `<KEY>-<number>`, in plain text. Pure and free of Node and zod, so the web app, the server, the CLI and search
 // share one grammar.
+import { findMentions } from './mentions.ts'
 
 export type Reference = { kind: 'mr'; project: string; iid: number } | { kind: 'jira'; key: string }
 
@@ -62,33 +63,55 @@ export function findReferences(text: string): FoundReference[] {
   })
 }
 
-/**
- * A token edited as one atomic chip. Mentions (#47) join this union, so editors and `joinPieces` treat them alike.
- */
-export type Chip = { kind: 'reference'; token: string; reference: Reference }
+/** A token edited as one atomic chip: a Reference or a Mention, so editors and `joinPieces` treat them alike. */
+export type Chip = { kind: 'reference'; token: string; reference: Reference } | { kind: 'mention'; token: string; id: string }
 
 /** A text as an editor holds it: runs of plain text between chips. */
 export type TextPiece = { kind: 'text'; text: string } | Chip
 
-/** Chips' tokens found in a text. Mentions add theirs here. */
-const findChips = (text: string): { token: string; start: number; end: number }[] => findReferences(text)
+type FoundChip = { start: number; end: number; chip: Chip }
 
-/** `text` as runs of plain text and a chip per Reference. */
-export function splitReferences(text: string): TextPiece[] {
+/** Chips found in a text, in order: References, and Mentions `isPerson` accepts (all by default). */
+function findChips(text: string, isPerson: (id: string) => boolean = () => true): FoundChip[] {
+  const references = findReferences(text).map(({ start, end, token, reference }): FoundChip => ({
+    start,
+    end,
+    chip: { kind: 'reference', token, reference },
+  }))
+  const mentions = findMentions(text)
+    .filter((found) => isPerson(found.id))
+    .map(({ start, end, token, id }): FoundChip => ({ start, end, chip: { kind: 'mention', token, id } }))
+  let last = 0
+  return [...references, ...mentions]
+    .toSorted((a, b) => a.start - b.start)
+    .filter((found) => found.start >= last && ((last = found.end), true))
+}
+
+function split(text: string, found: FoundChip[]): TextPiece[] {
   const pieces: TextPiece[] = []
   let at = 0
-  for (const found of findReferences(text)) {
-    if (found.start > at) pieces.push({ kind: 'text', text: text.slice(at, found.start) })
-    pieces.push({ kind: 'reference', token: found.token, reference: found.reference })
-    at = found.end
+  for (const { start, end, chip } of found) {
+    if (start > at) pieces.push({ kind: 'text', text: text.slice(at, start) })
+    pieces.push(chip)
+    at = end
   }
   if (at < text.length) pieces.push({ kind: 'text', text: text.slice(at) })
   return pieces
 }
 
+/** `text` as runs of plain text and a chip per Reference. */
+export const splitReferences = (text: string): TextPiece[] => split(text, findChips(text, () => false))
+
+/**
+ * `text` as runs of plain text and a chip per Reference and Mention. With `isPerson`, a Mention of anyone else (an
+ * id not in the People directory) stays text.
+ */
+export const splitChips = (text: string, { isPerson }: { isPerson?: (id: string) => boolean } = {}): TextPiece[] =>
+  split(text, findChips(text, isPerson))
+
 /** Whether `token` still reads as one whole chip between the characters `before` and `after`. */
 const standsAlone = (before: string, token: string, after: string) =>
-  findChips(`${before}${token}${after}`).some((found) => found.start === before.length && found.token === token)
+  findChips(`${before}${token}${after}`).some((found) => found.start === before.length && found.chip.token === token)
 
 /**
  * Pieces back to plain text, for saving. A character touching a chip that would stop its token parsing back (a
