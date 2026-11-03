@@ -35,6 +35,14 @@ _Avoid_: Journal, diary, daily log, worklog
 **Backfill**:
 Writing Dev logs for past days that have none.
 
+**Off day**:
+A weekday with no work to record, such as a holiday, kept as a Dev log marked off with an optional label so it doesn't show as missing.
+_Avoid_: Day off, leave, absence
+
+**Monthly summary**:
+A month's Dev logs summed up in one file, written by the Dev log skill from that month's days.
+_Avoid_: Monthly report, recap
+
 **Sketch**:
 A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
 _Avoid_: Drawing, diagram, whiteboard
