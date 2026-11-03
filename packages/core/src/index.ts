@@ -53,5 +53,34 @@ export {
   updateTodo,
   type TodoOptions,
 } from './todos.ts'
+export { formatMarkdown, HOUSE_STYLE, joinFrontmatter, splitFrontmatter, type Frontmatter } from './markdown.ts'
+export {
+  isBrokenFile,
+  markdownFiles,
+  MarkdownFileError,
+  MarkdownFileExistsError,
+  MarkdownFileNotFoundError,
+  type BrokenMarkdownFile,
+  type MarkdownChange,
+  type MarkdownChangeOptions,
+  type MarkdownFile,
+  type MarkdownFileOptions,
+  type MarkdownKind,
+} from './markdown-files.ts'
+export {
+  IDEA_TAG,
+  isBrokenNote,
+  NewNoteSchema,
+  NoteChangeSchema,
+  NoteHeaderSchema,
+  type BrokenNote,
+  type NewNote,
+  type Note,
+  type NoteChange,
+  type NoteHeader,
+  type NoteListing,
+  type NoteSummary,
+} from './note-schema.ts'
+export { createNote, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'

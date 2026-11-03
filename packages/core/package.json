@@ -8,7 +8,8 @@
     "./todo-schema": "./src/todo-schema.ts",
     "./todo-tokens": "./src/todo-tokens.ts",
     "./todo-order": "./src/todo-order.ts",
-    "./markdown": "./src/markdown.ts"
+    "./markdown": "./src/markdown.ts",
+    "./note-schema": "./src/note-schema.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."
