@@ -16,6 +16,8 @@ export type MergeRequest = {
   updatedAt: string
   author: string
   approvedByMe: boolean
+  /** How many have approved it. */
+  approvals: number
   pipeline?: { id: number; status: PipelineStatus; url: string }
 }
 

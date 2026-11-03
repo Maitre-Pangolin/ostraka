@@ -60,6 +60,14 @@ describe('ostraka todo', () => {
     expect(stdout).toMatch(/^[a-z0-9]{5} {2}Fix login {2}#auth \*high \^2026-11-05\n$/)
   })
 
+  it('keeps MR and Jira References as plain tokens in the title, and prints them back', async () => {
+    const added = await ostraka('todo', 'add', 'Rebase acme/pay/api!809 for PAY-1432 #review', '--json')
+    expect(JSON.parse(added.stdout)).toMatchObject({ title: 'Rebase acme/pay/api!809 for PAY-1432', tags: ['review'] })
+
+    const { stdout } = await ostraka('todo', 'list')
+    expect(stdout).toMatch(/^[a-z0-9]{5} {2}Rebase acme\/pay\/api!809 for PAY-1432 {2}#review\n$/)
+  })
+
   it('reads ^fri as the next Friday', async () => {
     const { due } = JSON.parse((await ostraka('todo', 'add', 'Fix login', '^fri', '--json')).stdout) as { due: string }
     expect(new Date(`${due}T00:00:00Z`).getUTCDay()).toBe(5)

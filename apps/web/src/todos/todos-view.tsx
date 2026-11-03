@@ -8,9 +8,11 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverTrigger } from '@/components/ui/popover'
+import { FileHistory, HistoryButton } from '@/history/file-history'
 import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
+import { ReferenceText } from '@/references/reference-chip'
 import { EmptyState } from '@/shell/shell'
 import {
   useCompleteTodo,
@@ -39,11 +41,27 @@ export function TodosView() {
   const filter = useSearch({ from: '/todos' })
   const navigate = useNavigate({ from: '/todos' })
   const setFilter = (next: TodoFilter) => void navigate({ search: next, replace: true })
+  const [historyOpen, setHistoryOpen] = useState(false)
+  if (historyOpen) {
+    return (
+      <div className="mx-auto flex h-full max-w-3xl flex-col p-3">
+        <h1 className="sr-only">Todos</h1>
+        <div className="flex min-h-0 flex-1 flex-col overflow-hidden rounded-lg border">
+          <FileHistory path="todos.json" onClose={() => setHistoryOpen(false)} onRestored={() => setHistoryOpen(false)} />
+        </div>
+      </div>
+    )
+  }
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-2 p-3">
       <h1 className="sr-only">Todos</h1>
       <QuickEntry />
-      <TodoFilters filter={filter} onChange={setFilter} />
+      <div className="flex items-start gap-1.5">
+        <div className="min-w-0 flex-1">
+          <TodoFilters filter={filter} onChange={setFilter} />
+        </div>
+        <HistoryButton open={false} onClick={() => setHistoryOpen(true)} />
+      </div>
       <section aria-label="Open Todos">
         <OpenTodos filter={filter} />
       </section>
@@ -374,7 +392,7 @@ function FinishedRow({ todo, dimmed, onReopen, children }: { todo: Todo; dimmed:
           <Checkbox checked onCheckedChange={onReopen} aria-label={`Reopen “${todo.title}”`} className="rounded-full" />
         )}
         <span className="text-muted-foreground decoration-muted-foreground/50 min-w-0 flex-1 truncate text-sm line-through">
-          {todo.title}
+          <ReferenceText text={todo.title} />
         </span>
         {dropped && (
           <span className="text-muted-foreground hidden max-w-[40%] truncate text-xs @md:block" title={todo.dropReason}>

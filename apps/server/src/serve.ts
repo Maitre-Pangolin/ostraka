@@ -7,6 +7,7 @@ import { workOverview } from './activity/work-overview.ts'
 import { createApp, HOSTNAME, PORT } from './app.ts'
 import { startBackups, type Backups } from './backups.ts'
 import { contentEvents } from './content-events.ts'
+import { referenceLookup } from './references.ts'
 import { readCredentials, type Keychain } from './keychain.ts'
 
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url))
@@ -58,7 +59,8 @@ export async function startServer({
   const unwatch = await events.subscribe(() => snapshots.changed())
   // The work overview polls from startup, at its hidden rates until a window reports that it is visible.
   const activity = workOverview({ fetch, credentials, content: { homeDir }, clock: systemClock })
-  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events, activity, backups })
+  const references = referenceLookup({ fetch, credentials, content: { homeDir } })
+  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events, activity, backups, references })
   activity.start()
   try {
     const server = await new Promise<ServerType>((resolve, reject) => {

@@ -6,6 +6,7 @@ import { Ban, Plus } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
+import { ReferenceText } from '@/references/reference-chip'
 import { useAddSubTodo, type SubTodo, type Todo } from './api'
 import { longDate } from './due'
 import { PropChips } from './quick-entry'
@@ -79,7 +80,7 @@ function FinishedSubTodo({ sub, onReopen }: { sub: SubTodo; onReopen: () => void
         <Checkbox checked onCheckedChange={onReopen} aria-label={`Reopen “${sub.title}”`} className="rounded-full" />
       )}
       <span className="text-muted-foreground decoration-muted-foreground/50 min-w-0 flex-1 truncate py-1 pl-1 text-sm line-through">
-        {sub.title}
+        <ReferenceText text={sub.title} />
       </span>
       {dropped && (
         <span className="text-muted-foreground hidden max-w-[40%] truncate text-xs @md:block" title={sub.dropReason}>

@@ -1,5 +1,14 @@
 export { configPath, ConfigSchema, loadConfig, type Config, type ConfigOptions } from './config.ts'
-export { CONTENT_KINDS, contentChangeAt, contentPath, isContentKind, type ContentChange, type ContentKind } from './content-path.ts'
+export {
+  CONTENT_KINDS,
+  contentChangeAt,
+  contentFileAt,
+  contentPath,
+  ContentPathError,
+  isContentKind,
+  type ContentChange,
+  type ContentKind,
+} from './content-path.ts'
 export { locateContentRoot, resolveContentRoot, type ContentRootOptions, type ContentRootSource } from './content-root.ts'
 export {
   DropTodoSchema,
@@ -90,7 +99,8 @@ export {
   type NoteSummary,
 } from './note-schema.ts'
 export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
-export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
+export { ensureContentRepo, fileAtSnapshot, fileHistory, restoreFile, snapshot, SnapshotNotFoundError, type Snapshot } from './snapshots.ts'
+export { RestoreFileSchema, type FileSnapshot, type FileVersion, type Restore, type RestoreFile } from './history-schema.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
 export {
   isBrokenSketch,

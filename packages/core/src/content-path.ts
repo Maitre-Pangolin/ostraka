@@ -40,3 +40,16 @@ export function contentChangeAt(relativePath: string): ContentChange | undefined
   if (!isFolder || second.startsWith('.') || extname(second) !== '.md') return undefined
   return { kind, id: basename(second, '.md') }
 }
+
+/** The path does not name a content file: it leads out of the content folder, into its git folder, or to a folder. */
+export class ContentPathError extends Error {}
+
+/**
+ * Checks that a path names one content file, relative to the content root with `/` separators (`todos.json`,
+ * `notes/<id>.md`), and says which content it holds. Folders, lock and temp files and the git folder are refused.
+ */
+export function contentFileAt(path: string): ContentChange {
+  const change = path.includes('\\') ? undefined : contentChangeAt(path.split('/').join(sep))
+  if (!change || (change.id === undefined && !extname(path))) throw new ContentPathError(`Not a content file: ${path}`)
+  return change
+}

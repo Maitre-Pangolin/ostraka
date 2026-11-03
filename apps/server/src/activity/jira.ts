@@ -79,6 +79,20 @@ function activeSprint(values: SprintValue[], boardId: number | undefined): Sprin
 
 const CATEGORIES = new Set<string>(['new', 'indeterminate', 'done'])
 
+/** Jira's status category key as one of the three; anything else reads as to do. */
+export const statusCategory = (key: string): StatusCategory => (CATEGORIES.has(key) ? (key as StatusCategory) : 'new')
+
+/** The REST API through the Atlassian gateway, which scoped tokens require, and its Basic auth; off when not set up. */
+export function jiraConnection(jira: Config['jira'], token: Secret | undefined) {
+  if (!jira?.cloud_id) throw new SourceOffError('No jira.cloud_id in config.yml.')
+  if (!jira.email) throw new SourceOffError('No jira.email in config.yml.')
+  if (!token) throw new SourceOffError('No ostraka-jira item in the Keychain.')
+  return {
+    api: `https://api.atlassian.com/ex/jira/${jira.cloud_id}/rest/api/3`,
+    authorization: `Basic ${Buffer.from(`${jira.email}:${token.reveal()}`).toString('base64')}`,
+  }
+}
+
 export type JiraOptions = {
   fetch: Fetch
   token: Secret | undefined
@@ -95,11 +109,7 @@ export function jiraSource({ fetch, token, config, now }: JiraOptions): Activity
     rates: JIRA_RATES.sprint,
     async run() {
       const jira = (await config()) ?? {}
-      if (!jira.cloud_id) throw new SourceOffError('No jira.cloud_id in config.yml.')
-      if (!jira.email) throw new SourceOffError('No jira.email in config.yml.')
-      if (!token) throw new SourceOffError('No ostraka-jira item in the Keychain.')
-      const api = `https://api.atlassian.com/ex/jira/${jira.cloud_id}/rest/api/3`
-      const authorization = `Basic ${Buffer.from(`${jira.email}:${token.reveal()}`).toString('base64')}`
+      const { api, authorization } = jiraConnection(jira, token)
 
       if (!sprintField) {
         const fields = await getJson<Field[]>(fetch, `${api}/field`, 'Jira', { headers: { authorization, accept: 'application/json' } })
@@ -131,7 +141,7 @@ export function jiraSource({ fetch, token, config, now }: JiraOptions): Activity
           key,
           summary: fields.summary,
           status: fields.status.name,
-          category: CATEGORIES.has(category) ? (category as StatusCategory) : 'new',
+          category: statusCategory(category),
           ...(site && { url: `${site}/browse/${key}` }),
         }
       })
