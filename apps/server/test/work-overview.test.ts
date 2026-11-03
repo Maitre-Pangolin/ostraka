@@ -208,6 +208,18 @@ describe('work overview: GitLab', () => {
       expect(graphqlCalls(calls)).toBe(2)
     })
 
+    it('keeps a reconnected window visible when its old stream closes late', async () => {
+      const { time, calls, openWindow } = await setup(answer)
+      await time.advance(0)
+      const before = await openWindow('tab-1')
+      await before.show()
+      const after = await openWindow('tab-1')
+      await after.show()
+      await before.close()
+      await time.advance(MINUTE)
+      expect(graphqlCalls(calls)).toBe(2)
+    })
+
     it('does not take a visibility report for a change to content (no Snapshot)', async () => {
       const { openWindow, contentChanges } = await setup(answer)
       await (await openWindow('tab-1')).show()

@@ -92,9 +92,9 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
   }))
   let started = false
   /** Each connected window, and whether it is visible. */
-  const windows = new Map<string, boolean>()
+  const windows = new Map<string, { visible: boolean }>()
 
-  const visible = () => [...windows.values()].some(Boolean)
+  const visible = () => [...windows.values()].some((window) => window.visible)
   const interval = (job: Job<unknown>) => (visible() ? job.rates.visibleMs : job.rates.hiddenMs)
   // An off source keeps its schedule: each run checks the config again, without calling out.
   const isActive = (state: SourceState<unknown>, job: Job<unknown>) => job.active?.(state.data) ?? true
@@ -203,11 +203,14 @@ export function activityPoller({ sources, clock }: { sources: ActivitySource<any
       return () => void listeners.delete(listener)
     },
     connect(client) {
-      windows.set(client, false)
-      return () => changeWindows(() => windows.delete(client))
+      const window = { visible: false }
+      changeWindows(() => windows.set(client, window))
+      // A reconnecting window may open its new stream before the old one is seen to close.
+      return () => changeWindows(() => windows.get(client) === window && windows.delete(client))
     },
     setVisibility(client, isVisible) {
-      if (windows.has(client)) changeWindows(() => windows.set(client, isVisible))
+      const window = windows.get(client)
+      if (window) changeWindows(() => (window.visible = isVisible))
     },
   }
 }
