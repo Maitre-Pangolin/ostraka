@@ -38,3 +38,11 @@ export type BackupState = {
   stale: boolean
   largeFiles: LargeFile[]
 }
+
+/** GET /api/backup: the repo's state plus what the server's last backup ran into. Never carries a token. */
+export type BackupStatus = BackupState & {
+  /** Why the last backup did not go through; cleared once HEAD is on the remote. */
+  problem?: Extract<BackupResult, { status: 'secrets' | 'rejected' | 'failed' }>
+  /** Automatic pushes stopped after a rejected push; they resume once HEAD is on the remote (`ostraka backup`). */
+  stopped: boolean
+}
