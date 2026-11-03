@@ -51,4 +51,15 @@ export type BrokenNote = { id: string; version: string; modifiedAt: string; erro
 
 export type NoteListing = NoteSummary | BrokenNote
 
+/** The Notes view's state in the URL: the open Note, and whether only the Ideas are listed. */
+export type NotesView = { note?: string; ideas?: true }
+
+/** Router search params → the Notes view's state, leaving out empty and default values. */
+export function parseNotesView(search: Record<string, unknown>): NotesView {
+  return {
+    ...(typeof search.note === 'string' && search.note !== '' && { note: search.note }),
+    ...(search.ideas === true && { ideas: true }),
+  }
+}
+
 export const isBrokenNote = (note: NoteListing | Note | BrokenNote): note is BrokenNote => 'error' in note

@@ -70,7 +70,7 @@ function parts(text: string) {
 function readHeader<H>(yaml: string | undefined, schema: z.ZodType<H>): { header: H } | { error: string } {
   if (yaml === undefined) return { error: 'No YAML header: the file must start with a --- line, the header, then another --- line.' }
   const doc = parseDocument(yaml)
-  if (doc.errors.length) return { error: `Broken YAML header: ${doc.errors[0]!.message.split('\n')[0]}` }
+  if (doc.errors.length) return { error: `Broken YAML header: ${doc.errors[0]!.message.split('\n')[0]!.replace(/:$/, '')}` }
   const result = schema.safeParse(doc.toJS() ?? {})
   if (!result.success) return { error: `Invalid header: ${z.prettifyError(result.error).replaceAll('\n', ' ')}` }
   return { header: result.data }
