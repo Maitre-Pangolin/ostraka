@@ -2,15 +2,20 @@ import { homedir } from 'node:os'
 import { delimiter, dirname } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
+  addSubTodo,
   addTodo,
   completeTodo,
   CONTENT_KINDS,
   contentPath,
   dropTodo,
+  formatNotes,
+  isBrokenNote,
+  listNotes,
   isContentKind,
   listFinishedTodos,
   listTodos,
   snapshot,
+  type SubTodo,
   type Todo,
 } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
@@ -34,16 +39,22 @@ export type Io = {
 
 const KINDS = CONTENT_KINDS.join('|')
 
-const TODO_USAGE = `  ostraka todo add <title> [--json]
-                                Add an open Todo; #tag, *high|*med|*low and
-                                ^today|^tomorrow|^fri|^2026-11-05 set its properties
+const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
+                                Add an open Todo, or a Sub-todo under the Todo <id>;
+                                #tag, *high|*med|*low and ^today|^tomorrow|^fri|^2026-11-05
+                                set its properties
   ostraka todo done <id> [--json]
-                                Mark a Todo done
+                                Mark a Todo or Sub-todo done (a Todo's open Sub-todos too)
   ostraka todo drop <id> [--reason <text>] [--json]
-                                Drop a Todo: abandon it, optionally saying why
-  ostraka todo list [--json]    List open Todos, most urgent first
+                                Drop a Todo or Sub-todo: abandon it, optionally saying why
+  ostraka todo list [--json]    List open Todos, most urgent first, their Sub-todos under them
   ostraka todo list --finished-on <YYYY-MM-DD> [--json]
                                 List the Todos done or Dropped that day, newest first
+`
+
+const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently changed first (a broken one with its error)
+  ostraka note format [<id>...] [--json]
+                                Write Notes in the house style after editing them by hand
 `
 
 const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
@@ -55,7 +66,7 @@ const USAGE = `Usage:
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -72,6 +83,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await snapshotCommand(rest, io)
       case 'todo':
         return await todoCommand(rest, io)
+      case 'note':
+        return await noteCommand(rest, io)
       case 'backup':
         return await backupCommand(rest, io)
       case 'init':
@@ -108,29 +121,47 @@ async function path(args: string[], io: Io): Promise<number> {
 const PRIORITY_TOKENS = { high: '*high', medium: '*med', low: '*low', none: undefined }
 
 /** `id  title  #tag *prio ^date`: the properties written back as the tokens that set them. */
-function todoLine(todo: Todo): string {
+function todoLine(todo: SubTodo): string {
   const tokens = [...todo.tags.map((tag) => `#${tag}`), PRIORITY_TOKENS[todo.priority], todo.due && `^${todo.due}`].filter(Boolean)
   return [`${todo.id}  ${todo.title}`, ...(tokens.length ? [tokens.join(' ')] : [])].join('  ')
 }
 
-const finishedLine = (todo: Todo) =>
+const finishedLine = (todo: SubTodo) =>
   `${todoLine(todo)} (${todo.status === 'dropped' ? `Dropped${todo.dropReason ? `: ${todo.dropReason}` : ''}` : 'done'})`
+
+/** An open Todo, then its Sub-todos indented under it in creation order, finished ones marked. */
+const openTodoLines = (todo: Todo) =>
+  [todoLine(todo), ...todo.subTodos.map((sub) => `  ${sub.status === 'open' ? todoLine(sub) : finishedLine(sub)}`)].join('\n')
 
 async function todoCommand(args: string[], io: Io): Promise<number> {
   const { positionals, values } = parseArgs({
     args,
     allowPositionals: true,
-    options: { json: { type: 'boolean' }, reason: { type: 'string' }, 'finished-on': { type: 'string' } },
+    options: {
+      json: { type: 'boolean' },
+      reason: { type: 'string' },
+      'finished-on': { type: 'string' },
+      parent: { type: 'string' },
+    },
   })
   const [action, ...words] = positionals
   const finishedOn = values['finished-on']
   const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
   const print = (value: unknown, text: string) => io.stdout(values.json ? `${JSON.stringify(value, null, 2)}\n` : `${text}\n`)
 
+  if (action === 'add' && words.length > 0 && values.parent !== undefined) {
+    const added = await addSubTodo(values.parent, { title: words.join(' ') }, options)
+    print(added, `Added ${todoLine(added)} (Sub-todo of ${values.parent})`)
+    return 0
+  }
   if (action === 'add' && words.length > 0) {
     const added = await addTodo({ title: words.join(' ') }, options)
     print(added, `Added ${todoLine(added)}`)
     return 0
+  }
+  if (values.parent !== undefined) {
+    io.stderr(`Usage:\n${TODO_USAGE}`)
+    return 1
   }
   if (action === 'done' && words.length === 1) {
     const done = await completeTodo(words[0]!, options)
@@ -153,10 +184,34 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   }
   if (action === 'list' && words.length === 0) {
     const todos = await listTodos(options)
-    print(todos, todos.length ? todos.map(todoLine).join('\n') : 'No open Todos.')
+    print(todos, todos.length ? todos.map(openTodoLines).join('\n') : 'No open Todos.')
     return 0
   }
   io.stderr(`Usage:\n${TODO_USAGE}`)
+  return 1
+}
+
+async function noteCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
+  const [action, ...ids] = positionals
+  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
+  if (action === 'list' && ids.length === 0) {
+    const notes = await listNotes(options)
+    const line = (note: (typeof notes)[number]) =>
+      isBrokenNote(note)
+        ? `${note.id}  broken: ${note.error}`
+        : [`${note.id}  ${note.title}`, ...(note.tags.length ? [note.tags.map((tag) => `#${tag}`).join(' ')] : [])].join('  ')
+    io.stdout(values.json ? `${JSON.stringify(notes, null, 2)}\n` : notes.length ? `${notes.map(line).join('\n')}\n` : 'No Notes.\n')
+    return 0
+  }
+  if (action === 'format') {
+    const { formatted, broken } = await formatNotes(ids.length ? ids : undefined, options)
+    if (values.json) io.stdout(`${JSON.stringify({ formatted, broken }, null, 2)}\n`)
+    else io.stdout(formatted.length ? formatted.map((id) => `Formatted ${id}\n`).join('') : 'All in house style.\n')
+    for (const note of broken) io.stderr(`${note.id}: ${note.error}\n`)
+    return broken.length ? 1 : 0
+  }
+  io.stderr(`Usage:\n${NOTE_USAGE}`)
   return 1
 }
 

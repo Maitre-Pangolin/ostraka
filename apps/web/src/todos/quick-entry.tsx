@@ -6,15 +6,7 @@ import { useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { DueText, PriorityFlag, TagPill } from './properties'
 import { TokenField } from './token-field'
-
-const NO_PROPS: TokenProps = { tags: [] }
-
-/** Tokens pulled out later win: Tags add up, a priority or date replaces the one before. */
-const mergeProps = (before: TokenProps, added: TokenProps): TokenProps => ({
-  tags: [...new Set([...before.tags, ...added.tags])],
-  priority: added.priority ?? before.priority,
-  due: added.due ?? before.due,
-})
+import { mergeProps, NO_PROPS } from './token-props'
 
 /**
  * Type a title, ↵ adds it. Completed `#tag`, `*prio` and `^date` leave the text and wait as chips under the input
@@ -87,30 +79,36 @@ export function QuickEntry() {
         )}
         {(hasChips || title.trim()) && (
           <div className="text-muted-foreground flex min-h-7 flex-wrap items-center gap-1.5 border-t px-2.5 py-1 text-[11px]">
-            {props.priority && (
-              <Chip
-                label={`Remove priority ${PRIORITY_LABEL[props.priority]}`}
-                onRemove={() => setProps({ ...props, priority: undefined })}
-              >
-                <PriorityFlag priority={props.priority} className="size-3" />
-                {PRIORITY_LABEL[props.priority]}
-              </Chip>
-            )}
-            {props.due && (
-              <Chip label="Remove due date" onRemove={() => setProps({ ...props, due: undefined })}>
-                <CalendarDays aria-hidden className="size-3" />
-                <DueText due={props.due} today={today} className="px-0" />
-              </Chip>
-            )}
-            {props.tags.map((tag) => (
-              <TagPill key={tag} tag={tag} onRemove={() => setProps({ ...props, tags: props.tags.filter((other) => other !== tag) })} />
-            ))}
+            <PropChips props={props} onChange={setProps} today={today} />
             <span className="ml-auto whitespace-nowrap">{description === null ? '⇧↵ description · ↵ add' : '↵ add'}</span>
           </div>
         )}
       </div>
       {add.error && <p className="text-destructive px-1 text-xs">Couldn’t add the Todo: {add.error.message}</p>}
     </div>
+  )
+}
+
+/** The values pulled out while typing, waiting as removable chips until the item is added. */
+export function PropChips({ props, onChange, today }: { props: TokenProps; onChange: (props: TokenProps) => void; today: string }) {
+  return (
+    <>
+      {props.priority && (
+        <Chip label={`Remove priority ${PRIORITY_LABEL[props.priority]}`} onRemove={() => onChange({ ...props, priority: undefined })}>
+          <PriorityFlag priority={props.priority} className="size-3" />
+          {PRIORITY_LABEL[props.priority]}
+        </Chip>
+      )}
+      {props.due && (
+        <Chip label="Remove due date" onRemove={() => onChange({ ...props, due: undefined })}>
+          <CalendarDays aria-hidden className="size-3" />
+          <DueText due={props.due} today={today} className="px-0" />
+        </Chip>
+      )}
+      {props.tags.map((tag) => (
+        <TagPill key={tag} tag={tag} onRemove={() => onChange({ ...props, tags: props.tags.filter((other) => other !== tag) })} />
+      ))}
+    </>
   )
 }
 

@@ -6,7 +6,7 @@ import { useBackupStatus } from './api'
 import { backupWarnings, type BackupWarning as BackupWarningItem } from './warnings'
 
 /**
- * The Backup warning at the end of the top bar: nothing while all is well, otherwise one chip naming the most
+ * The Backup warning in the top bar, after the work overview: nothing while all is well, otherwise one chip naming the most
  * serious problem, opening a popover with all of them. Below @md the chip is its icon, with the title as Tooltip.
  */
 export function BackupWarning() {
@@ -35,14 +35,14 @@ function WarningChip({ warnings }: { warnings: BackupWarningItem[] }) {
         <TooltipTrigger
           render={<PopoverTrigger />}
           aria-label={label}
-          className="text-destructive hover:bg-destructive/10 focus-visible:ring-ring/50 flex h-7 min-w-0 items-center gap-1.5 rounded-md px-1.5 font-medium outline-none focus-visible:ring-3"
+          className="border-destructive/40 text-destructive hover:bg-destructive/10 focus-visible:ring-ring/50 flex h-5.5 min-w-0 items-center gap-1 rounded-full border px-2 outline-none focus-visible:ring-3"
         >
           <TriangleAlert className="size-3.5 shrink-0" />
           <span className="hidden truncate @md:inline">{label}</span>
         </TooltipTrigger>
         <TooltipContent>{label}</TooltipContent>
       </Tooltip>
-      <PopoverContent align="end" className="w-80">
+      <PopoverContent align="start" className="w-80">
         {warnings.map((warning) => (
           <section key={warning.title} className="flex flex-col gap-1">
             <h2 className="text-destructive font-medium">{warning.title}</h2>

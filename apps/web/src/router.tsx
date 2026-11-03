@@ -1,5 +1,7 @@
+import { parseNotesView } from '@ostraka/core/note-schema'
 import { parseTodoFilter } from '@ostraka/core/todo-filter'
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
+import { NotesView } from './notes/notes-view'
 import { SettingsView } from './settings/settings-view'
 import { EmptyState, Shell } from './shell/shell'
 import { TodosView } from './todos/todos-view'
@@ -21,7 +23,8 @@ const routeTree = rootRoute.addChildren([
   indexRoute,
   // The Todo filter lives in typed search params, so a filtered view survives a reload and can be linked.
   createRoute({ getParentRoute: () => rootRoute, path: '/todos', validateSearch: parseTodoFilter, component: TodosView }),
-  view('/notes', 'No Notes yet. Start one to keep your thoughts.'),
+  // The open Note and the Ideas switch live in search params, so a reload keeps them and a Note can be linked.
+  createRoute({ getParentRoute: () => rootRoute, path: '/notes', validateSearch: parseNotesView, component: NotesView }),
   view('/devlogs', "No Dev logs yet. Run the Dev log skill to write today's."),
   view('/sketches', 'No Sketches yet. Start one to draw a diagram.'),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsView }),

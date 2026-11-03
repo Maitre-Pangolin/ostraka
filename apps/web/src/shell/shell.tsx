@@ -1,8 +1,9 @@
 import { Outlet } from '@tanstack/react-router'
-import type { ReactNode } from 'react'
+import { useState, type ReactNode } from 'react'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
 import { BackupWarning } from '@/backup/backup-warning'
+import { SourceChips, WorkCounts, WorkDetails } from '@/work/work-overview'
 import { Rail } from './rail'
 
 /** Rail on the left; on the right the top bar over the current view. The content area is the container-query root. */
@@ -24,16 +25,19 @@ export function Shell() {
 }
 
 /**
- * Work overview strip, shown on every view: GitLab and Jira counts on the left (still to come), source and Backup
- * warnings at the end.
+ * The top bar, on every view: the work overview's counts, which expand in place, then one item per thing that needs
+ * attention (a failing source's chip, a backup warning). Add an item as another child of the row.
  */
 function TopBar() {
+  const [expanded, setExpanded] = useState(false)
   return (
-    <header aria-label="Work overview" className="bg-muted/40 flex h-9 shrink-0 items-center gap-3 border-b px-3 text-xs">
-      <div className="flex min-w-0 flex-1 items-center gap-3" />
-      <div className="flex min-w-0 shrink items-center justify-end gap-2">
+    <header aria-label="Work overview" className="bg-muted/40 shrink-0 border-b">
+      <div className="flex h-9 min-w-0 items-center gap-3 px-3 text-xs">
+        <WorkCounts expanded={expanded} onToggle={() => setExpanded(!expanded)} />
+        <SourceChips />
         <BackupWarning />
       </div>
+      {expanded && <WorkDetails />}
     </header>
   )
 }

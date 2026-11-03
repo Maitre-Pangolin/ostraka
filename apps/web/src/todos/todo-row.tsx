@@ -1,15 +1,16 @@
 import type { TokenProps } from '@ostraka/core/todo-tokens'
-import type { SubTodo } from '@ostraka/core/todo-schema'
-import { AlignLeft, Ban, Check, ChevronRight } from 'lucide-react'
+import type { SubTodo as StoredSubTodo } from '@ostraka/core/todo-schema'
+import { AlignLeft, Ban, Check, ChevronRight, ListTree, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import type { Todo, TodoChange } from './api'
+import type { TodoChange, TodoItem } from './api'
 import { DuePicker, DueText, PriorityFlag, PriorityPicker, TagDot, TagPill } from './properties'
 import { TokenField } from './token-field'
 
 export type TodoRowProps = {
-  todo: Todo
+  /** A Todo, or a Sub-todo: they look and edit the same. */
+  todo: TodoItem
   open: boolean
   onToggle: () => void
   onDone: () => void
@@ -19,16 +20,18 @@ export type TodoRowProps = {
   today: string
   /** Row actions at the end, such as Drop or delete. */
   actions?: ReactNode
+  /** A warning shown before the due date, such as a Sub-todo due after its parent. */
+  warning?: string
   /** Shown only for context: the Todo doesn't match the filter, some of its Sub-todos do. */
   dimmed?: boolean
-  /** Under the row, such as the Sub-todos a filter matched. */
+  /** Under the row, along a guide line from its checkbox: a Todo's Sub-todos. */
   children?: ReactNode
 }
 
 /** A row shown only for context around what a filter matched. */
 export const DIMMED = 'opacity-50 hover:opacity-100 focus-within:opacity-100'
 
-const PRIORITY_RING: Record<Todo['priority'], string> = {
+const PRIORITY_RING: Record<StoredSubTodo['priority'], string> = {
   high: 'border-prio-high',
   medium: 'border-prio-med',
   low: 'border-prio-low',
@@ -45,10 +48,11 @@ function tokenChange(tags: string[], props: TokenProps): TodoChange {
 }
 
 /**
- * One open Todo. Collapsed, it shows indicators for description, due date, priority and Tags. Expanded, its title and
- * description are edited in place and its Tags can be removed. The date and the flag open their pickers either way.
+ * One open Todo or Sub-todo. Collapsed, it shows indicators for Sub-todos, description, due date, priority and Tags.
+ * Expanded, its title and description are edited in place, its Tags can be removed, and its Sub-todos show under it
+ * along a guide line from its checkbox. The date and the flag open their pickers either way.
  */
-export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, dimmed, children }: TodoRowProps) {
+export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, warning, dimmed, children }: TodoRowProps) {
   const [describing, setDescribing] = useState(false)
   const showDescription = open && (todo.description !== undefined || describing)
   // The Tags as last sent, so tokens typed in quick succession add up before the list has caught up.
@@ -91,43 +95,56 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
           </span>
         )}
         {!open && <Indicators todo={todo} />}
+        {warning && (
+          <span className="text-warning shrink-0" title={warning}>
+            <TriangleAlert aria-hidden className="size-3.5" />
+            <span className="sr-only">{warning}</span>
+          </span>
+        )}
         <DuePicker due={todo.due} today={today} quiet onChange={(due) => onChange({ due })} />
         <PriorityPicker priority={todo.priority} quiet onChange={(priority) => onChange({ priority })} />
         {actions}
       </div>
-      {open && (showDescription || todo.tags.length > 0) && (
-        <div className="mb-1 ml-11 flex flex-col gap-1 pr-2">
-          {showDescription && (
-            <DescriptionEditor
-              todo={todo}
-              onChange={onChange}
-              onTokens={onTokens}
-              tags={tags}
-              autoFocus={describing}
-              onClose={() => setDescribing(false)}
-            />
-          )}
-          {todo.tags.length > 0 && (
-            <div className="flex flex-wrap items-center gap-1">
-              {todo.tags.map((tag) => (
-                <TagPill key={tag} tag={tag} onRemove={() => setTags(latestTags.current.filter((other) => other !== tag))} />
-              ))}
+      {((open && (showDescription || todo.tags.length > 0)) || children) && (
+        <div className={cn('relative flex flex-col', children && GUIDE_LINE)}>
+          {open && (showDescription || todo.tags.length > 0) && (
+            <div className="mb-1 ml-11 flex flex-col gap-1 pr-2">
+              {showDescription && (
+                <DescriptionEditor
+                  todo={todo}
+                  onChange={onChange}
+                  onTokens={onTokens}
+                  tags={tags}
+                  autoFocus={describing}
+                  onClose={() => setDescribing(false)}
+                />
+              )}
+              {todo.tags.length > 0 && (
+                <div className="flex flex-wrap items-center gap-1">
+                  {todo.tags.map((tag) => (
+                    <TagPill key={tag} tag={tag} onRemove={() => setTags(latestTags.current.filter((other) => other !== tag))} />
+                  ))}
+                </div>
+              )}
             </div>
           )}
+          {children}
         </div>
       )}
-      {children}
     </li>
   )
 }
 
-const PRIORITY_DOT: Record<SubTodo['priority'], string> = { ...PRIORITY_RING, none: 'border-input' }
+// A vertical line from the centre of the row's checkbox (padding, chevron, gap, half the checkbox) down its Sub-todos.
+const GUIDE_LINE = 'before:bg-border before:absolute before:top-0 before:bottom-4 before:left-[calc(var(--spacing)*9.5)] before:w-px'
+
+const PRIORITY_DOT: Record<StoredSubTodo['priority'], string> = { ...PRIORITY_RING, none: 'border-input' }
 
 /**
- * Sub-todos under their parent, as a filter matched them: read-only lines with a guide from the parent's checkbox.
- * Editing and finishing Sub-todos come with their own rows.
+ * Sub-todos of a finished Todo, as a filter matched them in Done & Dropped: read-only lines with a guide from the
+ * parent's checkbox. Open Todos show their Sub-todos as full rows instead (`SubTodos`).
  */
-export function SubTodoLines({ subTodos, today }: { subTodos: SubTodo[]; today: string }) {
+export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; today: string }) {
   if (!subTodos.length) return null
   return (
     <ul aria-label="Matching Sub-todos" className="border-border mb-1 ml-8 flex flex-col border-l pl-2">
@@ -157,9 +174,25 @@ export function SubTodoLines({ subTodos, today }: { subTodos: SubTodo[]; today: 
   )
 }
 
-function Indicators({ todo }: { todo: Todo }) {
+function Indicators({ todo }: { todo: TodoItem }) {
+  const subTodos = 'subTodos' in todo ? todo.subTodos : []
+  const finished = subTodos.filter((sub) => sub.status !== 'open').length
   return (
     <>
+      {subTodos.length > 0 && (
+        <span
+          className="text-muted-foreground flex shrink-0 items-center gap-0.5 text-[11px] tabular-nums"
+          title={`${finished} of ${subTodos.length} Sub-todos finished`}
+        >
+          <ListTree aria-hidden className="size-3.5" />
+          <span aria-hidden>
+            {finished}/{subTodos.length}
+          </span>
+          <span className="sr-only">
+            {finished} of {subTodos.length} Sub-todos finished
+          </span>
+        </span>
+      )}
       {todo.description && (
         <span className="text-muted-foreground shrink-0" title="Has a description">
           <AlignLeft aria-hidden className="size-3.5" />
@@ -186,7 +219,7 @@ function Indicators({ todo }: { todo: Todo }) {
   )
 }
 
-type EditorProps = { todo: Todo; onChange: (change: TodoChange) => void; onTokens: (props: TokenProps) => void; tags: string[] }
+type EditorProps = { todo: TodoItem; onChange: (change: TodoChange) => void; onTokens: (props: TokenProps) => void; tags: string[] }
 
 /** The text being edited, following the stored text while the field isn't being edited. */
 function useDraft(stored: string) {

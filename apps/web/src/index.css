@@ -7,6 +7,8 @@
 
 @theme inline {
   --color-today: var(--today);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
   --color-prio-high: var(--prio-high);
   --color-prio-med: var(--prio-med);
   --color-prio-low: var(--prio-low);
@@ -77,6 +79,8 @@
   --ring: oklch(0.58 0.14 40);
   --radius: 0.5rem;
   --today: oklch(0.68 0.14 70);
+  --warning: oklch(0.62 0.15 60);
+  --success: oklch(0.55 0.12 145);
   --prio-high: oklch(0.58 0.19 30);
   --prio-med: oklch(0.7 0.14 70);
   --prio-low: oklch(0.6 0.08 240);
@@ -110,6 +114,8 @@
   --input: oklch(1 0 0 / 15%);
   --ring: oklch(0.7 0.13 42);
   --today: oklch(0.78 0.13 75);
+  --warning: oklch(0.78 0.15 65);
+  --success: oklch(0.74 0.12 145);
   --prio-high: oklch(0.7 0.17 30);
   --prio-med: oklch(0.8 0.13 75);
   --prio-low: oklch(0.72 0.08 240);
@@ -137,6 +143,70 @@
   body {
     @apply bg-background text-foreground;
   }
+}
+
+/* The Notes editor (Milkdown Crepe) on the app's tokens, in both themes. Crepe's own themes are not loaded. */
+.ostraka-md .milkdown {
+  --crepe-color-background: var(--background);
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--card);
+  --crepe-color-surface-low: var(--muted);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--primary);
+  --crepe-color-secondary: var(--accent);
+  --crepe-color-on-secondary: var(--accent-foreground);
+  --crepe-color-inverse: var(--foreground);
+  --crepe-color-on-inverse: var(--background);
+  --crepe-color-inline-code: var(--primary);
+  --crepe-color-error: var(--destructive);
+  --crepe-color-hover: var(--muted);
+  --crepe-color-selected: var(--accent);
+  --crepe-color-inline-area: var(--muted);
+  --crepe-font-default: var(--font-sans);
+  --crepe-font-title: var(--font-sans);
+  --crepe-font-code: ui-monospace, 'SF Mono', Menlo, monospace;
+  --crepe-base-font-size: 15px;
+  --crepe-shadow-1: 0 1px 3px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+  --crepe-shadow-2: 0 4px 12px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+}
+.ostraka-md .milkdown .ProseMirror {
+  padding: calc(var(--spacing) * 4) calc(var(--spacing) * 5) calc(var(--spacing) * 12) calc(var(--spacing) * 12);
+}
+.ostraka-md .milkdown .ProseMirror h1 {
+  font-size: 1.75em;
+  line-height: 1.2;
+  margin-top: 0.4em;
+}
+.ostraka-md .milkdown .ProseMirror h2 {
+  font-size: 1.3em;
+  line-height: 1.3;
+  margin-top: 0.8em;
+}
+.ostraka-md .milkdown .ProseMirror h3 {
+  font-size: 1.1em;
+}
+/* List bullets and numbers: Crepe uses the outline colour, too pale on paper. */
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper svg {
+  fill: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+/* Code blocks: CodeMirror's light theme recoloured from the tokens, so dark mode reads too. */
+.ostraka-md .milkdown .milkdown-code-block .cm-editor {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.ostraka-md .milkdown .milkdown-code-block .cm-gutters {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+.ostraka-md .milkdown .milkdown-code-block .preview svg {
+  max-width: 100%;
+  height: auto;
 }
 
 @media (prefers-reduced-motion: reduce) {

@@ -281,3 +281,83 @@ describe('Todo routes', () => {
     }
   })
 })
+
+describe('Sub-todo routes', () => {
+  it('adds a Sub-todo under a Todo, with its own tokens, listed under its parent', async () => {
+    const parent = await json(post('/api/todos', { title: 'Release 2.0 #release *high' }))
+    const res = await post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes ^2026-11-05' })
+    expect(res.status).toBe(201)
+    const sub = await res.json()
+    expect(sub).toEqual({
+      id: expect.stringMatching(/^[a-z0-9]{5}$/),
+      title: 'Write the notes',
+      priority: 'none',
+      due: '2026-11-05',
+      tags: [],
+      status: 'open',
+      createdAt: NOW.toISOString(),
+      version: expect.any(String),
+    })
+    expect(await json(get('/api/todos'))).toEqual([{ ...parent, subTodos: [sub] }])
+  })
+
+  it('refuses a Sub-todo under a Sub-todo', async () => {
+    const parent = await json(post('/api/todos', { title: 'Release 2.0' }))
+    const sub = await json(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' }))
+    const res = await post(`/api/todos/${sub.id}/sub-todos`, { title: 'Too deep' })
+    expect(res.status).toBe(400)
+    expect(await res.json()).toEqual({ error: 'A Sub-todo can’t have Sub-todos of its own' })
+  })
+
+  it('answers 404 for a Sub-todo under an unknown Todo', async () => {
+    const res = await post('/api/todos/zzzzz/sub-todos', { title: 'Orphan' })
+    expect(res.status).toBe(404)
+  })
+
+  it('finishes a parent with its open Sub-todos, and reopens them together (Undo)', async () => {
+    const parent = await json(post('/api/todos', { title: 'Release 2.0' }))
+    const sub = await json(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' }))
+    const done = await json(post(`/api/todos/${parent.id}/done`))
+    expect(done.subTodos).toEqual([{ ...sub, status: 'done', finishedAt: NOW.toISOString(), version: expect.any(String) }])
+    expect(await json(post(`/api/todos/${parent.id}/reopen`))).toEqual({ ...parent, subTodos: [sub] })
+  })
+
+  it('answers each Sub-todo with its own version, and refuses a change from a stale copy (412)', async () => {
+    const parent = await json<VersionedTodo>(post('/api/todos', { title: 'Release 2.0' }))
+    const sub = await json<VersionedTodo>(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' }))
+    const [listed] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(listed!.subTodos).toEqual([sub])
+    expect(sub.version).not.toBe(parent.version)
+
+    const done = await post(`/api/todos/${sub.id}/done`, undefined, `"${sub.version}"`)
+    expect(done.status).toBe(200)
+    const stale = await post(`/api/todos/${sub.id}/reopen`, undefined, `"${sub.version}"`)
+    expect(stale.status).toBe(412)
+    // The parent's copy is still current: a Sub-todo has its own version.
+    expect((await del(`/api/todos/${parent.id}`, `"${parent.version}"`)).status).toBe(200)
+  })
+
+  it('restores a deleted Todo posted back as answered, Sub-todo versions and all', async () => {
+    const parent = await json<VersionedTodo>(post('/api/todos', { title: 'Release 2.0' }))
+    await post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' })
+    const deleted = await json<VersionedTodo>(del(`/api/todos/${parent.id}`))
+    const restored = await post('/api/todos/restore', deleted)
+    expect(restored.status).toBe(201)
+    expect(await restored.json()).toEqual(deleted)
+  })
+
+  it('deletes a Sub-todo, and restores it under its parent (Undo)', async () => {
+    const parent = await json(post('/api/todos', { title: 'Release 2.0' }))
+    const sub = await json(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Tpyo' }))
+    expect(await json(del(`/api/todos/${sub.id}`))).toEqual(sub)
+    expect(await json(get('/api/todos'))).toEqual([parent])
+
+    const restored = await post(`/api/todos/${parent.id}/sub-todos/restore`, sub)
+    expect(restored.status).toBe(201)
+    expect(await restored.json()).toEqual(sub)
+    expect(await json(get('/api/todos'))).toEqual([{ ...parent, subTodos: [sub] }])
+
+    const again = await post(`/api/todos/${parent.id}/sub-todos/restore`, sub)
+    expect(again.status).toBe(409)
+  })
+})
