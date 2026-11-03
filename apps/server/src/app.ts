@@ -10,6 +10,7 @@ import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { devlogRoutes } from './devlogs.ts'
 import { noteRoutes } from './notes.ts'
+import { sketchRoutes } from './sketches.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
@@ -74,6 +75,7 @@ export function createApp({
   app.route('/api/tags', tagRoutes(content))
   app.route('/api/notes', noteRoutes(content))
   app.route('/api/devlogs', devlogRoutes(content))
+  app.route('/api/sketches', sketchRoutes(content))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.

@@ -1,11 +1,13 @@
 import { parseDevlogsView } from '@ostraka/core/devlog-days'
 import { parseNotesView } from '@ostraka/core/note-schema'
+import { parseSketchesView } from '@ostraka/core/sketch-schema'
 import { parseTodoFilter } from '@ostraka/core/todo-filter'
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import { DevlogsView } from './devlogs/devlogs-view'
 import { NotesView } from './notes/notes-view'
 import { SettingsView } from './settings/settings-view'
 import { EmptyState, Shell } from './shell/shell'
+import { SketchesView } from './sketches/sketches-view'
 import { TodosView } from './todos/todos-view'
 
 const rootRoute = createRootRoute({ component: Shell })
@@ -29,7 +31,8 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/notes', validateSearch: parseNotesView, component: NotesView }),
   // The open day or summary, or a date range with its Tag filter, live in search params, so a review can be linked.
   createRoute({ getParentRoute: () => rootRoute, path: '/devlogs', validateSearch: parseDevlogsView, component: DevlogsView }),
-  view('/sketches', 'No Sketches yet. Start one to draw a diagram.'),
+  // The open Sketch and its mode live in search params; without one the view opens on its list.
+  createRoute({ getParentRoute: () => rootRoute, path: '/sketches', validateSearch: parseSketchesView, component: SketchesView }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsView }),
 ])
 

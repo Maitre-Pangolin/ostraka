@@ -129,7 +129,7 @@ export function todoRoutes(options: TodoOptions) {
   return routes
 }
 
-/** `/api/tags`: the Tags in use by Todos, Notes and Dev logs with their colours, for suggestions, pills and the Tag filter. */
+/** `/api/tags`: the Tags in use by Todos, Notes, Dev logs and Sketches with their colours, for suggestions, pills and the Tag filter. */
 export function tagRoutes(options: TodoOptions) {
   const routes = new Hono()
   routes.onError(onTodoError)

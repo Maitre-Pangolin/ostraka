@@ -13,6 +13,7 @@
     "./note-schema": "./src/note-schema.ts",
     "./devlog-schema": "./src/devlog-schema.ts",
     "./devlog-days": "./src/devlog-days.ts",
+    "./sketch-schema": "./src/sketch-schema.ts",
     "./sub-todos": "./src/sub-todos.ts",
     "./todo-filter": "./src/todo-filter.ts",
     "./tag-color": "./src/tag-color.ts",

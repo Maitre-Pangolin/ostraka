@@ -89,6 +89,14 @@ describe('/api/events', () => {
     expect(await events.nextChange()).toEqual({ kind: 'notes', id: 'release-plan' })
   })
 
+  it("names the Sketch an agent edits in place, so the open Sketch shows the agent's change", async () => {
+    await mkdir(join(contentRoot, 'sketches'))
+    await writeFile(join(contentRoot, 'sketches', 'login.md'), '---\ntitle: Login\n---\n\n```mermaid\nflowchart TD\n```\n')
+    const events = await openEvents()
+    await writeFile(join(contentRoot, 'sketches', 'login.md'), '---\ntitle: Login\n---\n\n```mermaid\nflowchart TD\n  a --> b\n```\n')
+    expect(await events.nextChange()).toEqual({ kind: 'sketches', id: 'login' })
+  })
+
   it('ignores files that are not content', async () => {
     const events = await openEvents()
     await mkdir(join(contentRoot, '.git'))

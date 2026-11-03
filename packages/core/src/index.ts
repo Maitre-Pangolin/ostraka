@@ -93,6 +93,28 @@ export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChan
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
 export {
+  isBrokenSketch,
+  NewSketchSchema,
+  SketchChangeSchema,
+  SketchHeaderSchema,
+  type BrokenSketch,
+  type NewSketch,
+  type Sketch,
+  type SketchChange,
+  type SketchHeader,
+  type SketchListing,
+  type SketchSummary,
+} from './sketch-schema.ts'
+export {
+  createSketch,
+  listSketches,
+  readSketch,
+  STARTER_MERMAID,
+  updateSketch,
+  type SketchChangeOptions,
+  type SketchOptions,
+} from './sketches.ts'
+export {
   DAY_ID,
   DEVLOG_SECTIONS,
   DevlogChangeSchema,

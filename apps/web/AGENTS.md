@@ -84,6 +84,13 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - A date range is a Popover from the `Dates` chip: presets over a range Calendar (first click from, second to). The range and Tags live in the URL (`parseDevlogsView`). Stacked days reuse the Tags chip from the Todo filters (`FilterPicker`, `MatchToggle`, `ActiveChip`).
 - A day whose sections stray from Done / Meetings & discussions / Notes shows a `warning` `TriangleAlert` in its header, carrying the problems as its title.
 
+## Sketches
+
+- A Sketch is edited as Mermaid text in CodeMirror (`src/sketches/mermaid-editor.tsx`) beside its live preview (`src/sketches/use-mermaid.ts`), in preview, split or code mode (`?mode=`, split by default). Split stacks the panes and puts them side by side from `@2xl` of the Sketch's own `@container/sketch`. Both panes stay mounted across modes, so the text and its undo history survive a switch.
+- Mermaid drawing is shared with Notes (`src/lib/mermaid.ts`), in the app's light or dark theme, redrawn when the theme changes. CodeMirror and Mermaid load lazily with the first open Sketch.
+- Text that doesn't draw is still saved: the error is one `text-destructive` line in place of the diagram (under the text in code mode), over the last diagram that drew, dimmed.
+- Saving, a change made elsewhere and a stale save behave as for Notes. The title is edited in place in the Sketch's header (↵ or leaving the field renames, Esc puts it back); Tags as on Notes.
+
 ## Quick-entry tokens
 
 - `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` are parsed by core (`@ostraka/core/todo-tokens`), never by the app itself, so the CLI and agents read them the same way.
