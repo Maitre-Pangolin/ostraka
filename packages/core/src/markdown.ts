@@ -5,6 +5,8 @@ import remarkParse from 'remark-parse'
 import remarkStringify, { type Options as StringifyOptions } from 'remark-stringify'
 import { unified } from 'unified'
 
+export type { Root as MarkdownTree, RootContent as MarkdownNode } from 'mdast'
+
 /**
  * The house style every Markdown body is written in, by core (the app's saves, the CLI) and by the web editor's
  * serializer alike: `-` bullets and rules, `*` emphasis, `**` strong, fenced code, ATX headings, one space after
@@ -30,6 +32,11 @@ const processor = unified().use(remarkParse).use(remarkGfm).use(remarkStringify,
 export function formatMarkdown(body: string): string {
   if (!body.trim()) return ''
   return String(processor.processSync(body))
+}
+
+/** A Markdown body as a syntax tree (mdast, with GitHub tables, task lists and strikethrough), for rendering it. */
+export function parseMarkdown(body: string) {
+  return processor.parse(body)
 }
 
 export type Frontmatter = {

@@ -36,7 +36,7 @@ describe('the documented Dev log format', () => {
       expect(log).not.toHaveProperty('error')
       const { body } = splitFrontmatter(example)
       expect(formatMarkdown(body)).toBe(body.replace(/^\n/, ''))
-      if (/^\d{4}-\d{2}-\d{2}$/.test(id)) expect(devlogSectionProblems(body)).toEqual([])
+      expect(/^\d{4}-\d{2}-\d{2}$/.test(id) ? devlogSectionProblems(body) : []).toEqual([])
     },
   )
 

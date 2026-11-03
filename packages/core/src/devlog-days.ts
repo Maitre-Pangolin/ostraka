@@ -93,10 +93,10 @@ export function devlogList(logs: DevlogListing[], today: string): DevlogMonth[] 
 export type DevlogFilter = { tag?: string[]; match?: 'any' }
 
 /** The days the filter keeps, in order. Choosing a Tag keeps only Dev logs that have it: gaps and broken files go. */
-export function filterDevlogDays<L extends { tags?: string[] }>(days: DevlogDay<L>[], { tag = [], match }: DevlogFilter): DevlogDay<L>[] {
+export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match }: DevlogFilter): DevlogDay<L>[] {
   if (!tag.length) return days
   return days.filter(({ log }) => {
-    const tags = log?.tags
+    const tags = log && 'tags' in log ? (log.tags as string[]) : undefined
     if (!tags) return false
     return match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name))
   })
