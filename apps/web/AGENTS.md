@@ -78,7 +78,8 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 - **Empty**: one muted line naming the next action (`EmptyState` in `src/shell/shell.tsx`). No illustrations.
 - **Loading**: skeleton rows, shown only after 300 ms (`useAfter(300, isPending)` from `src/lib/use-after.ts`).
-- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar, the backup warning in the top bar. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
+- **Errors**: shown where they happen: a broken file in its own list, an unreadable `config.yml` in Settings, a failing Activity source as a chip in the top bar, the backup warning in the top bar.
+- **Top bar**: GitLab and Jira counts sit on the left; warnings sit at the end (`justify-end`), each a `text-destructive` chip with an icon and a one-line title that opens a Popover with the details, as `BackupWarning` in `src/backup/backup-warning.tsx`. Nothing shows while all is well. Below `@md` the chip is its icon, its Tooltip carrying the title. Status that is not content (the Backup) has no live update and refetches every minute. Errors never go in a toast. A failed load or change is one `text-destructive` line in place, carrying the server's message. Queries don't retry an error the server answered (a broken file stays broken), only a dropped connection.
 
 ## Visuals and copy
 
