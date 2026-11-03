@@ -5,6 +5,8 @@ import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { ApiError, isStale } from '@/lib/api'
+import { onFileRestore } from '@/history/api'
+import { FileHistory, HistoryButton } from '@/history/file-history'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { SaveStatus, TagAdder, type SaveState } from '@/notes/notes-view'
@@ -156,20 +158,39 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
   const own = useRef(new Set<string>())
   const drawing = useMermaid(text)
 
-  const load = useCallback((sketch: Sketch) => {
+  const [historyOpen, setHistoryOpen] = useState(false)
+  // A restore of this Sketch started: its result reloads the editor even at a version seen before.
+  const restored = useRef(false)
+
+  const load = useCallback((sketch: Sketch, reload = false) => {
     setLoaded((current) =>
-      current?.version === sketch.version ? current : { text: sketch.mermaid, version: sketch.version, count: (current?.count ?? 0) + 1 },
+      current?.version === sketch.version && !reload
+        ? current
+        : { text: sketch.mermaid, version: sketch.version, count: (current?.count ?? 0) + 1 },
     )
     setText(sketch.mermaid)
   }, [])
 
   const sketch = query.data
   useEffect(() => {
-    if (!sketch || own.current.has(sketch.version)) return
+    if (!sketch || (own.current.has(sketch.version) && !restored.current)) return
     // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
     if (pending.current !== undefined || update.isPending) return
-    load(sketch)
+    const reload = restored.current
+    restored.current = false
+    load(sketch, reload)
   }, [sketch, update.isPending, load])
+
+  // A restore may bring back a version this view saved or loaded earlier: the restored file is shown regardless.
+  useEffect(
+    () =>
+      onFileRestore((path) => {
+        if (path !== `sketches/${id}.md`) return
+        own.current.clear()
+        restored.current = true
+      }),
+    [id],
+  )
 
   const save = (change: { mermaid?: string; title?: string; tags?: string[] }) => {
     if (!loaded) return
@@ -179,6 +200,8 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
       {
         onSuccess: (saved: Sketch) => {
           own.current.add(saved.version)
+          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
+          restored.current = false
           setError(undefined)
           setState(pending.current === undefined ? 'saved' : 'editing')
         },
@@ -256,6 +279,14 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
         <TitleField key={sketch.title} title={sketch.title} onRename={(title) => change({ title })} />
         <ModeSwitch mode={mode} onMode={onMode} />
         <SaveStatus state={state} />
+        <HistoryButton
+          open={historyOpen}
+          onClick={() => {
+            // What is waiting is saved first, so the history and a restore start from it.
+            if (!historyOpen) flush()
+            setHistoryOpen(!historyOpen)
+          }}
+        />
       </div>
       <div className="flex min-h-8 shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-1">
         {sketch.tags.map((tag) => (
@@ -265,8 +296,12 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
         <span className="flex-1" />
         <span className="text-muted-foreground hidden truncate font-mono text-[11px] @md:inline">sketches/{id}.md</span>
       </div>
-      {error && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
-      <div className={cn('flex min-h-0 flex-1 flex-col', mode === 'split' && '@2xl/sketch:flex-row')}>
+      {historyOpen && (
+        <FileHistory path={`sketches/${id}.md`} onClose={() => setHistoryOpen(false)} onRestored={() => setHistoryOpen(false)} />
+      )}
+      {error && !historyOpen && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
+      {/* Hidden, not unmounted, behind the history: the editor keeps its text and undo history. */}
+      <div className={cn('flex min-h-0 flex-1 flex-col', mode === 'split' && '@2xl/sketch:flex-row', historyOpen && 'hidden')}>
         {/* Both panes stay mounted, so switching modes keeps the text, its undo history and the diagram. */}
         <div
           className={cn(
