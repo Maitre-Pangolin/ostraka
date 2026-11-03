@@ -67,6 +67,7 @@ gitlab:
 jira:
   site: https://acme.atlassian.net
   cloud_id: 00000000-0000-0000-0000-000000000000 # from https://acme.atlassian.net/_edge/tenant_info
+  email: you@acme.com # your Atlassian account; the API token signs in with it
   board_id: 42 # its active sprint is shown
   my_tickets_jql: assignee = currentUser() AND statusCategory != Done
 ```
@@ -81,7 +82,7 @@ Paste each token at the silent `read` prompt. Don't let `security` prompt for it
 
       read -rs TOKEN && security add-generic-password -U -a "$USER" -s ostraka-gitlab -T "" -w "$TOKEN"; unset TOKEN
 
-- Jira, a scoped API token with `read:jira-work`:
+- Jira, a scoped API token with `read:jira-work`, for the account in `jira.email`:
 
       read -rs TOKEN && security add-generic-password -U -a "$USER" -s ostraka-jira -T "" -w "$TOKEN"; unset TOKEN
 
