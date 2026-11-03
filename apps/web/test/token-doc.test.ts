@@ -6,24 +6,26 @@ import { chipEditorState, docToText, settle, textToDoc } from '../src/todos/toke
 // Monday 2 November 2026.
 const today = '2026-11-02'
 const openMergeRequests = ['pay/api!809', 'pay/web!77', 'ops/infra!77']
+// The People directory: only these ids are Persons.
+const isPerson = (id: string) => ['bram', 'ilse-vantongeren'].includes(id)
 
-/** The doc's inline content per paragraph: text as is, a chip as [token]. */
+/** The doc's inline content per paragraph: text as is, a chip as [token], a Mention chip as [@id]. */
 function shape(state: EditorState): string[] {
   const lines: string[] = []
   state.doc.forEach((para) => {
     let line = ''
-    para.forEach((node) => (line += node.isText ? node.text : `[${node.attrs.token}]`))
+    para.forEach((node) => (line += node.isText ? node.text : `[${node.attrs.token ?? `@${node.attrs.id}`}]`))
     lines.push(line)
   })
   return lines
 }
 
 /** Types `text` at the caret, one character at a time, settling after each like the editor does. */
-function type(state: EditorState, text: string, { pullProps = true } = {}) {
+function type(state: EditorState, text: string, { pullProps = true, isPerson = (_id: string) => false } = {}) {
   const props: object[] = []
   for (const char of text) {
     const typed = state.apply(state.tr.insertText(char))
-    const settled = settle(typed, { today, openMergeRequests, pullProps })
+    const settled = settle(typed, { today, openMergeRequests, pullProps, isPerson })
     state = settled ? typed.apply(settled.tr) : typed
     if (settled && settled.props) props.push(settled.props)
   }
@@ -41,6 +43,19 @@ describe('textToDoc and docToText', () => {
     const doc = textToDoc('Rebase pay/api!809 for PAY-1432\nthen ship')
     expect(shape(EditorState.create({ doc }))).toEqual(['Rebase [pay/api!809] for [PAY-1432]', 'then ship'])
     expect(docToText(doc)).toBe('Rebase pay/api!809 for PAY-1432\nthen ship')
+  })
+
+  it('opens Mentions of known Persons as chips, keeps the others as text, and saves them as @<person id>', () => {
+    const doc = textToDoc('Ask @bram and @quentin about PAY-1', { isPerson })
+    expect(shape(EditorState.create({ doc }))).toEqual(['Ask [@bram] and @quentin about [PAY-1]'])
+    expect(docToText(doc)).toBe('Ask @bram and @quentin about PAY-1')
+  })
+
+  it('gives a word touching a Mention chip a space on save', () => {
+    let state = chipEditorState('@bram', [], { isPerson })
+    state = state.apply(state.tr.setSelection(TextSelection.atEnd(state.doc)).insertText('ok'))
+    expect(shape(state)).toEqual(['[@bram]ok'])
+    expect(docToText(state.doc)).toBe('@bram ok')
   })
 
   it('gives a word touching a chip a space on save, so the token parses back', () => {
@@ -76,6 +91,12 @@ describe('settle', () => {
 
   it('leaves property tokens in the text when told not to pull them', () => {
     expect(shape(type(chipEditorState(''), 'Fix #auth ', { pullProps: false }).state)).toEqual(['Fix #auth '])
+  })
+
+  it('turns a known @<person id> into a Mention chip on a space, and leaves an unknown one as text', () => {
+    const { state } = type(chipEditorState(''), 'Ask @bram, @quentin and @bram-x ', { isPerson })
+    expect(shape(state)).toEqual(['Ask [@bram], @quentin and @bram-x '])
+    expect(docToText(state.doc)).toBe('Ask @bram, @quentin and @bram-x ')
   })
 
   it('changes nothing when nothing completed', () => {

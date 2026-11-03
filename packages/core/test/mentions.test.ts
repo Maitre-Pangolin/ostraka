@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { completedMentions, findMentions, mentionedPeople, suggestPeople, type MentionCandidate } from '../src/mentions.ts'
+import { completedMentions, findMentions, mentionedPeople, personLinks, suggestPeople, type MentionCandidate } from '../src/mentions.ts'
 import { joinPieces, splitChips, type TextPiece } from '../src/references.ts'
 
 describe('findMentions', () => {
@@ -78,6 +78,22 @@ describe('completedMentions', () => {
   it('waits while the id may still be typed, and leaves unknown ids as text', () => {
     expect(completedMentions('Ask @bram', known)).toEqual([])
     expect(completedMentions('Ask @quentin ', known)).toEqual([])
+  })
+})
+
+describe('personLinks', () => {
+  it('opens a Slack DM, an email, and GitLab and Jira profiles under the configured sites', () => {
+    const person = { email: 'ilse.v@corp.example', slackId: 'U02ABC', gitlabUsername: 'ivant', jiraAccountId: '712020:ab' }
+    expect(personLinks(person, { gitlab: 'https://gitlab.example/', jira: 'https://acme.atlassian.net' })).toEqual({
+      slack: 'https://slack.com/app_redirect?channel=U02ABC',
+      email: 'mailto:ilse.v@corp.example',
+      gitlab: 'https://gitlab.example/ivant',
+      jira: 'https://acme.atlassian.net/jira/people/712020%3Aab',
+    })
+  })
+
+  it('leaves out what is unknown or has no configured site', () => {
+    expect(personLinks({ gitlabUsername: 'ivant', jiraAccountId: '1' }, {})).toEqual({})
   })
 })
 

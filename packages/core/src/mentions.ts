@@ -78,6 +78,24 @@ export function suggestPeople(fragment: string, people: MentionCandidate[]): Men
     .map(({ person }): MentionSuggestion => ({ kind: 'mention', token: mentionToken(person.id), id: person.id, name: person.name }))
 }
 
+/** Where a Person is reached, for the contact card: a Slack DM first, then email, GitLab and Jira profiles. */
+export type PersonLinks = { slack?: string; email?: string; gitlab?: string; jira?: string }
+
+type Identities = { email?: string; slackId?: string; gitlabUsername?: string; jiraAccountId?: string }
+
+const trimSlashes = (url: string) => url.replace(/\/+$/, '')
+
+/** The links a Person's identities open, profiles under `gitlab.base_url` and `jira.site`; none for what is unknown. */
+export function personLinks(person: Identities, sites: { gitlab?: string; jira?: string }): PersonLinks {
+  const links: PersonLinks = {}
+  // Slack's redirect opens the DM with a user id in the Slack app, without knowing the workspace's id.
+  if (person.slackId) links.slack = `https://slack.com/app_redirect?channel=${encodeURIComponent(person.slackId)}`
+  if (person.email) links.email = `mailto:${person.email}`
+  if (person.gitlabUsername && sites.gitlab) links.gitlab = `${trimSlashes(sites.gitlab)}/${encodeURIComponent(person.gitlabUsername)}`
+  if (person.jiraAccountId && sites.jira) links.jira = `${trimSlashes(sites.jira)}/jira/people/${encodeURIComponent(person.jiraAccountId)}`
+  return links
+}
+
 /** What ends a Mention being typed: a space, a new line or punctuation. */
 const ENDS_TOKEN = /^[\s,.;:)\]}?!'"]/
 
