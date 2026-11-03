@@ -169,7 +169,7 @@ function NoteRow({ note, active, onOpen }: { note: NoteListing; active: boolean;
   )
 }
 
-type SaveState = 'saved' | 'editing' | 'saving'
+export type SaveState = 'saved' | 'editing' | 'saving'
 
 /**
  * One open Note. Typing saves after a pause, from the version the editor was loaded with; a save is refused if the
@@ -337,7 +337,7 @@ function NoteDetail({ id }: { id: string }) {
   )
 }
 
-function SaveStatus({ state }: { state: SaveState }) {
+export function SaveStatus({ state }: { state: SaveState }) {
   const label = state === 'saved' ? 'Saved' : state === 'saving' ? 'Saving…' : 'Editing'
   return (
     <span role="status" className="text-muted-foreground flex shrink-0 items-center gap-1 text-[11px]">
@@ -348,7 +348,17 @@ function SaveStatus({ state }: { state: SaveState }) {
   )
 }
 
-function IconButton({ label, pressed, onClick, children }: { label: string; pressed?: boolean; onClick: () => void; children: ReactNode }) {
+export function IconButton({
+  label,
+  pressed,
+  onClick,
+  children,
+}: {
+  label: string
+  pressed?: boolean
+  onClick: () => void
+  children: ReactNode
+}) {
   return (
     <Tooltip>
       <TooltipTrigger
@@ -371,7 +381,7 @@ function IconButton({ label, pressed, onClick, children }: { label: string; pres
 }
 
 /** Adds a Tag to the open Note: a Popover with a field, existing Tags suggested first. */
-function TagAdder({ tags, onAdd }: { tags: string[]; onAdd: (tag: string) => void }) {
+export function TagAdder({ tags, onAdd }: { tags: string[]; onAdd: (tag: string) => void }) {
   const [open, setOpen] = useState(false)
   const [typed, setTyped] = useState('')
   const known = useTagNames()

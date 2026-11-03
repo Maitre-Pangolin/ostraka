@@ -102,6 +102,28 @@ export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChan
 export { ensureContentRepo, fileAtSnapshot, fileHistory, restoreFile, snapshot, SnapshotNotFoundError, type Snapshot } from './snapshots.ts'
 export { RestoreFileSchema, type FileSnapshot, type FileVersion, type Restore, type RestoreFile } from './history-schema.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
+export {
+  isBrokenSketch,
+  NewSketchSchema,
+  SketchChangeSchema,
+  SketchHeaderSchema,
+  type BrokenSketch,
+  type NewSketch,
+  type Sketch,
+  type SketchChange,
+  type SketchHeader,
+  type SketchListing,
+  type SketchSummary,
+} from './sketch-schema.ts'
+export {
+  createSketch,
+  listSketches,
+  readSketch,
+  STARTER_MERMAID,
+  updateSketch,
+  type SketchChangeOptions,
+  type SketchOptions,
+} from './sketches.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,

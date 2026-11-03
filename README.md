@@ -31,6 +31,20 @@ title: Release plan # optional; otherwise the first `# ` heading names the Note
 
 Bodies are written in one house style (`-` bullets and rules, `*emphasis*`, `**strong**`, fenced code, `#` headings), which the app's editor writes too, so opening and saving an unchanged Note leaves it byte-identical and the header is never touched. After writing a Note by hand, run `pnpm ostraka note format [<id>…]` to put it in house style; `note list [--json]` lists Notes with any broken header.
 
+Sketches are `sketches/<id>.md`: a YAML header with a `title` and `tags`, then a body holding one `mermaid` fenced code block, which is what the app's editor changes (anything else in the body is kept). A Sketch without a title or a Mermaid block still shows in the app's list, with the reason. Edit the Mermaid text in place; the open app shows the change live.
+
+````markdown
+---
+title: Login flow
+tags: [auth]
+---
+
+```mermaid
+sequenceDiagram
+  User->>App: Sign in
+```
+````
+
 The content folder is its own git repo (created when missing, no remote). While it runs, the server commits the whole folder as one Snapshot once changes settle: 60 s after the last change, at most every 10 min during steady activity, and on stop. `pnpm ostraka snapshot "<message>"` commits now with that message; skills run it after they write.
 
 History in a Note's header (and on the Todos view, for `todos.json`) lists the file's Snapshots and shows any of them. Restore writes that version as the current file and commits it as a new Snapshot, `restore: <path> as of <date>`, after committing any changes not yet in a Snapshot; nothing rewrites history, so a restore is undone by restoring the Snapshot before it (the Undo on its toast). The API is `GET /api/history?path=<file>`, `GET /api/history/<commit>?path=<file>` and `POST /api/history/restore {path, commit}`, for any content file.
