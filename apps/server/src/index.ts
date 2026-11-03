@@ -25,3 +25,4 @@ export {
   type ReferenceLookup,
   type ReferenceLookupOptions,
 } from './references.ts'
+export { startSearch, type Search, type SearchOptions } from './search.ts'

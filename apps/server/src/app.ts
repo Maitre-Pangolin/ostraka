@@ -12,6 +12,7 @@ import { devlogRoutes } from './devlogs.ts'
 import { historyRoutes } from './history.ts'
 import { noteRoutes } from './notes.ts'
 import { noReferenceLookup, referenceRoutes, type ReferenceLookup } from './references.ts'
+import { searchRoutes, throwawaySearch, type Search } from './search.ts'
 import { sketchRoutes } from './sketches.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
 
@@ -38,6 +39,8 @@ export type AppOptions = {
   backups?: Pick<Backups, 'status'> & Partial<Pick<Backups, 'snapshotted'>>
   /** Hover details for References the work overview didn't poll (`referenceLookup()`). None by default: nothing is fetched. */
   references?: ReferenceLookup
+  /** The server's search index (`startSearch()`). Without one, each search builds a throwaway index in memory. */
+  search?: Pick<Search, 'search'>
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
@@ -53,6 +56,7 @@ export function createApp({
   activity = activityPoller({ sources: [], clock: { now: Date.now, setTimeout: () => () => {} } }),
   backups = { status: async () => ({ ...(await backupState(content)), stopped: false }) },
   references = noReferenceLookup,
+  search = throwawaySearch(content),
 }: AppOptions) {
   const app = new Hono()
 
@@ -86,6 +90,7 @@ export function createApp({
   app.route('/api/sketches', sketchRoutes(content))
   app.route('/api/history', historyRoutes(content, { onSnapshot: () => backups.snapshotted?.() }))
   app.route('/api/references', referenceRoutes(references))
+  app.route('/api/search', searchRoutes(search))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.

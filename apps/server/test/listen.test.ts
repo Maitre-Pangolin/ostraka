@@ -1,5 +1,5 @@
 import { execFileSync } from 'node:child_process'
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, stat, writeFile } from 'node:fs/promises'
 import { request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
@@ -10,17 +10,21 @@ import { startServer } from '../src/index.ts'
 import { fakeKeychain } from './fake-keychain.ts'
 
 let contentRoot: string
+/** The home folder: config and the search index's cache live under it, never the real one. */
+let home: string
 
 beforeEach(async () => {
   contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))
+  home = await mkdtemp(join(tmpdir(), 'ostraka-home-'))
 })
 
 afterEach(async () => {
   await rm(contentRoot, { recursive: true, force: true })
+  await rm(home, { recursive: true, force: true })
 })
 
 const start = () =>
-  startServer({ port: 0, webDist: '/nonexistent', keychain: fakeKeychain({}).keychain, env: { OSTRAKA_HOME: contentRoot } })
+  startServer({ port: 0, webDist: '/nonexistent', keychain: fakeKeychain({}).keychain, env: { OSTRAKA_HOME: contentRoot }, homeDir: home })
 const git = (...args: string[]) => execFileSync('git', ['-C', contentRoot, ...args], { encoding: 'utf8' }).trim()
 const commits = () => Number(git('rev-list', '--count', '--all'))
 const waitForCommits = (count: number) => vi.waitUntil(() => commits() === count, { timeout: 10_000, interval: 200 })
@@ -67,6 +71,7 @@ describe('startServer', { timeout: 30_000 }, () => {
       webDist: '/nonexistent',
       keychain: fakeKeychain({}).keychain,
       env: { OSTRAKA_HOME: contentRoot },
+      homeDir: home,
       snapshots: { quietMs: 100 },
     })
     try {
@@ -75,6 +80,32 @@ describe('startServer', { timeout: 30_000 }, () => {
       await addTodo({ title: 'Added by an agent' }, { env: { OSTRAKA_HOME: contentRoot } })
       await waitForCommits(2)
       expect(git('status', '--porcelain')).toBe('')
+    } finally {
+      await stop()
+    }
+  })
+
+  it('builds its search index from the files at start, in the cache folder outside the content folder', async () => {
+    await mkdir(join(contentRoot, 'notes'), { recursive: true })
+    await writeFile(join(contentRoot, 'notes', 'n1.md'), '---\ntags: []\n---\n\n# Plan\n\nwombat\n')
+    const { server, stop } = await start()
+    try {
+      const { port } = server.address() as AddressInfo
+      const search = () =>
+        new Promise<{ indexing: boolean; hits: { id: string }[] }>((resolve, reject) => {
+          const req = request({ host: '127.0.0.1', port, path: '/api/search?q=wombat', headers: { host: '127.0.0.1:4747' } }, (res) => {
+            let body = ''
+            res.setEncoding('utf8')
+            res.on('data', (chunk: string) => (body += chunk))
+            res.on('end', () => resolve(JSON.parse(body)))
+          })
+          req.on('error', reject)
+          req.end()
+        })
+      await vi.waitUntil(async () => !(await search()).indexing, { timeout: 5000, interval: 50 })
+      expect((await search()).hits.map((hit) => hit.id)).toEqual(['n1'])
+      expect((await stat(join(home, 'Library', 'Caches', 'ostraka', 'search.db'))).isFile()).toBe(true)
+      expect(git('status', '--porcelain', '--ignored')).not.toMatch(/search/)
     } finally {
       await stop()
     }
