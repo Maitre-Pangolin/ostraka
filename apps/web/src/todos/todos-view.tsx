@@ -11,6 +11,7 @@ import { Popover, PopoverContent, PopoverDescription, PopoverTrigger } from '@/c
 import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
+import { ReferenceText } from '@/references/reference-chip'
 import { EmptyState } from '@/shell/shell'
 import {
   useCompleteTodo,
@@ -374,7 +375,7 @@ function FinishedRow({ todo, dimmed, onReopen, children }: { todo: Todo; dimmed:
           <Checkbox checked onCheckedChange={onReopen} aria-label={`Reopen “${todo.title}”`} className="rounded-full" />
         )}
         <span className="text-muted-foreground decoration-muted-foreground/50 min-w-0 flex-1 truncate text-sm line-through">
-          {todo.title}
+          <ReferenceText text={todo.title} />
         </span>
         {dropped && (
           <span className="text-muted-foreground hidden max-w-[40%] truncate text-xs @md:block" title={todo.dropReason}>

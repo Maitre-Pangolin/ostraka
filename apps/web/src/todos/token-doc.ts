@@ -56,7 +56,7 @@ export function docToText(doc: Node): string {
 }
 
 /** A fresh state for `text`, the caret at its end. */
-export function chipEditorState(text: string, plugins: Plugin[] = []): EditorState {
+export function chipEditorState(text: string, plugins: readonly Plugin[] = []): EditorState {
   const doc = textToDoc(text)
   return EditorState.create({ doc, plugins, selection: TextSelection.atEnd(doc) })
 }

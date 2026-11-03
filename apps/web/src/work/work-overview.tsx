@@ -19,6 +19,7 @@ import { Skeleton } from '@/components/ui/skeleton'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
+import { CATEGORY_DOT } from '@/references/status'
 import {
   SOURCE_LABEL,
   useActivity,
@@ -29,7 +30,6 @@ import {
   type MergeRequest,
   type PipelineStatus,
   type SourceStatus,
-  type StatusCategory,
 } from './api'
 
 export const WORK_DETAILS_ID = 'work-details'
@@ -272,13 +272,6 @@ function GitLabDetails({ gitlab }: { gitlab: SourceStatus<GitLabOverview> | unde
       )}
     </SourceSection>
   )
-}
-
-/** A ticket's status dot, coloured by its Jira status category. */
-const CATEGORY_DOT: Record<StatusCategory, string> = {
-  new: 'bg-muted-foreground/50',
-  indeterminate: 'bg-primary',
-  done: 'bg-success',
 }
 
 function TicketRow({ ticket }: { ticket: JiraTicket }) {

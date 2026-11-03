@@ -181,10 +181,10 @@ describe('suggestReferences', () => {
   })
 })
 
-describe('splitReferences and joinPieces', () => {
-  const mr = (token: string): TextPiece => ({ kind: 'reference', token, reference: findReferences(token)[0]!.reference })
-  const text = (value: string): TextPiece => ({ kind: 'text', text: value })
+const mr = (token: string): TextPiece => ({ kind: 'reference', token, reference: findReferences(token)[0]!.reference })
+const text = (value: string): TextPiece => ({ kind: 'text', text: value })
 
+describe('splitReferences and joinPieces', () => {
   it('splits a text into text and References', () => {
     expect(splitReferences('Rebase pay/api!809 for PAY-1432')).toEqual([text('Rebase '), mr('pay/api!809'), text(' for '), mr('PAY-1432')])
   })

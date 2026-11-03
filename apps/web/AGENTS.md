@@ -82,6 +82,13 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Title and description fields where tokens apply use `TokenField` (`src/todos/token-field.tsx`). A token leaves the text once completed, picked with Tab or ↵ or followed by a space, and suggestions show while one is typed (existing Tags first; a new Tag is offered only when none matches).
 - In quick entry the values wait as removable chips under the input until the Todo is added; in an open Todo they change it straight away.
 
+## References
+
+- A Reference (`group/project!<iid>`, `<KEY>-<number>`) is plain text in storage. Its grammar, URL → token, completion and suggestions are core's (`@ostraka/core/references`), never the app's own.
+- Shown text renders each Reference as a chip (`ReferenceText`, `ReferenceChip` in `src/references/reference-chip.tsx`): icon, number (`!809`, `PAY-1432`), status dot. Hovering or focusing one opens a Popover card with the token, title, pipeline and approvals or Jira status, and Open.
+- Status comes from the top bar's polled data (`useReferenceIndex` in `src/references/api.ts`); a Reference it didn't poll shows a dashed dot and is fetched when its card opens (`GET /api/references?token=`), its error in the card. Dot colours live in `src/references/status.ts`.
+- `TokenField` is a small ProseMirror editor (model in `src/todos/token-doc.ts`, tested in `test/token-doc.test.ts`) where References are atomic chips: typing next to one can't break it, Backspace removes it whole. `!` + number or words suggests my open MRs, `KEY-` my open sprint tickets. A complete token, or a `!<iid>` only one open MR has, becomes a chip on a space or punctuation; a pasted MR or Jira URL under the configured sites becomes its token. On save a word touching a chip gets a space (core's `joinPieces`). Mentions (#47) join as another chip kind.
+
 ## Keyboard
 
 - ↵ commits.
@@ -101,7 +108,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 ## Visuals and copy
 
 - Icons come from lucide-react only, sized with `size-*`.
-- A status from another system shows as a small dot before the item plus that system's own status text after it: a Jira ticket's dot is coloured by its status category (`muted-foreground` to do, `primary` in progress, `success` done), and done tickets are muted (`TicketRow` in `src/work/work-overview.tsx`).
+- A status from another system shows as a small dot before the item plus that system's own status text after it: a Jira ticket's dot is coloured by its status category (`muted-foreground` to do, `primary` in progress, `success` done), and done tickets are muted (`TicketRow` in `src/work/work-overview.tsx`); an MR's by its head pipeline (`success` passed, `destructive` failed, `primary` still running).
 - UI copy is sentence case and uses the terms in `GLOSSARY.md` (Todo, Sub-todo, Dropped, Tag, Note, Dev log, Sketch, Person, Mention, Reference…), capitalised as there.
 - Motion is shadcn's defaults only, and respects `prefers-reduced-motion`.
 

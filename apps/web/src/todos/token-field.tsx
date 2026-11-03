@@ -1,11 +1,25 @@
-// A plain-text field (title or description) where `#tag`, `*prio` and `^date` leave the text once completed, picked
-// from the suggestions with Tab or ↵, or followed by a space. The values they set go to `onTokens`.
-import { pullCompletedTokens, suggestTokens, type TokenProps, type TokenSuggestion } from '@ostraka/core/todo-tokens'
-import { useId, useLayoutEffect, useRef, useState, type KeyboardEvent } from 'react'
+// A plain-text field (title or description) edited as a small ProseMirror editor, where References are atomic chips:
+// typing next to one can't break it, Backspace removes it whole. Completed `#tag`, `*prio` and `^date` leave the text
+// (picked from the suggestions with Tab or ↵, or followed by a space) and their values go to `onTokens`. A complete
+// `pay/api!809`, `PAY-1432` or unique `!809` becomes a chip on a space or punctuation, and a pasted MR or Jira URL
+// becomes its token. The value in and out is plain text; the model lives in `token-doc.ts`.
+import { referenceFromUrl, suggestReferences, type ReferenceSuggestion } from '@ostraka/core/references'
+import { suggestTokens, type TokenProps, type TokenSuggestion } from '@ostraka/core/todo-tokens'
+import { baseKeymap, splitBlock } from '@milkdown/kit/prose/commands'
+import { history, redo, undo } from '@milkdown/kit/prose/history'
+import { keymap } from '@milkdown/kit/prose/keymap'
+import type { Node } from '@milkdown/kit/prose/model'
+import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
+import { EditorView, type NodeView } from '@milkdown/kit/prose/view'
+import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+import { useReferenceIndex, useReferenceSites } from '@/references/api'
+import { ReferenceChip, ReferenceIcon } from '@/references/reference-chip'
 import { longDate, useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { PriorityFlag, TagPill } from './properties'
+import { chipEditorState, docToText, referenceNode, settle } from './token-doc'
 
 export type TokenFieldProps = {
   value: string
@@ -25,10 +39,19 @@ export type TokenFieldProps = {
   className?: string
 }
 
-const hasProps = (props: TokenProps) => props.tags.length > 0 || props.priority !== undefined || props.due !== undefined
+type Suggestion = TokenSuggestion | ReferenceSuggestion
 
-/** The word being typed: from the last space before the caret to the caret. */
-const fragmentAt = (text: string, caret: number) => /\S*$/.exec(text.slice(0, caret))?.[0] ?? ''
+/** The word before the caret: back to a space, a line start or a chip. */
+function fragmentAt(state: EditorState): string {
+  const { $from, empty } = state.selection
+  if (!empty) return ''
+  return /[^\s￼]*$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, '￼'))?.[0] ?? ''
+}
+
+/** A chip's DOM, filled by React through a portal so it shows live status and its hover card. */
+type ChipView = { id: number; dom: HTMLElement; token: string }
+
+let nextChipId = 0
 
 export function TokenField({
   value,
@@ -42,129 +65,232 @@ export function TokenField({
   autoFocus,
   placeholder,
   className,
-  ...aria
+  'aria-label': ariaLabel,
 }: TokenFieldProps) {
-  const field = useRef<HTMLTextAreaElement>(null)
-  const pendingCaret = useRef<number | null>(null)
-  const [caret, setCaret] = useState<number | null>(null)
+  const mount = useRef<HTMLDivElement>(null)
+  const view = useRef<EditorView | null>(null)
+  const emitted = useRef(value)
+  const [chips, setChips] = useState<ChipView[]>([])
+  const [fragment, setFragment] = useState('')
+  const typing = useRef('')
+  const [focused, setFocused] = useState(false)
   const [selected, setSelected] = useState(0)
   const [dismissed, setDismissed] = useState(false)
   const listId = useId()
 
   const today = useToday()
-  const fragment = caret === null ? '' : fragmentAt(value, caret)
-  const suggestions = dismissed || !fragment ? [] : suggestTokens(fragment, { today, tags, exclude }).slice(0, 8)
+  const index = useReferenceIndex()
+  const sites = useReferenceSites()
+  const suggestions: Suggestion[] =
+    dismissed || !focused || !fragment
+      ? []
+      : [...suggestTokens(fragment, { today, tags, exclude }), ...suggestReferences(fragment, index.candidates)].slice(0, 8)
   const active = Math.min(selected, suggestions.length - 1)
 
-  // Put the caret back where it belongs after a token leaves the text.
+  // The editor is made once; its handlers read the latest props and state through this ref.
+  const latest = useRef({ onChange, onTokens, onEnter, onBlur, today, index, sites, suggestions, active, multiline })
   useLayoutEffect(() => {
-    if (pendingCaret.current === null || !field.current) return
-    field.current.setSelectionRange(pendingCaret.current, pendingCaret.current)
-    pendingCaret.current = null
+    latest.current = { onChange, onTokens, onEnter, onBlur, today, index, sites, suggestions, active, multiline }
   })
 
-  const accept = (text: string, at: number) => {
-    const pulled = pullCompletedTokens(text, { today, caret: at })
-    const { text: rest, caret: movedCaret, ...props } = pulled
-    if (hasProps(props)) onTokens(props)
-    if (rest !== value) onChange(rest)
-    pendingCaret.current = movedCaret
-    setCaret(movedCaret)
+  const pick = (suggestion: Suggestion) => {
+    const editor = view.current
+    if (!editor) return
+    const { from } = editor.state.selection
+    const start = from - fragmentAt(editor.state).length
+    const tr = editor.state.tr
+    if (suggestion.kind === 'reference') tr.replaceWith(start, from, [referenceNode(suggestion.token), editor.state.schema.text(' ')])
+    else tr.insertText(`${suggestion.token} `, start, from)
+    editor.dispatch(tr)
     setSelected(0)
-    setDismissed(false)
   }
+  const pickRef = useRef(pick)
+  useLayoutEffect(() => {
+    pickRef.current = pick
+  })
 
-  const pick = (suggestion: TokenSuggestion) => {
-    const at = caret ?? value.length
-    const start = at - fragment.length
-    accept(`${value.slice(0, start)}${suggestion.token} ${value.slice(at)}`, start + suggestion.token.length + 1)
-  }
+  useEffect(() => {
+    const popupOpen = () => latest.current.suggestions.length > 0
+    const keys = keymap({
+      Enter: () => {
+        if (popupOpen()) return (pickRef.current(latest.current.suggestions[latest.current.active]!), true)
+        latest.current.onEnter?.({ shift: false })
+        return true
+      },
+      'Shift-Enter': (state, dispatch) =>
+        latest.current.onEnter?.({ shift: true }) || !latest.current.multiline || splitBlock(state, dispatch),
+      Tab: () => {
+        if (!popupOpen()) return false
+        pickRef.current(latest.current.suggestions[latest.current.active]!)
+        return true
+      },
+      ArrowDown: () => {
+        if (!popupOpen()) return false
+        setSelected((latest.current.active + 1) % latest.current.suggestions.length)
+        return true
+      },
+      ArrowUp: () => {
+        if (!popupOpen()) return false
+        const count = latest.current.suggestions.length
+        setSelected((latest.current.active - 1 + count) % count)
+        return true
+      },
+      Escape: (_state, _dispatch, editor) => {
+        if (popupOpen()) setDismissed(true)
+        else (editor?.dom as HTMLElement | undefined)?.blur()
+        return true
+      },
+      'Mod-z': undo,
+      'Shift-Mod-z': redo,
+      'Mod-y': redo,
+    })
 
-  const onKeyDown = (event: KeyboardEvent<HTMLTextAreaElement>) => {
-    if (event.nativeEvent.isComposing) return
-    if (suggestions.length) {
-      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
-        event.preventDefault()
-        const step = event.key === 'ArrowDown' ? 1 : -1
-        setSelected((active + step + suggestions.length) % suggestions.length)
-        return
-      }
-      if (event.key === 'Tab' || (event.key === 'Enter' && !event.shiftKey)) {
-        event.preventDefault()
-        pick(suggestions[active]!)
-        return
-      }
-      if (event.key === 'Escape') {
-        event.preventDefault()
-        event.stopPropagation()
-        setDismissed(true)
-        return
+    const chipView = (node: Node): NodeView => {
+      const dom = document.createElement('span')
+      dom.contentEditable = 'false'
+      const chip = { id: nextChipId++, dom, token: node.attrs.token as string }
+      setChips((current) => [...current, chip])
+      return {
+        dom,
+        ignoreMutation: () => true,
+        stopEvent: () => false,
+        destroy: () => setChips((current) => current.filter((other) => other !== chip)),
       }
     }
-    if (event.key === 'Escape') {
-      event.preventDefault()
-      event.currentTarget.blur()
-      return
+
+    const editor: EditorView = new EditorView(mount.current!, {
+      state: chipEditorState(emitted.current, [history(), keys, keymap(baseKeymap)]),
+      nodeViews: { reference: chipView },
+      // A title stays on one line, pasted line breaks included.
+      transformPastedText: (text) => (latest.current.multiline ? text : text.replace(/\r?\n/g, ' ')),
+      handlePaste: (current, event) => {
+        const found = referenceFromUrl(event.clipboardData?.getData('text/plain') ?? '', latest.current.sites)
+        if (!found) return false
+        const { from, to } = current.state.selection
+        current.dispatch(current.state.tr.replaceWith(from, to, [referenceNode(found.token), current.state.schema.text(' ')]))
+        return true
+      },
+      handleDOMEvents: {
+        focus: () => {
+          setFocused(true)
+          return false
+        },
+        blur: () => {
+          setFocused(false)
+          setDismissed(false)
+          latest.current.onBlur?.()
+          return false
+        },
+      },
+      dispatchTransaction(tr: Transaction) {
+        let state = editor.state.apply(tr)
+        if (tr.docChanged && !editor.composing) {
+          const { today: day, index: known } = latest.current
+          const settled = settle(state, { today: day, openMergeRequests: known.openMergeRequests, pullProps: true })
+          if (settled) {
+            state = state.apply(settled.tr)
+            if (settled.props) latest.current.onTokens(settled.props)
+          }
+        }
+        editor.updateState(state)
+        const text = docToText(state.doc)
+        if (text !== emitted.current) {
+          emitted.current = text
+          latest.current.onChange(text)
+        }
+        const next = fragmentAt(state)
+        if (next !== typing.current) {
+          typing.current = next
+          setFragment(next)
+          setSelected(0)
+          setDismissed(false)
+        }
+      },
+    })
+    view.current = editor
+    if (autoFocus) editor.focus()
+    return () => {
+      view.current = null
+      editor.destroy()
     }
-    if (event.key === 'Enter') {
-      const handled = onEnter?.({ shift: event.shiftKey }) ?? false
-      if (handled || !multiline || !event.shiftKey) event.preventDefault()
+    // Made once per mount; `value` changes reach it through the effect below.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [])
+
+  // A value set from outside (cleared after adding, the stored text refreshed) replaces what the editor holds.
+  useEffect(() => {
+    const editor = view.current
+    if (!editor || value === emitted.current) return
+    emitted.current = value
+    editor.updateState(chipEditorState(value, [...editor.state.plugins]))
+    typing.current = ''
+    setFragment('')
+  }, [value])
+
+  // ARIA on ProseMirror's own element: a combobox whose listbox holds the suggestions.
+  useLayoutEffect(() => {
+    const dom = view.current?.dom
+    if (!dom) return
+    const attributes: Record<string, string | undefined> = {
+      role: 'combobox',
+      'aria-label': ariaLabel,
+      'aria-multiline': String(Boolean(multiline)),
+      'aria-autocomplete': 'list',
+      'aria-expanded': String(suggestions.length > 0),
+      'aria-controls': listId,
+      'aria-activedescendant': suggestions.length ? `${listId}-${active}` : undefined,
     }
-  }
+    for (const [name, attribute] of Object.entries(attributes)) {
+      if (attribute === undefined) dom.removeAttribute(name)
+      else dom.setAttribute(name, attribute)
+    }
+  })
 
   return (
     <div className="relative min-w-0 flex-1">
-      {/* One element for both: a title is a one-line textarea that wraps instead of scrolling sideways. */}
-      <textarea
-        ref={field}
-        rows={1}
-        value={value}
-        autoFocus={autoFocus}
-        placeholder={placeholder}
-        {...aria}
-        role="combobox"
-        aria-autocomplete="list"
-        aria-expanded={suggestions.length > 0}
-        aria-controls={listId}
-        aria-activedescendant={suggestions.length ? `${listId}-${active}` : undefined}
-        // A title stays on one line, pasted line breaks included.
-        onChange={(event) =>
-          accept(multiline ? event.target.value : event.target.value.replace(/\r?\n/g, ' '), event.target.selectionStart)
-        }
-        onSelect={(event) => setCaret(event.currentTarget.selectionStart)}
-        onKeyDown={onKeyDown}
-        onBlur={() => {
-          setCaret(null)
-          onBlur?.()
-        }}
+      <div
+        ref={mount}
         className={cn(
-          'placeholder:text-muted-foreground field-sizing-content block w-full min-w-0 resize-none bg-transparent outline-none',
+          'block w-full min-w-0 cursor-text [&_.ProseMirror]:wrap-break-word [&_.ProseMirror]:whitespace-pre-wrap [&_.ProseMirror]:outline-none',
           className,
         )}
       />
+      {!value && placeholder && (
+        <span
+          aria-hidden
+          className={cn(
+            'text-muted-foreground pointer-events-none absolute inset-0 truncate whitespace-pre',
+            className,
+            'border-transparent bg-transparent',
+          )}
+        >
+          {placeholder}
+        </span>
+      )}
+      {chips.map((chip) => createPortal(<ReferenceChip token={chip.token} inEditor />, chip.dom, chip.id))}
       <ul
         id={listId}
         role="listbox"
         aria-label="Suggestions"
         hidden={!suggestions.length}
-        className="bg-popover text-popover-foreground ring-foreground/10 absolute top-full left-0 z-30 mt-1 w-64 max-w-full rounded-lg p-1 shadow-md ring-1"
+        className="bg-popover text-popover-foreground ring-foreground/10 absolute top-full left-0 z-30 mt-1 w-80 max-w-full rounded-lg p-1 shadow-md ring-1"
       >
-        {suggestions.map((suggestion, index) => (
+        {suggestions.map((suggestion, at) => (
           <li
             key={suggestion.token}
-            id={`${listId}-${index}`}
+            id={`${listId}-${at}`}
             role="option"
-            aria-selected={index === active}
+            aria-selected={at === active}
             // Keep focus in the field: pick on mouse down, before the field would blur.
             onMouseDown={(event) => {
               event.preventDefault()
               pick(suggestion)
             }}
-            onMouseEnter={() => setSelected(index)}
-            className={cn('flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm', index === active && 'bg-accent')}
+            onMouseEnter={() => setSelected(at)}
+            className={cn('flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm', at === active && 'bg-accent')}
           >
             <SuggestionLabel suggestion={suggestion} />
-            {index === active && <kbd className="text-muted-foreground ml-auto text-[10px]">Tab</kbd>}
+            {at === active && <kbd className="text-muted-foreground ml-auto text-[10px]">Tab</kbd>}
           </li>
         ))}
       </ul>
@@ -172,7 +298,22 @@ export function TokenField({
   )
 }
 
-function SuggestionLabel({ suggestion }: { suggestion: TokenSuggestion }) {
+function SuggestionLabel({ suggestion }: { suggestion: Suggestion }) {
+  if (suggestion.kind === 'reference')
+    return (
+      <>
+        <ReferenceIcon reference={suggestion.reference} className="text-muted-foreground" />
+        <span className="shrink-0 text-xs font-medium tabular-nums">
+          {suggestion.reference.kind === 'mr' ? `!${suggestion.reference.iid}` : suggestion.reference.key}
+        </span>
+        <span className="min-w-0 flex-1 truncate">{suggestion.title}</span>
+        {suggestion.reference.kind === 'mr' && (
+          <span className="text-muted-foreground hidden max-w-24 shrink-0 truncate text-[11px] @md:inline">
+            {suggestion.reference.project}
+          </span>
+        )}
+      </>
+    )
   if (suggestion.kind === 'tag')
     return (
       <>
