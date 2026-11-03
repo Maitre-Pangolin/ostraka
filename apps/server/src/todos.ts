@@ -6,6 +6,7 @@ import {
   DropTodoSchema,
   FileLockedError,
   listFinishedTodos,
+  listNotes,
   listTags,
   listTodos,
   NewTodoSchema,
@@ -28,12 +29,12 @@ import { loadedVersion, withoutVersion, withVersion } from './versions.ts'
 
 const versioned = (todo: Todo) => withVersion(todo, todoVersion(todo))
 
-type Schema<T> = {
+export type Schema<T> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } }
 }
 
 /** The request body checked against one of core's schemas. A missing or unparsable body counts as `fallback`. */
-async function readBody<T>(c: Context, schema: Schema<T>, fallback?: unknown) {
+export async function readBody<T>(c: Context, schema: Schema<T>, fallback?: unknown) {
   const body = schema.safeParse(await c.req.json().catch(() => fallback))
   if (body.success) return { ok: true, data: body.data } as const
   return { ok: false, response: c.json({ error: body.error.issues.map((issue) => issue.message).join('; ') }, 400) } as const
@@ -98,10 +99,14 @@ export function todoRoutes(options: TodoOptions) {
   return routes
 }
 
-/** `/api/tags`: the Tags in use, for suggestions. */
+/** `/api/tags`: the Tags in use by Todos and Notes, for suggestions. */
 export function tagRoutes(options: TodoOptions) {
   const routes = new Hono()
   routes.onError(onTodoError)
-  routes.get('/', async (c) => c.json(await listTags(options)))
+  routes.get('/', async (c) => {
+    const [todoTags, notes] = await Promise.all([listTags(options), listNotes(options)])
+    const noteTags = notes.flatMap((note) => ('tags' in note ? note.tags : []))
+    return c.json([...new Set([...todoTags, ...noteTags])].toSorted())
+  })
   return routes
 }
