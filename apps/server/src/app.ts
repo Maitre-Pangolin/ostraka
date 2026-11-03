@@ -9,6 +9,7 @@ import type { Backups } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { noteRoutes } from './notes.ts'
+import { noReferenceLookup, referenceRoutes, type ReferenceLookup } from './references.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
@@ -29,6 +30,8 @@ export type AppOptions = {
   activity?: Activity
   /** The server's backup schedule, for the top bar's warning. Without one, the status comes from the repo alone. */
   backups?: Pick<Backups, 'status'>
+  /** Hover details for References the work overview didn't poll (`referenceLookup()`). None by default: nothing is fetched. */
+  references?: ReferenceLookup
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
@@ -43,6 +46,7 @@ export function createApp({
   events = contentEvents(content),
   activity = activityPoller({ sources: [], clock: { now: Date.now, setTimeout: () => () => {} } }),
   backups = { status: async () => ({ ...(await backupState(content)), stopped: false }) },
+  references = noReferenceLookup,
 }: AppOptions) {
   const app = new Hono()
 
@@ -72,6 +76,7 @@ export function createApp({
   app.route('/api/todos', todoRoutes(content))
   app.route('/api/tags', tagRoutes(content))
   app.route('/api/notes', noteRoutes(content))
+  app.route('/api/references', referenceRoutes(references))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.

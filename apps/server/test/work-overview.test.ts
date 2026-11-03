@@ -138,7 +138,7 @@ describe('work overview: GitLab', () => {
             ],
             reviewing: [
               { iid: 77, title: 'Bump Node', project: 'web/app', author: 'Bo Chen' },
-              { iid: 78, title: 'Already approved', project: 'web/app', approvedBy: ['me'] },
+              { iid: 78, title: 'Already approved', project: 'web/app', approvedBy: ['me', 'ana.lima'] },
             ],
           })
         : { status: 404 },
@@ -155,8 +155,8 @@ describe('work overview: GitLab', () => {
     expect(gitlab).toMatchObject({ state: 'ok', stale: false, updatedAt: '2026-11-02T09:00:00.000Z' })
     expect(gitlab.data.counts).toEqual({ toReview: 1, opened: 2, failedPipelines: 1 })
     expect(gitlab.data.reviewing).toEqual([
-      expect.objectContaining({ reference: 'web/app!77', title: 'Bump Node', author: 'Bo Chen', approvedByMe: false }),
-      expect.objectContaining({ reference: 'web/app!78', approvedByMe: true }),
+      expect.objectContaining({ reference: 'web/app!77', title: 'Bump Node', author: 'Bo Chen', approvedByMe: false, approvals: 0 }),
+      expect.objectContaining({ reference: 'web/app!78', approvedByMe: true, approvals: 2 }),
     ])
     expect(gitlab.data.authored[0]).toMatchObject({
       reference: 'pay/api!809',

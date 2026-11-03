@@ -29,6 +29,8 @@ export type MergeRequest = {
   updatedAt: string
   author: string
   approvedByMe: boolean
+  /** How many have approved it. */
+  approvals: number
   projectId: number
   pipeline?: { id: number; status: PipelineStatus; url: string }
 }
@@ -101,6 +103,7 @@ function mergeRequest(node: MrNode, me: string): MergeRequest {
     updatedAt: node.updatedAt,
     author: node.author?.name ?? '',
     approvedByMe: node.approvedBy?.nodes.some((user) => user.username === me) ?? false,
+    approvals: node.approvedBy?.nodes.length ?? 0,
     projectId: Number(node.projectId),
     ...(pipeline && {
       // The GraphQL id is a global id, `gid://gitlab/Ci::Pipeline/123`; REST wants the number.
@@ -116,13 +119,15 @@ export type GitLabOptions = {
   baseUrl: () => Promise<string | undefined>
 }
 
+/** Where GitLab answers and how to sign in; off without a base URL or a token. */
+export function gitlabConnection(base: string | undefined, token: Secret | undefined) {
+  if (!base) throw new SourceOffError('No gitlab.base_url in config.yml.')
+  if (!token) throw new SourceOffError('No ostraka-gitlab item in the Keychain.')
+  return { base: base.replace(/\/+$/, ''), headers: { authorization: `Bearer ${token.reveal()}` } }
+}
+
 export function gitlabSource({ fetch, token, baseUrl }: GitLabOptions): ActivitySource<GitLabOverview> {
-  const connection = async () => {
-    const base = await baseUrl()
-    if (!base) throw new SourceOffError('No gitlab.base_url in config.yml.')
-    if (!token) throw new SourceOffError('No ostraka-gitlab item in the Keychain.')
-    return { base: base.replace(/\/+$/, ''), headers: { authorization: `Bearer ${token.reveal()}` } }
-  }
+  const connection = async () => gitlabConnection(await baseUrl(), token)
 
   const mergeRequests: Job<GitLabOverview> = {
     rates: GITLAB_RATES.mergeRequests,
