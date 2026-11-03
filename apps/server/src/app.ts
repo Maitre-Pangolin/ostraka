@@ -1,10 +1,11 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
+import { backupState, configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { activityPoller, type Activity } from './activity/poller.ts'
+import type { Backups } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { noteRoutes } from './notes.ts'
@@ -27,6 +28,8 @@ export type AppOptions = {
   events?: ContentEvents
   /** The work overview's pollers (`workOverview()`), started by the caller. None by default, so nothing is polled. */
   activity?: Activity
+  /** The server's backup schedule, for the top bar's warning. Without one, the status comes from the repo alone. */
+  backups?: Pick<Backups, 'status'>
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
@@ -40,6 +43,7 @@ export function createApp({
   onContentChange,
   events = contentEvents(content),
   activity = activityPoller({ sources: [], clock: { now: Date.now, setTimeout: () => () => {} } }),
+  backups = { status: async () => ({ ...(await backupState(content)), stopped: false }) },
 }: AppOptions) {
   const app = new Hono()
 
@@ -92,6 +96,14 @@ export function createApp({
       }
     }),
   )
+
+  app.get('/api/backup', async (c) => {
+    try {
+      return c.json(await backups.status())
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
+    }
+  })
 
   // The work overview: each Activity source's latest data, or why it is failing or off.
   app.get('/api/activity', (c) => c.json({ sources: activity.statuses() }))

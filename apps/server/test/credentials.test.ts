@@ -116,4 +116,12 @@ describe('macKeychain', () => {
     await expect(read).rejects.toThrow(/security exited with 128/)
     await expect(read).rejects.not.toThrow(/partial-output/)
   })
+
+  it('says whether an item exists without reading its secret (so without a prompt)', async () => {
+    const found = security(0, 'keychain: "login.keychain-db"\n')
+    expect(await macKeychain(found.run).has('ostraka-push')).toBe(true)
+    expect(found.calls).toEqual([['find-generic-password', '-s', 'ostraka-push']])
+    expect(await macKeychain(security(44).run).has('ostraka-push')).toBe(false)
+    await expect(macKeychain(security(51).run).has('ostraka-push')).rejects.toThrow(/security exited with 51/)
+  })
 })
