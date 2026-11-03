@@ -1,5 +1,6 @@
 // Backup: a plain `git push` of the content repo to its `origin` (a private project on the work gitlab.com).
 // Never a force-push, never a merge: a rejected push is reported and left to the user.
+import type { BackupCheck, BackupResult, BackupState, SecretFile } from './backup-types.ts'
 import { resolveContentRoot, type ContentRootOptions } from './content-root.ts'
 import { git, runGit, type GitRunOptions } from './git.ts'
 import { findSecrets } from './secret-scan.ts'
@@ -11,22 +12,7 @@ export type BackupOptions = ContentRootOptions & {
   token?: string
 }
 
-/** A content file (relative path) and the kinds of secret found in it; never the secret itself. */
-export type SecretFile = { file: string; kinds: string[] }
-
-export type BackupResult =
-  /** Local HEAD is on the remote; `pushed` is false when it already was. */
-  | { status: 'backed-up'; commit: string; pushed: boolean }
-  /** No Snapshot yet: nothing to back up. */
-  | { status: 'empty' }
-  /** Changed files look like they hold a token: nothing was pushed. */
-  | { status: 'secrets'; files: SecretFile[] }
-  /** The content repo has no `origin` remote. */
-  | { status: 'no-remote' }
-  /** The remote refused the push (it has commits this repo doesn't, or a protected branch). */
-  | { status: 'rejected'; reason: string }
-  /** Anything else: offline, authentication, a detached HEAD. */
-  | { status: 'failed'; reason: string }
+type Failed = Extract<BackupResult, { status: 'failed' }>
 
 const NETWORK_TIMEOUT_MS = 2 * 60_000
 
@@ -65,7 +51,7 @@ async function hasRemote(root: string): Promise<boolean> {
 }
 
 /** Fetches the remote's branches (into refs/remotes/origin, never merged) and says whether `commit` is on one. */
-async function isOnRemote(root: string, commit: string, token: string | undefined): Promise<BackupResult | boolean> {
+async function isOnRemote(root: string, commit: string, token: string | undefined): Promise<Failed | boolean> {
   const fetched = await runGit(
     root,
     ['fetch', '--quiet', '--no-tags', BACKUP_REMOTE, `+refs/heads/*:refs/remotes/${BACKUP_REMOTE}/*`],
@@ -80,11 +66,8 @@ async function isOnRemote(root: string, commit: string, token: string | undefine
  * commit counts, not just the latest: a secret removed again would still leave in the history.
  */
 async function scanUnpushed(root: string, commit: string): Promise<SecretFile[]> {
-  const log = await git(root, [
-    ...['-c', 'core.quotePath=false'],
-    ...['log', '-p', '--no-color', '--no-ext-diff', '--unified=0', '--format=', commit],
-    ...['--not', `--remotes=${BACKUP_REMOTE}`],
-  ])
+  const args = ['-c', 'core.quotePath=false', 'log', '-p', '--no-color', '--no-ext-diff', '--unified=0', '--format=']
+  const log = await git(root, [...args, commit, '--not', `--remotes=${BACKUP_REMOTE}`])
   const added = new Map<string, string[]>()
   let file: string | undefined
   let inHeader = false
@@ -97,13 +80,15 @@ async function scanUnpushed(root: string, commit: string): Promise<SecretFile[]>
     } else if (line.startsWith('@@')) {
       inHeader = false
     } else if (!inHeader && file !== undefined && line.startsWith('+')) {
-      added.set(file, [...(added.get(file) ?? []), line.slice(1)])
+      const lines = added.get(file) ?? []
+      lines.push(line.slice(1))
+      added.set(file, lines)
     }
   }
   return [...added]
-    .map(([file, lines]) => ({ file, kinds: findSecrets(lines.join('\n')) }))
+    .map(([path, lines]) => ({ file: path, kinds: findSecrets(lines.join('\n')) }))
     .filter(({ kinds }) => kinds.length > 0)
-    .sort((a, b) => a.file.localeCompare(b.file))
+    .toSorted((a, b) => a.file.localeCompare(b.file))
 }
 
 /** Scans what is new for secrets, pushes the current branch to `origin` without force, then checks that HEAD is on the remote. */
@@ -145,6 +130,57 @@ function rejectionReason(refusal: string, branch: string): string {
     ? ` The remote's ${branch} has commits this machine doesn't. Ostraka never merges or force-pushes: bring them in by hand in the content folder (git pull --rebase), then run ostraka backup.`
     : ''
   return `Push ${refusal}.${behind}`
+}
+
+/**
+ * Asks the remote whether local HEAD is on it (a fetch: the remote's branches land in refs/remotes/origin, never
+ * merged). The server runs it at start, where nothing was pushed yet.
+ */
+export async function checkBackup({ token, ...options }: BackupOptions = {}): Promise<BackupCheck> {
+  const root = await resolveContentRoot(options)
+  const commit = await headCommit(root)
+  if (commit === undefined) return { status: 'empty' }
+  if (!(await hasRemote(root))) return { status: 'no-remote' }
+  const onRemote = await isOnRemote(root, commit, token)
+  if (typeof onRemote !== 'boolean') return onRemote
+  return onRemote ? { status: 'backed-up', commit, pushed: false } : { status: 'not-backed-up' }
+}
+
+export const STALE_AFTER_MS = 24 * 60 * 60_000
+export const LARGE_FILE_BYTES = 10 * 1024 * 1024
+
+/**
+ * What the repo says about its backup, without contacting the remote: whether HEAD is on `origin` as last fetched or
+ * pushed, how long the oldest Snapshot not on it has waited, and the content files over 10 MB.
+ */
+export async function backupState({
+  now = () => new Date(),
+  ...options
+}: ContentRootOptions & { now?: () => Date } = {}): Promise<BackupState> {
+  const root = await resolveContentRoot(options)
+  const remote = await hasRemote(root)
+  const commit = await headCommit(root)
+  if (commit === undefined) return { remote, backedUp: false, stale: false, largeFiles: [] }
+
+  const waiting = await git(root, ['log', '--format=%ct', commit, '--not', `--remotes=${BACKUP_REMOTE}`])
+  const times = waiting === '' ? [] : waiting.split('\n').map(Number)
+  const largeFiles = (await git(root, ['-c', 'core.quotePath=false', 'ls-tree', '-r', '-l', '--full-tree', commit]))
+    .split('\n')
+    .map((line) => {
+      // `<mode> blob <object> <size>\t<path>`
+      const [meta, file] = line.split('\t') as [string, string]
+      return { file, bytes: Number(meta.trim().split(/\s+/)[3]) }
+    })
+    .filter(({ bytes }) => bytes > LARGE_FILE_BYTES)
+  if (times.length === 0) return { remote, backedUp: true, stale: false, largeFiles }
+  const oldest = Math.min(...times) * 1000
+  return {
+    remote,
+    backedUp: false,
+    unbackedSince: new Date(oldest).toISOString(),
+    stale: now().getTime() - oldest > STALE_AFTER_MS,
+    largeFiles,
+  }
 }
 
 /** git's own explanation, without hints, progress or any credentials in a URL. */

@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { backup, snapshot, type ContentRootOptions } from '../src/index.ts'
+import { backup, backupState, checkBackup, snapshot, type ContentRootOptions } from '../src/index.ts'
 import { startHttpRemote } from './http-remote.ts'
 
 let dir: string
@@ -182,5 +182,99 @@ describe('backup secret scan', { timeout: 60_000 }, () => {
     await snapshot('notes', options)
 
     expect(await backup(options)).toMatchObject({ status: 'backed-up', commit: head() })
+  })
+})
+
+const HOUR = 60 * 60_000
+const NOW = new Date('2026-11-02T12:00:00Z')
+
+/** A Snapshot-like commit dated `hoursAgo` before NOW. */
+async function commitHoursAgo(hoursAgo: number, file = 'todos.json') {
+  await write(file, `{"todos":[],"at":${hoursAgo}}\n`)
+  const date = new Date(NOW.getTime() - hoursAgo * HOUR).toISOString()
+  git(content, 'add', '--all')
+  execFileSync('git', ['-C', content, '-c', 'user.name=T', '-c', 'user.email=t@localhost', 'commit', '--quiet', '-m', `${hoursAgo}h ago`], {
+    env: { ...process.env, GIT_AUTHOR_DATE: date, GIT_COMMITTER_DATE: date },
+  })
+}
+
+describe('backupState', { timeout: 60_000 }, () => {
+  it('is stale once a Snapshot has waited more than 24 h for a backup', async () => {
+    await mkdir(content)
+    git(content, 'init', '--quiet')
+    await commitHoursAgo(25)
+    await commitHoursAgo(1)
+
+    expect(await backupState({ ...options, now: () => NOW })).toEqual({
+      remote: false,
+      backedUp: false,
+      unbackedSince: new Date(NOW.getTime() - 25 * HOUR).toISOString(),
+      stale: true,
+      largeFiles: [],
+    })
+  })
+
+  it('is not stale while what waits is less than 24 h old', async () => {
+    await contentWithRemote()
+    await commitHoursAgo(30)
+    await backup(options)
+    await commitHoursAgo(23)
+
+    expect(await backupState({ ...options, now: () => NOW })).toMatchObject({
+      remote: true,
+      backedUp: false,
+      unbackedSince: new Date(NOW.getTime() - 23 * HOUR).toISOString(),
+      stale: false,
+    })
+  })
+
+  it('is backed up, however long ago, while HEAD is on the remote', async () => {
+    await contentWithRemote()
+    await commitHoursAgo(72)
+    await backup(options)
+
+    expect(await backupState({ ...options, now: () => NOW })).toEqual({ remote: true, backedUp: true, stale: false, largeFiles: [] })
+  })
+
+  it('has nothing to warn about before the first Snapshot', async () => {
+    expect(await backupState({ ...options, now: () => NOW })).toEqual({ remote: false, backedUp: false, stale: false, largeFiles: [] })
+  })
+
+  it('lists each content file over 10 MB', async () => {
+    await mkdir(content)
+    await writeFile(join(content, 'big.png'), Buffer.alloc(10 * 1024 * 1024 + 1))
+    await writeFile(join(content, 'just-fits.png'), Buffer.alloc(10 * 1024 * 1024))
+    await snapshot('images', options)
+
+    expect((await backupState({ ...options, now: () => NOW })).largeFiles).toEqual([{ file: 'big.png', bytes: 10 * 1024 * 1024 + 1 }])
+  })
+})
+
+describe('checkBackup', { timeout: 60_000 }, () => {
+  it('finds a freshly cloned content repo backed up, by asking the remote', async () => {
+    await contentWithRemote()
+    await backup(options)
+    const restored = join(dir, 'restored')
+    execFileSync('git', ['clone', '--quiet', remote, restored])
+
+    expect(await checkBackup({ env: { OSTRAKA_HOME: restored } })).toEqual({
+      status: 'backed-up',
+      commit: git(restored, 'rev-parse', 'HEAD'),
+      pushed: false,
+    })
+  })
+
+  it('finds a Snapshot not pushed yet', async () => {
+    await contentWithRemote()
+    await backup(options)
+    await commitHoursAgo(1)
+
+    expect(await checkBackup(options)).toEqual({ status: 'not-backed-up' })
+  })
+
+  it('reports no remote without contacting anything', async () => {
+    await write('todos.json', '{"todos":[]}\n')
+    await snapshot('first', options)
+    expect(await checkBackup(options)).toEqual({ status: 'no-remote' })
   })
 })
