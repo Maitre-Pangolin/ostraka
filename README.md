@@ -18,6 +18,19 @@ For UI work, run `pnpm ostraka serve` and `pnpm dev` side by side: Vite on http:
 
 `pnpm ostraka todo add "…"`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos; `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). In a title, `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` set the Todo's Tags, priority and due date, as in the app: `ostraka todo add "Fix login #auth *high ^fri"`. `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file. The open app refreshes on its own when content changes on disk, and refuses a change made from a copy that is no longer current instead of overwriting it.
 
+Notes are `notes/<id>.md`: a YAML header, then a Markdown body. The header is validated on load; a Note whose header is broken still shows in the app's list, with the reason. An Idea is a Note tagged `idea`.
+
+```markdown
+---
+tags: [work, idea] # lowercase, hyphenated; always here, never inline
+title: Release plan # optional; otherwise the first `# ` heading names the Note
+---
+
+# Release plan
+```
+
+Bodies are written in one house style (`-` bullets and rules, `*emphasis*`, `**strong**`, fenced code, `#` headings), which the app's editor writes too, so opening and saving an unchanged Note leaves it byte-identical and the header is never touched. After writing a Note by hand, run `pnpm ostraka note format [<id>…]` to put it in house style; `note list [--json]` lists Notes with any broken header.
+
 The content folder is its own git repo (created when missing, no remote). While it runs, the server commits the whole folder as one Snapshot once changes settle: 60 s after the last change, at most every 10 min during steady activity, and on stop. `pnpm ostraka snapshot "<message>"` commits now with that message; skills run it after they write.
 
 `tags.yml` in the content folder holds Tag colours only; Tags themselves come from use. A Tag it doesn't list keeps a colour picked from its name. Colours are `orange`, `yellow`, `green`, `teal`, `blue`, `violet`, `pink` and `red`:
