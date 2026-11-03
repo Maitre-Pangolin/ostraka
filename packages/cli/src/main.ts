@@ -9,12 +9,16 @@ import {
   contentPath,
   dropTodo,
   formatNotes,
+  isBrokenDevlog,
   isBrokenNote,
+  listDevlogs,
   listNotes,
+  listTags,
   isContentKind,
   listFinishedTodos,
   listTodos,
   snapshot,
+  type DevlogListing,
   type SubTodo,
   type Todo,
 } from '@ostraka/core'
@@ -57,6 +61,13 @@ const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently ch
                                 Write Notes in the house style after editing them by hand
 `
 
+const DEVLOG_USAGE = `  ostraka devlog list [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
+                                List Dev logs and monthly summaries, newest first (a broken one with its error)
+`
+
+const TAG_USAGE = `  ostraka tag list [--json]     List the Tags in use on Todos, Notes, Dev logs and Sketches
+`
+
 const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
                                 Commit the content folder now (after an agent writes)
 `
@@ -66,7 +77,7 @@ const USAGE = `Usage:
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${TAG_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -85,6 +96,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await todoCommand(rest, io)
       case 'note':
         return await noteCommand(rest, io)
+      case 'devlog':
+        return await devlogCommand(rest, io)
+      case 'tag':
+        return await tagCommand(rest, io)
       case 'backup':
         return await backupCommand(rest, io)
       case 'init':
@@ -213,6 +228,51 @@ async function noteCommand(args: string[], io: Io): Promise<number> {
   }
   io.stderr(`Usage:\n${NOTE_USAGE}`)
   return 1
+}
+
+const DAY = /^\d{4}-\d{2}-\d{2}$/
+const MONTH = /^\d{4}-\d{2}$/
+
+/** A day from `from` to `to`, a monthly summary of a month they touch, and any misnamed file, which is always shown. */
+const inRange = (id: string, from = '0000-00-00', to = '9999-99-99') =>
+  DAY.test(id) ? id >= from && id <= to : MONTH.test(id) ? id >= from.slice(0, 7) && id <= to.slice(0, 7) : true
+
+/** `date  #tag  sources: …`, `date  off: label`, `month  monthly summary  #tag` or `id  broken: error`. */
+function devlogLine(log: DevlogListing): string {
+  if (isBrokenDevlog(log)) return `${log.id}  broken: ${log.error}`
+  const tags = log.tags.length ? [log.tags.map((tag) => `#${tag}`).join(' ')] : []
+  if (log.kind === 'month') return [`${log.id}  monthly summary`, ...tags].join('  ')
+  if (log.off) return `${log.id}  off${log.label ? `: ${log.label}` : ''}`
+  return [log.id, ...tags, ...(log.sources.length ? [`sources: ${log.sources.join(', ')}`] : [])].join('  ')
+}
+
+async function devlogCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: { json: { type: 'boolean' }, from: { type: 'string' }, to: { type: 'string' } },
+  })
+  const { from, to } = values
+  const dates = [from, to].filter((date) => date !== undefined)
+  if (positionals.length !== 1 || positionals[0] !== 'list' || !dates.every((date) => DAY.test(date))) {
+    io.stderr(`Usage:\n${DEVLOG_USAGE}`)
+    return 1
+  }
+  const logs = (await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })).filter((log) => inRange(log.id, from, to))
+  io.stdout(values.json ? `${JSON.stringify(logs, null, 2)}\n` : logs.length ? `${logs.map(devlogLine).join('\n')}\n` : 'No Dev logs.\n')
+  return 0
+}
+
+async function tagCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
+  if (positionals.length !== 1 || positionals[0] !== 'list') {
+    io.stderr(`Usage:\n${TAG_USAGE}`)
+    return 1
+  }
+  const tags = await listTags({ env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (values.json) io.stdout(`${JSON.stringify(tags, null, 2)}\n`)
+  else io.stdout(tags.length ? tags.map(({ name }) => `#${name}\n`).join('') : 'No Tags.\n')
+  return 0
 }
 
 async function snapshotCommand(args: string[], io: Io): Promise<number> {
