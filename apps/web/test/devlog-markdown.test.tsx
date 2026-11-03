@@ -7,6 +7,8 @@ import { MarkdownView } from '../src/devlogs/markdown-view.tsx'
 const render = (markdown: string, todoLink = (id: string, text: string) => <b data-todo={id}>{text}</b>) =>
   renderToStaticMarkup(<MarkdownView markdown={markdown} todoLink={todoLink} />)
 
+const mention = (id: string) => <i data-person={id}>{id}</i>
+
 describe('MarkdownView', () => {
   it('renders sections, lists and inline formatting', () => {
     expect(render('## Done\n\n- Shipped *it* with **care** and `code`\n')).toBe(
@@ -32,5 +34,24 @@ describe('MarkdownView', () => {
         '<ul><li><input type="checkbox" disabled="" checked=""/> done</li></ul>' +
         '<pre><code>const a = 1</code></pre>',
     )
+  })
+
+  it('hands each Mention in the text to the app, and leaves code and emails alone', () => {
+    expect(
+      renderToStaticMarkup(
+        <MarkdownView
+          markdown={'- 1:1 with @ilse-vantongeren and **@bram**, mailed bram@corp.example `@bram`\n'}
+          todoLink={() => null}
+          mention={mention}
+        />,
+      ),
+    ).toBe(
+      '<ul><li>1:1 with <i data-person="ilse-vantongeren">ilse-vantongeren</i> and <strong><i data-person="bram">bram</i></strong>, ' +
+        'mailed <a href="mailto:bram@corp.example" target="_blank" rel="noreferrer">bram@corp.example</a> <code>@bram</code></li></ul>',
+    )
+  })
+
+  it('keeps Mentions as text without a renderer', () => {
+    expect(render('Ask @bram\n')).toBe('<p>Ask @bram</p>')
   })
 })
