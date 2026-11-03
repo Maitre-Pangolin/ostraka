@@ -11,6 +11,7 @@ import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychai
 import { devlogRoutes } from './devlogs.ts'
 import { historyRoutes } from './history.ts'
 import { noteRoutes } from './notes.ts'
+import { peopleRoutes } from './people.ts'
 import { noReferenceLookup, referenceRoutes, type ReferenceLookup } from './references.ts'
 import { sketchRoutes } from './sketches.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
@@ -86,6 +87,7 @@ export function createApp({
   app.route('/api/sketches', sketchRoutes(content))
   app.route('/api/history', historyRoutes(content, { onSnapshot: () => backups.snapshotted?.() }))
   app.route('/api/references', referenceRoutes(references))
+  app.route('/api/people', peopleRoutes(content))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.
