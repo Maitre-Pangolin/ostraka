@@ -75,7 +75,8 @@ export async function getPerson(id: string, options: ContentRootOptions = {}): P
   return person
 }
 
-const sameEmail = (a: string | undefined, b: string | undefined) => a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase()
+const sameEmail = (a: string | undefined, b: string | undefined) =>
+  a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase()
 
 function assertEmailFree(people: Person[], person: Person) {
   const owner = people.find((other) => other.id !== person.id && sameEmail(other.email, person.email))

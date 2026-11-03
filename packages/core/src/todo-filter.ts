@@ -50,7 +50,8 @@ function values<T>(raw: unknown, valid: (value: unknown) => T | undefined): T[] 
 }
 
 /** Person ids from URL search params, each once; anything not an id is left out. */
-export const parsePeople = (raw: unknown) => values(raw, (value) => (typeof value === 'string' && parseMention(`@${value}`) === value ? value : undefined))
+export const parsePeople = (raw: unknown) =>
+  values(raw, (value) => (typeof value === 'string' && parseMention(`@${value}`) === value ? value : undefined))
 
 /**
  * The filter in URL search params, checked: unknown values are left out, and so are empty groups and the default

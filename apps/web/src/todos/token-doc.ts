@@ -122,7 +122,10 @@ export function settle(state: EditorState, options: SettleOptions): { tr: Transa
     }
 
     const chips = [
-      ...completedReferences(text, { openMergeRequests: options.openMergeRequests }).map((found) => ({ ...found, node: referenceNode(found.token) })),
+      ...completedReferences(text, { openMergeRequests: options.openMergeRequests }).map((found) => ({
+        ...found,
+        node: referenceNode(found.token),
+      })),
       ...completedMentions(text, options.isPerson ?? nobody).map((found) => ({ ...found, node: mentionNode(found.id) })),
     ].toSorted((a, b) => a.start - b.start)
     if (text === node.text && !chips.length) return

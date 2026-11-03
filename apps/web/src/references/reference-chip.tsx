@@ -1,12 +1,13 @@
 // A Reference shown as a chip: icon, number, status dot. Hovering (or focusing and clicking) opens a card with its
 // title, pipeline and approvals or Jira status, and Open. Status comes from what the top bar polled; anything else
 // is fetched when the card opens. The same chip shows in lists and, as an atom, inside the chip editor.
-import { parseReference, referenceUrl, splitReferences, type Reference } from '@ostraka/core/references'
+import { parseReference, referenceUrl, splitChips, type Reference } from '@ostraka/core/references'
 import { ExternalLink, GitPullRequest, Ticket } from 'lucide-react'
 import { useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
+import { MentionChip } from '@/people/mention-chip'
 import { useReferenceDetails, useReferenceIndex, useReferenceSites, type PolledReference, type ReferenceDetails } from './api'
 import { CATEGORY_DOT, pipelineDot, pipelineLabel, UNKNOWN_DOT } from './status'
 
@@ -141,9 +142,15 @@ function ReferenceFacts({ polled, details }: Known) {
   return facts.map((fact) => <span key={fact}>· {fact}</span>)
 }
 
-/** Plain text with each Reference shown as a chip, as in a collapsed row's title. */
+/** Plain text with each Reference and Mention shown as a chip, as in a collapsed row's title. */
 export function ReferenceText({ text }: { text: string }) {
-  return splitReferences(text).map((piece, index) =>
-    piece.kind === 'text' ? piece.text : <ReferenceChip key={`${index}-${piece.token}`} token={piece.token} />,
+  return splitChips(text).map((piece, index) =>
+    piece.kind === 'text' ? (
+      piece.text
+    ) : piece.kind === 'mention' ? (
+      <MentionChip key={`${index}-${piece.token}`} id={piece.id} />
+    ) : (
+      <ReferenceChip key={`${index}-${piece.token}`} token={piece.token} />
+    ),
   )
 }

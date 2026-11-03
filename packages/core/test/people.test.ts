@@ -65,8 +65,8 @@ describe('addPerson', () => {
   })
 
   it('refuses an invalid id or email', async () => {
-    await expect(addPerson({ id: 'Not A Slug', name: 'X' }, options)).rejects.toThrow()
-    await expect(addPerson({ name: 'Ilse', email: 'not-an-email' }, options)).rejects.toThrow()
+    await expect(addPerson({ id: 'Not A Slug', name: 'X' }, options)).rejects.toThrow(/id is lowercase/)
+    await expect(addPerson({ name: 'Ilse', email: 'not-an-email' }, options)).rejects.toThrow(/one company email/)
   })
 
   it('keeps people.json sorted by id with a stable key order', async () => {
@@ -135,7 +135,11 @@ describe('getPerson', () => {
 describe('refreshPerson', () => {
   it('replaces the identities given, keeping the others', async () => {
     await addPerson({ name: 'Ilse Vantongeren', email: 'ilse@corp.example', slackId: 'U01OLD', gitlabUsername: 'ivant' }, options)
-    const refreshed = await refreshPerson('ilse-vantongeren', { slackId: 'U02NEW', slackHandle: 'ilse', jiraAccountId: '712020:ab' }, options)
+    const refreshed = await refreshPerson(
+      'ilse-vantongeren',
+      { slackId: 'U02NEW', slackHandle: 'ilse', jiraAccountId: '712020:ab' },
+      options,
+    )
     expect(refreshed).toEqual({
       id: 'ilse-vantongeren',
       name: 'Ilse Vantongeren',

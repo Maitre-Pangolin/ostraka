@@ -102,7 +102,9 @@ describe('parseTodoFilter', () => {
   })
 
   it('reads mentioned Persons by id, each once, leaving out what is not an id', () => {
-    expect(parseTodoFilter({ person: ['bram', 'ilse-vantongeren', 'bram', 'Not An Id', 3] })).toEqual({ person: ['bram', 'ilse-vantongeren'] })
+    expect(parseTodoFilter({ person: ['bram', 'ilse-vantongeren', 'bram', 'Not An Id', 3] })).toEqual({
+      person: ['bram', 'ilse-vantongeren'],
+    })
     expect(parseTodoFilter({ person: 'bram' })).toEqual({ person: ['bram'] })
     expect(parseTodoFilter({ person: [] })).toEqual({})
   })

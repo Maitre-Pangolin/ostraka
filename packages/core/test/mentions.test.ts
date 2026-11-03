@@ -65,9 +65,9 @@ describe('suggestPeople', () => {
   })
 })
 
-describe('completedMentions', () => {
-  const known = (id: string) => people.some((person) => person.id === id)
+const known = (id: string) => people.some((person) => person.id === id)
 
+describe('completedMentions', () => {
   it('takes a known @<person id> once a space or punctuation follows', () => {
     expect(completedMentions('Ask @bram, then @ilse-vantongeren ', known).map((found) => found.token)).toEqual([
       '@bram',

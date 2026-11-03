@@ -100,7 +100,11 @@ function split(text: string, found: FoundChip[]): TextPiece[] {
 }
 
 /** `text` as runs of plain text and a chip per Reference. */
-export const splitReferences = (text: string): TextPiece[] => split(text, findChips(text, () => false))
+export const splitReferences = (text: string): TextPiece[] =>
+  split(
+    text,
+    findChips(text, () => false),
+  )
 
 /**
  * `text` as runs of plain text and a chip per Reference and Mention. With `isPerson`, a Mention of anyone else (an

@@ -47,7 +47,17 @@ describe('ostraka people', () => {
     })
     expect(await ostraka('people', 'find', 'Quentin')).toEqual({ code: 0, stdout: 'No Person matches Quentin.\n', stderr: '' })
 
-    const refreshed = await ostraka('people', 'refresh', 'ilse-vantongeren', '--slack-id', 'U02ABC', '--gitlab', 'ivant', '--jira', '712020:ab')
+    const refreshed = await ostraka(
+      'people',
+      'refresh',
+      'ilse-vantongeren',
+      '--slack-id',
+      'U02ABC',
+      '--gitlab',
+      'ivant',
+      '--jira',
+      '712020:ab',
+    )
     expect(refreshed.code).toBe(0)
 
     expect(await ostraka('people', 'show', 'ilse-vantongeren')).toEqual({

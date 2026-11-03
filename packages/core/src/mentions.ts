@@ -2,11 +2,7 @@
 // server, the CLI and search share one grammar, as with References (`references.ts`).
 
 /** Lowercase, accents and case left out, for matching names as typed. */
-export const foldText = (value: string) =>
-  value
-    .normalize('NFD')
-    .replace(/\p{M}/gu, '')
-    .toLowerCase()
+export const foldText = (value: string) => value.normalize('NFD').replace(/\p{M}/gu, '').toLowerCase()
 
 /** The id a name suggests: its words, without accents, joined by hyphens. */
 export const personIdFromName = (name: string) =>

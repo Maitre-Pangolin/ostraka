@@ -21,11 +21,11 @@ function shape(state: EditorState): string[] {
 }
 
 /** Types `text` at the caret, one character at a time, settling after each like the editor does. */
-function type(state: EditorState, text: string, { pullProps = true, isPerson = (_id: string) => false } = {}) {
+function type(state: EditorState, text: string, { pullProps = true, people = (_id: string): boolean => false } = {}) {
   const props: object[] = []
   for (const char of text) {
     const typed = state.apply(state.tr.insertText(char))
-    const settled = settle(typed, { today, openMergeRequests, pullProps, isPerson })
+    const settled = settle(typed, { today, openMergeRequests, pullProps, isPerson: people })
     state = settled ? typed.apply(settled.tr) : typed
     if (settled && settled.props) props.push(settled.props)
   }
@@ -94,7 +94,7 @@ describe('settle', () => {
   })
 
   it('turns a known @<person id> into a Mention chip on a space, and leaves an unknown one as text', () => {
-    const { state } = type(chipEditorState(''), 'Ask @bram, @quentin and @bram-x ', { isPerson })
+    const { state } = type(chipEditorState(''), 'Ask @bram, @quentin and @bram-x ', { people: isPerson })
     expect(shape(state)).toEqual(['Ask [@bram], @quentin and @bram-x '])
     expect(docToText(state.doc)).toBe('Ask @bram, @quentin and @bram-x ')
   })
