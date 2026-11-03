@@ -1,3 +1,4 @@
+import { parseTodoFilter } from '@ostraka/core/todo-filter'
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import { SettingsView } from './settings/settings-view'
 import { EmptyState, Shell } from './shell/shell'
@@ -18,7 +19,8 @@ const view = <P extends string>(path: P, empty: string) =>
 
 const routeTree = rootRoute.addChildren([
   indexRoute,
-  createRoute({ getParentRoute: () => rootRoute, path: '/todos', component: TodosView }),
+  // The Todo filter lives in typed search params, so a filtered view survives a reload and can be linked.
+  createRoute({ getParentRoute: () => rootRoute, path: '/todos', validateSearch: parseTodoFilter, component: TodosView }),
   view('/notes', 'No Notes yet. Start one to keep your thoughts.'),
   view('/devlogs', "No Dev logs yet. Run the Dev log skill to write today's."),
   view('/sketches', 'No Sketches yet. Start one to draw a diagram.'),

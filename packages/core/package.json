@@ -7,7 +7,10 @@
     "./config-schema": "./src/config-schema.ts",
     "./todo-schema": "./src/todo-schema.ts",
     "./todo-tokens": "./src/todo-tokens.ts",
-    "./todo-order": "./src/todo-order.ts"
+    "./todo-order": "./src/todo-order.ts",
+    "./todo-filter": "./src/todo-filter.ts",
+    "./tag-color": "./src/tag-color.ts",
+    "./tag-schema": "./src/tag-schema.ts"
   },
   "scripts": {
     "typecheck": "tsc -p ."

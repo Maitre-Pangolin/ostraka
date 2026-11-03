@@ -6,6 +6,8 @@ import { contentPath } from './content-path.ts'
 import { assertCurrentVersion, contentVersion } from './content-version.ts'
 import type { ContentRootOptions } from './content-root.ts'
 import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
+import { defaultTagColor, type Tag } from './tag-color.ts'
+import { readTagsFile } from './tags.ts'
 import { compareFinishedTodos, compareOpenTodos, localDay } from './todo-order.ts'
 import {
   DropTodoSchema,
@@ -248,11 +250,15 @@ export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promi
   })
 }
 
-/** Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. */
-export async function listTags(options: TodoOptions = {}): Promise<string[]> {
+/**
+ * Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. Each has its
+ * colour from `tags.yml`, or the one its name hashes to.
+ */
+export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
-  const tags = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
-  return [...tags].toSorted()
+  const settings = await readTagsFile(options)
+  const names = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
+  return [...names].toSorted().map((name) => ({ name, color: settings[name]?.color ?? defaultTagColor(name) }))
 }
 
 /** Open Todos in their automatic order. */
