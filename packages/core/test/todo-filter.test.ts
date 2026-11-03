@@ -58,6 +58,23 @@ describe('filterTodos', () => {
     expect(filterTodos([parent], { tag: ['docs'] })).toEqual([{ todo: parent, dimmed: false, subTodos: [parent.subTodos[0]] }])
   })
 
+  it('keeps the Todos that mention all of the chosen Persons, in the title or the description', () => {
+    const todos = [
+      todo('Pair with @ilse-vantongeren', { description: 'and @bram' }),
+      todo('Ask @bram'),
+      todo('Sync', { description: 'Loop in @ilse-vantongeren' }),
+      todo('Email ilse@corp.example'),
+    ]
+    expect(titles(todos, { person: ['ilse-vantongeren'] })).toEqual(['Pair with @ilse-vantongeren', 'Sync'])
+    expect(titles(todos, { person: ['ilse-vantongeren', 'bram'] })).toEqual(['Pair with @ilse-vantongeren'])
+    expect(titles(todos, { person: ['bram'], tag: ['api'] })).toEqual([])
+  })
+
+  it('keeps a parent dimmed when only a Sub-todo mentions the chosen Person', () => {
+    const parent = todo('Release', { subTodos: [sub('Review with @bram'), sub('Tag build')] })
+    expect(filterTodos([parent], { person: ['bram'] })).toEqual([{ todo: parent, dimmed: true, subTodos: [parent.subTodos[0]] }])
+  })
+
   it('keeps everything when nothing is chosen', () => {
     expect(titles(tagged, { priority: [], tag: [] })).toEqual(['Both', 'Api', 'Auth', 'None'])
   })
@@ -69,6 +86,8 @@ describe('isFiltering', () => {
     expect(isFiltering({ priority: [], tag: [], match: 'any' })).toBe(false)
     expect(isFiltering({ priority: ['low'] })).toBe(true)
     expect(isFiltering({ tag: ['api'] })).toBe(true)
+    expect(isFiltering({ person: ['bram'] })).toBe(true)
+    expect(isFiltering({ person: [] })).toBe(false)
   })
 })
 
@@ -80,6 +99,12 @@ describe('parseTodoFilter', () => {
       tag: ['api', 'auth'],
       match: 'any',
     })
+  })
+
+  it('reads mentioned Persons by id, each once, leaving out what is not an id', () => {
+    expect(parseTodoFilter({ person: ['bram', 'ilse-vantongeren', 'bram', 'Not An Id', 3] })).toEqual({ person: ['bram', 'ilse-vantongeren'] })
+    expect(parseTodoFilter({ person: 'bram' })).toEqual({ person: ['bram'] })
+    expect(parseTodoFilter({ person: [] })).toEqual({})
   })
 
   it('leaves out what is empty or unknown, so a plain list has no search params', () => {

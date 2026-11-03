@@ -1,6 +1,7 @@
 // Dev logs laid out over the calendar: the list by month and week, a date range stacked by day, the gaps (a weekday
 // with no Dev log), presets for the range and the Tag filter. Pure and free of Node and zod, so the web app shares it.
 import type { BrokenDevlog, DevlogListing, DevlogSummary, MonthlySummaryListing } from './devlog-schema.ts'
+import { mentionsAll, parsePeople } from './todo-filter.ts'
 import { normalizeTag } from './todo-tokens.ts'
 
 /** A day in a list or range: its Dev log (maybe broken), or none when it is a weekday nobody wrote up yet. */
@@ -89,16 +90,24 @@ export function devlogList(logs: DevlogListing[], today: string): DevlogMonth[] 
   return [...months.values()].toSorted((a, b) => b.month.localeCompare(a.month))
 }
 
-/** What the stacked days are narrowed to: all of these Tags, or any of them with `match: 'any'`. */
-export type DevlogFilter = { tag?: string[]; match?: 'any' }
+/**
+ * What the stacked days are narrowed to: all of these Tags, or any of them with `match: 'any'`, and all of these
+ * Persons mentioned (by id).
+ */
+export type DevlogFilter = { tag?: string[]; match?: 'any'; person?: string[] }
 
-/** The days the filter keeps, in order. Choosing a Tag keeps only Dev logs that have it: gaps and broken files go. */
-export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match }: DevlogFilter): DevlogDay<L>[] {
-  if (!tag.length) return days
+/**
+ * The days the filter keeps, in order. Choosing a Tag or a Person keeps only Dev logs that have it (a Person is looked
+ * for in the body): gaps and broken files go.
+ */
+export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match, person = [] }: DevlogFilter): DevlogDay<L>[] {
+  if (!tag.length && !person.length) return days
   return days.filter(({ log }) => {
-    const tags = log && 'tags' in log ? (log.tags as string[]) : undefined
-    if (!tags) return false
-    return match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name))
+    if (!log || !('tags' in log)) return false
+    const tags = log.tags as string[]
+    const tagged = !tag.length || (match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name)))
+    const body = 'body' in log && typeof log.body === 'string' ? log.body : ''
+    return tagged && (!person.length || mentionsAll(body, person))
   })
 }
 
@@ -134,11 +143,13 @@ export function parseDevlogsView(search: Record<string, unknown>): DevlogsView {
   const tag = [
     ...new Set(raw.map((value) => (typeof value === 'string' ? normalizeTag(value) : undefined)).filter((value) => value !== undefined)),
   ]
+  const person = parsePeople(search.person)
   return {
     ...(log && { log }),
     ...(range && { from: range[0], to: range[1] }),
     ...(tag.length > 0 && { tag }),
     ...(search.match === 'any' && { match: 'any' }),
+    ...(person.length > 0 && { person }),
   }
 }
 

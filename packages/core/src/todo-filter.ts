@@ -1,4 +1,6 @@
-// Narrowing the Todo list by priority and Tags. Pure and free of Node and zod, so the web app can share it.
+// Narrowing the Todo list by priority, Tags and mentioned Persons. Pure and free of Node and zod, so the web app can
+// share it.
+import { mentionedPeople, parseMention } from './mentions.ts'
 import type { Priority, SubTodo, Todo } from './todo-schema.ts'
 import { normalizeTag } from './todo-tokens.ts'
 
@@ -9,6 +11,8 @@ export type TodoFilter = {
   /** All of these Tags, or any of them with `match: 'any'`. */
   tag?: string[]
   match?: 'any'
+  /** All of these Persons mentioned, by id, in the title or description. */
+  person?: string[]
 }
 
 /**
@@ -17,13 +21,23 @@ export type TodoFilter = {
  */
 export type FilteredTodo<T extends Todo = Todo> = { todo: T; dimmed: boolean; subTodos: SubTodo[] }
 
-function matches(todo: SubTodo, { priority = [], tag = [], match }: TodoFilter): boolean {
+function matches(todo: SubTodo, { priority = [], tag = [], match, person = [] }: TodoFilter): boolean {
   const hasTag = (name: string) => todo.tags.includes(name)
-  return (!priority.length || priority.includes(todo.priority)) && (!tag.length || (match === 'any' ? tag.some(hasTag) : tag.every(hasTag)))
+  return (
+    (!priority.length || priority.includes(todo.priority)) &&
+    (!tag.length || (match === 'any' ? tag.some(hasTag) : tag.every(hasTag))) &&
+    (!person.length || mentionsAll(`${todo.title}\n${todo.description ?? ''}`, person))
+  )
 }
 
-/** Whether the filter narrows anything: a priority or a Tag is chosen. */
-export const isFiltering = (filter: TodoFilter) => Boolean(filter.priority?.length || filter.tag?.length)
+/** Whether `text` mentions every one of `people` (ids). */
+export function mentionsAll(text: string, people: string[]): boolean {
+  const mentioned = mentionedPeople(text)
+  return people.every((id) => mentioned.includes(id))
+}
+
+/** Whether the filter narrows anything: a priority, a Tag or a Person is chosen. */
+export const isFiltering = (filter: TodoFilter) => Boolean(filter.priority?.length || filter.tag?.length || filter.person?.length)
 
 // The schema's PRIORITIES come with zod; this module stays free of it.
 const PRIORITIES: readonly Priority[] = ['high', 'medium', 'low', 'none']
@@ -35,6 +49,9 @@ function values<T>(raw: unknown, valid: (value: unknown) => T | undefined): T[] 
   return [...new Set(list.map(valid).filter((value) => value !== undefined))]
 }
 
+/** Person ids from URL search params, each once; anything not an id is left out. */
+export const parsePeople = (raw: unknown) => values(raw, (value) => (typeof value === 'string' && parseMention(`@${value}`) === value ? value : undefined))
+
 /**
  * The filter in URL search params, checked: unknown values are left out, and so are empty groups and the default
  * all-of match, so an unfiltered list has no search params.
@@ -42,10 +59,12 @@ function values<T>(raw: unknown, valid: (value: unknown) => T | undefined): T[] 
 export function parseTodoFilter(search: Record<string, unknown>): TodoFilter {
   const priority = values(search.priority, (value) => (isPriority(value) ? value : undefined))
   const tag = values(search.tag, (value) => (typeof value === 'string' ? normalizeTag(value) : undefined))
+  const person = parsePeople(search.person)
   return {
     ...(priority.length > 0 && { priority }),
     ...(tag.length > 0 && { tag }),
     ...(search.match === 'any' && { match: 'any' }),
+    ...(person.length > 0 && { person }),
   }
 }
 
