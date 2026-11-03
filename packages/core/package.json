@@ -10,6 +10,7 @@
     "./todo-order": "./src/todo-order.ts",
     "./markdown": "./src/markdown.ts",
     "./note-schema": "./src/note-schema.ts",
+    "./sketch-schema": "./src/sketch-schema.ts",
     "./sub-todos": "./src/sub-todos.ts",
     "./todo-filter": "./src/todo-filter.ts",
     "./tag-color": "./src/tag-color.ts",
