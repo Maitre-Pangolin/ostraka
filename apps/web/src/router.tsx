@@ -20,9 +20,6 @@ const indexRoute = createRoute({
   },
 })
 
-const view = <P extends string>(path: P, empty: string) =>
-  createRoute({ getParentRoute: () => rootRoute, path, component: () => <EmptyState>{empty}</EmptyState> })
-
 const routeTree = rootRoute.addChildren([
   indexRoute,
   // The Todo filter lives in typed search params, so a filtered view survives a reload and can be linked.
