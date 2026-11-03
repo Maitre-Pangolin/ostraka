@@ -20,6 +20,7 @@ import {
 } from '@ostraka/core'
 import { HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
 import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
+import { PEOPLE_USAGE, peopleCommand } from './people.ts'
 import { install as installAgent, realSystem, type System } from './install.ts'
 
 export type { System } from './install.ts'
@@ -66,7 +67,7 @@ const USAGE = `Usage:
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${PEOPLE_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -85,6 +86,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await todoCommand(rest, io)
       case 'note':
         return await noteCommand(rest, io)
+      case 'people':
+        return await peopleCommand(rest, io)
       case 'backup':
         return await backupCommand(rest, io)
       case 'init':
