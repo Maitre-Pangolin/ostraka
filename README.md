@@ -69,8 +69,9 @@ This writes:
 
 - a LaunchAgent, `~/Library/LaunchAgents/com.ostraka.server.plist`, that runs `ostraka serve` at login and restarts it after a crash. Logs go to `~/Library/Logs/ostraka/server.log`.
 - a shim, `~/.local/bin/ostraka`, with absolute paths to node and this repo, so skills and Dock-launched editors find `ostraka` by name. Put `~/.local/bin` on your `PATH` if it isn't.
+- a link `~/.claude/skills/<name>` to each skill in this repo's `.claude/skills/`, so the skills work from any project, in Claude Code and in Cursor (which reads `~/.claude/skills/` too). The repo stays their single source: an edit here applies at once. A skill folder of the same name that isn't such a link is left alone, and `install` says so. It also points out the old Cursor `/devlog` command (`~/.cursor/commands/devlog.md`) if it is still there: the `devlog` skill replaces it and its dictation mode.
 
-Run it again after moving the repo or changing Node versions. To remove it: `launchctl bootout gui/$(id -u)/com.ostraka.server`, then delete both files.
+Run it again after moving the repo or changing Node versions. To remove it: `launchctl bootout gui/$(id -u)/com.ostraka.server`, then delete the files and the skill links.
 
 Then open http://127.0.0.1:4747 and install it as an app, so it gets its own window and Dock icon: in Chrome, ⋮ › Cast, save and share › Install page as app; in Safari, File › Add to Dock.
 

@@ -74,7 +74,8 @@ const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
 
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
-  ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
+  ostraka install               Start the app at login (LaunchAgent), put \`ostraka\` in ~/.local/bin
+                                and link the repo's skills into ~/.claude/skills
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
 ${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${TAG_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
@@ -300,9 +301,17 @@ async function serve(io: Io): Promise<number> {
 }
 
 async function install(io: Io): Promise<number> {
-  const { plist, shim, logs } = await installAgent(io.homeDir ?? homedir(), io.system ?? realSystem())
+  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand } = await installAgent(
+    io.homeDir ?? homedir(),
+    io.system ?? realSystem(),
+  )
   io.stdout(`LaunchAgent: ${plist} (starts at login, restarts after a crash; logs in ${logs})\n`)
   io.stdout(`CLI shim:    ${shim}\n`)
+  for (const skill of skills) io.stdout(`Skill:       ${skill} (a link to this repo's copy)\n`)
+  for (const skill of skippedSkills) {
+    io.stdout(`Skill:       ${skill} is not a link from \`ostraka install\`, so it was left as is; move it away and run install again.\n`)
+  }
+  if (oldDevlogCommand) io.stdout(`${oldDevlogCommand} is the old Cursor /devlog command: the devlog skill replaces it, so delete it.\n`)
   if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
     io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
   }
