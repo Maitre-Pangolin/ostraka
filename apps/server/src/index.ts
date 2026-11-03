@@ -1,5 +1,6 @@
 export { systemClock, type Clock } from './activity/clock.ts'
 export type { GitLabOverview, MergeRequest } from './activity/gitlab.ts'
+export type { JiraOverview, JiraTicket } from './activity/jira.ts'
 export type { Activity, SourceStatus } from './activity/poller.ts'
 export { workOverview, type WorkOverviewOptions } from './activity/work-overview.ts'
 export { createApp, HOSTNAME, PORT, type AppOptions } from './app.ts'
