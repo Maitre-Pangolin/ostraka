@@ -1,21 +1,20 @@
 // A Reference shown as a chip: icon, number, status dot. Hovering (or focusing and clicking) opens a card with its
 // title, pipeline and approvals or Jira status, and Open. Status comes from what the top bar polled; anything else
 // is fetched when the card opens. The same chip shows in lists and, as an atom, inside the chip editor.
-import { parseReference, referenceUrl, splitReferences, type Reference } from '@ostraka/core/references'
+import { parseReference, referenceUrl, splitReferences, type Reference, type ReferenceSuggestion } from '@ostraka/core/references'
 import { ExternalLink, GitPullRequest, Ticket } from 'lucide-react'
 import { useState } from 'react'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Skeleton } from '@/components/ui/skeleton'
 import { cn } from '@/lib/utils'
 import { useReferenceDetails, useReferenceIndex, useReferenceSites, type PolledReference, type ReferenceDetails } from './api'
-import { CATEGORY_DOT, pipelineDot, pipelineLabel, UNKNOWN_DOT } from './status'
+import { CATEGORY_DOT, pipelineDot, pipelineLabel, polledStatus, UNKNOWN_DOT } from './status'
 
 /** What the chip knows of a Reference: polled, fetched, or nothing yet. */
 type Known = { polled?: PolledReference; details?: ReferenceDetails }
 
 function statusOf({ polled, details }: Known): { dot: string; label: string } {
-  if (polled?.kind === 'mr') return { dot: pipelineDot(polled.mr.pipeline?.status), label: pipelineLabel(polled.mr.pipeline?.status) }
-  if (polled?.kind === 'jira') return { dot: CATEGORY_DOT[polled.ticket.category], label: polled.ticket.status }
+  if (polled) return polledStatus(polled)
   if (details?.kind === 'mr') return { dot: pipelineDot(details.pipeline?.status), label: pipelineLabel(details.pipeline?.status) }
   if (details?.kind === 'jira') return { dot: CATEGORY_DOT[details.category], label: details.status }
   return { dot: UNKNOWN_DOT, label: 'Status not loaded' }
@@ -68,6 +67,44 @@ export function ReferenceChip({ token, inEditor }: ReferenceChipProps) {
         <StatusDot className={status.dot} />
       </PopoverTrigger>
       <PopoverContent align="start" className="w-72 gap-1.5" onClick={(event) => event.stopPropagation()}>
+        <ReferenceCard token={token} reference={reference} polled={known} details={details} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/**
+ * The same card for a Reference highlighted in text (the Notes editor), anchored to `anchor` and opened by the
+ * caller on hover. It never takes focus, so typing carries on.
+ */
+export function ReferenceHoverCard({
+  token,
+  anchor,
+  onOpenChange,
+  onHover,
+}: {
+  token: string
+  anchor: Element
+  onOpenChange: (open: boolean) => void
+  /** The pointer entered (`true`) or left the card. */
+  onHover: (inside: boolean) => void
+}) {
+  const reference = parseReference(token)
+  const { polled } = useReferenceIndex()
+  const known = polled.get(token)
+  const details = useReferenceDetails(token, !known && reference !== undefined)
+  if (!reference) return null
+  return (
+    <Popover open onOpenChange={onOpenChange}>
+      <PopoverContent
+        anchor={anchor}
+        align="start"
+        className="w-72 gap-1.5"
+        initialFocus={false}
+        finalFocus={false}
+        onMouseEnter={() => onHover(true)}
+        onMouseLeave={() => onHover(false)}
+      >
         <ReferenceCard token={token} reference={reference} polled={known} details={details} />
       </PopoverContent>
     </Popover>
@@ -139,6 +176,22 @@ function ReferenceFacts({ polled, details }: Known) {
   }
   if (polled?.kind === 'jira' && polled.sprint) facts.push(polled.sprint)
   return facts.map((fact) => <span key={fact}>· {fact}</span>)
+}
+
+/** A Reference offered while one is typed: icon, number, title, and the project from `@md`. */
+export function ReferenceSuggestionLabel({ suggestion }: { suggestion: ReferenceSuggestion }) {
+  return (
+    <>
+      <ReferenceIcon reference={suggestion.reference} className="text-muted-foreground" />
+      <span className="shrink-0 text-xs font-medium tabular-nums">{shortLabel(suggestion.reference)}</span>
+      <span className="min-w-0 flex-1 truncate">{suggestion.title}</span>
+      {suggestion.reference.kind === 'mr' && (
+        <span className="text-muted-foreground hidden max-w-24 shrink-0 truncate text-[11px] @md:inline">
+          {suggestion.reference.project}
+        </span>
+      )}
+    </>
+  )
 }
 
 /** Plain text with each Reference shown as a chip, as in a collapsed row's title. */

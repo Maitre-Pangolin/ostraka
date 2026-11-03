@@ -7,6 +7,8 @@ import { MarkdownView } from '../src/devlogs/markdown-view.tsx'
 const render = (markdown: string, todoLink = (id: string, text: string) => <b data-todo={id}>{text}</b>) =>
   renderToStaticMarkup(<MarkdownView markdown={markdown} todoLink={todoLink} />)
 
+const bracketTickets = (text: string) => text.replaceAll(/PAY-\d+/g, (token) => `[${token}]`)
+
 describe('MarkdownView', () => {
   it('renders sections, lists and inline formatting', () => {
     expect(render('## Done\n\n- Shipped *it* with **care** and `code`\n')).toBe(
@@ -31,6 +33,21 @@ describe('MarkdownView', () => {
       '<table><thead><tr><th>A</th></tr></thead><tbody><tr><td>1</td></tr></tbody></table>' +
         '<ul><li><input type="checkbox" disabled="" checked=""/> done</li></ul>' +
         '<pre><code>const a = 1</code></pre>',
+    )
+  })
+
+  it('hands plain text to the app, so References show as chips, but not code or link text', () => {
+    expect(
+      renderToStaticMarkup(
+        <MarkdownView
+          markdown={'## PAY-1\n\n- Fixed PAY-2 with `PAY-3`, see [PAY-4](https://x.test)\n\n```\nPAY-5\n```\n'}
+          todoLink={() => null}
+          text={bracketTickets}
+        />,
+      ),
+    ).toBe(
+      '<h2>[PAY-1]</h2><ul><li>Fixed [PAY-2] with <code>PAY-3</code>, see ' +
+        '<a href="https://x.test" target="_blank" rel="noreferrer">PAY-4</a></li></ul><pre><code>PAY-5</code></pre>',
     )
   })
 })

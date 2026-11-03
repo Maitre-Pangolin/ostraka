@@ -9,7 +9,7 @@ Run `ostraka path devlogs` for the folder; never hard-code it. In that folder:
 - `<YYYY-MM-DD>.md` is the Dev log of that day. There is at most one per day.
 - `<YYYY-MM>.md` is the monthly summary of that month, written from its days.
 
-Any other name is shown as broken. After writing, run `ostraka snapshot "devlog: <date>"` once.
+Any other name is shown as broken. After writing, check the file with `ostraka devlog list --from <date> --to <date>` (a `broken:` line gives the reason the app will show), then run `ostraka snapshot "devlog: <date>"` once.
 
 ## A day
 
