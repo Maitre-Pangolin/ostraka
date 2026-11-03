@@ -16,6 +16,8 @@ import {
   listTags,
   isContentKind,
   listFinishedTodos,
+  localDay,
+  missingDevlogWeeks,
   listTodos,
   snapshot,
   type DevlogListing,
@@ -35,6 +37,8 @@ export type Io = {
   system?: System
   /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
   keychain?: Keychain
+  /** The current moment, for "today"; tests pass a fixed one. */
+  now?: () => Date
   /** Asks the user one line, for the `init` walkthrough. */
   readLine?: (prompt: string) => Promise<string>
   stdout: (text: string) => void
@@ -63,6 +67,9 @@ const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently ch
 
 const DEVLOG_USAGE = `  ostraka devlog list [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
                                 List Dev logs and monthly summaries, newest first (a broken one with its error)
+  ostraka devlog missing [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
+                                List the weekdays with no Dev log, by week, oldest first: from the first
+                                Dev log (or --from) to today (or --to)
 `
 
 const TAG_USAGE = `  ostraka tag list [--json]     List the Tags in use on Todos, Notes, Dev logs and Sketches
@@ -254,12 +261,24 @@ async function devlogCommand(args: string[], io: Io): Promise<number> {
     options: { json: { type: 'boolean' }, from: { type: 'string' }, to: { type: 'string' } },
   })
   const { from, to } = values
+  const [subcommand] = positionals
   const dates = [from, to].filter((date) => date !== undefined)
-  if (positionals.length !== 1 || positionals[0] !== 'list' || !dates.every((date) => DAY.test(date))) {
+  if (positionals.length !== 1 || (subcommand !== 'list' && subcommand !== 'missing') || !dates.every((date) => DAY.test(date))) {
     io.stderr(`Usage:\n${DEVLOG_USAGE}`)
     return 1
   }
-  const logs = (await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })).filter((log) => inRange(log.id, from, to))
+  const all = await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (subcommand === 'missing') {
+    if (from === undefined && !all.some((log) => DAY.test(log.id))) {
+      io.stderr('No Dev log yet, so no first day to start from: pass --from <YYYY-MM-DD>.\n')
+      return 1
+    }
+    const weeks = missingDevlogWeeks(all, localDay((io.now ?? (() => new Date()))()), { from, to })
+    const lines = weeks.map((week) => `week of ${week.start}: ${week.days.join(' ')}`)
+    io.stdout(values.json ? `${JSON.stringify(weeks, null, 2)}\n` : lines.length ? `${lines.join('\n')}\n` : 'No missing days.\n')
+    return 0
+  }
+  const logs = all.filter((log) => inRange(log.id, from, to))
   io.stdout(values.json ? `${JSON.stringify(logs, null, 2)}\n` : logs.length ? `${logs.map(devlogLine).join('\n')}\n` : 'No Dev logs.\n')
   return 0
 }
