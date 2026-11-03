@@ -1,6 +1,14 @@
 // Search for the app and the CLI: the server's index, rebuilt from the files on start and kept current from the
 // content watcher, and `GET /api/search`.
-import { openSearchIndex, parseSearchParams, searchContent, type ContentRootOptions, type SearchHit, type SearchQuery } from '@ostraka/core'
+import {
+  openSearchIndex,
+  parseSearchParams,
+  resolveContentRoot,
+  searchContent,
+  type ContentRootOptions,
+  type SearchHit,
+  type SearchQuery,
+} from '@ostraka/core'
 import { Hono } from 'hono'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 
@@ -58,8 +66,12 @@ export const throwawaySearch = (content: ContentRootOptions): Pick<Search, 'sear
   search: (query) => searchContent(query, content),
 })
 
-export function searchRoutes(search: Pick<Search, 'search'>) {
+/** Says which content folder the hits come from, so the CLI only uses a server that serves its own. */
+export const CONTENT_ROOT_HEADER = 'x-ostraka-content-root'
+
+export function searchRoutes(search: Pick<Search, 'search'>, content: ContentRootOptions) {
   return new Hono().get('/', async (c) => {
+    c.header(CONTENT_ROOT_HEADER, encodeURIComponent(await resolveContentRoot(content)))
     let query: SearchQuery
     try {
       query = parseSearchParams(new URL(c.req.url).searchParams)

@@ -11,6 +11,7 @@ import type { ContentRootOptions } from './content-root.ts'
 import { isBrokenDevlog } from './devlog-schema.ts'
 import { listDevlogs, readDevlog } from './devlogs.ts'
 import { MarkdownFileNotFoundError } from './markdown-files.ts'
+import { parseMarkdown, type MarkdownNode, type MarkdownTree } from './markdown.ts'
 import { isBrokenNote } from './note-schema.ts'
 import { listNotes, readNote } from './notes.ts'
 import { findReferences } from './references.ts'
@@ -78,6 +79,21 @@ const tokenWord = (token: string) => `r${Buffer.from(token).toString('hex')}`
 function isWholeToken(word: string): boolean {
   const [token] = wholeTokens(word)
   return token !== undefined && token === word.toLowerCase()
+}
+
+// --- Plain text -------------------------------------------------------------------------------------------------
+
+const INLINE = new Set(['text', 'inlineCode', 'emphasis', 'strong', 'delete', 'link', 'linkReference', 'break'])
+
+/** A Markdown body as the words a reader sees, without marks: what is indexed and what snippets show. */
+function plainText(markdown: string): string {
+  const visit = (node: MarkdownTree | MarkdownNode): string => {
+    if ('value' in node && typeof node.value === 'string' && node.type !== 'html') return node.value
+    if (node.type === 'image') return node.alt ?? ''
+    if (!('children' in node)) return ''
+    return node.children.map((child) => (INLINE.has(child.type) ? visit(child) : ` ${visit(child)} `)).join('')
+  }
+  return visit(parseMarkdown(markdown)).replace(/\s+/g, ' ').trim()
 }
 
 // --- Query ------------------------------------------------------------------------------------------------------
@@ -337,12 +353,12 @@ async function readDoc(kind: Exclude<SearchKind, 'todo'>, id: string, options: C
     if (kind === 'note') {
       const note = await readNote(id, options)
       if (isBrokenNote(note)) return undefined
-      return { kind, id, title: note.title, body: note.body, day: localDay(new Date(note.modifiedAt)), tags: note.tags }
+      return { kind, id, title: note.title, body: plainText(note.body), day: localDay(new Date(note.modifiedAt)), tags: note.tags }
     }
     if (kind === 'devlog') {
       const log = await readDevlog(id, options)
       if (isBrokenDevlog(log)) return undefined
-      return { kind, id, title: id, body: log.body, day: log.kind === 'day' ? log.date : `${log.month}-01`, tags: log.tags }
+      return { kind, id, title: id, body: plainText(log.body), day: log.kind === 'day' ? log.date : `${log.month}-01`, tags: log.tags }
     }
     const sketch = await readSketch(id, options)
     if (isBrokenSketch(sketch)) return undefined

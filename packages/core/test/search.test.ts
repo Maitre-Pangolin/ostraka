@@ -102,6 +102,12 @@ describe('searchContent', () => {
     expect(hit!.snippet.map((piece) => piece.text).join('')).toContain('Ship the payment gateway on Friday.')
   })
 
+  it('shows the snippet as plain text, without Markdown marks', async () => {
+    await note('a', '# Plan\n\n- Ship the **payment** [gateway](https://example.com/gw) with `retry`\n> quoted')
+    const [hit] = await searchContent({ text: 'gateway' }, options)
+    expect(hit!.snippet.map((piece) => piece.text).join('')).toBe('Plan Ship the payment gateway with retry quoted')
+  })
+
   it('reads nothing typed as query syntax', async () => {
     await note('a', '# A\n\nfoo bar')
     expect(await found('foo AND OR NOT ( * : ^ "')).toEqual([])

@@ -90,7 +90,7 @@ export function createApp({
   app.route('/api/sketches', sketchRoutes(content))
   app.route('/api/history', historyRoutes(content, { onSnapshot: () => backups.snapshotted?.() }))
   app.route('/api/references', referenceRoutes(references))
-  app.route('/api/search', searchRoutes(search))
+  app.route('/api/search', searchRoutes(search, content))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.
