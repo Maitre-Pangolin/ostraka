@@ -7,7 +7,7 @@ import { MarkdownView } from '../src/devlogs/markdown-view.tsx'
 const render = (markdown: string, todoLink = (id: string, text: string) => <b data-todo={id}>{text}</b>) =>
   renderToStaticMarkup(<MarkdownView markdown={markdown} todoLink={todoLink} />)
 
-const mention = (id: string) => <i data-person={id}>{id}</i>
+const bracketTickets = (text: string) => text.replaceAll(/PAY-\d+/g, (token) => `[${token}]`)
 
 describe('MarkdownView', () => {
   it('renders sections, lists and inline formatting', () => {
@@ -36,22 +36,18 @@ describe('MarkdownView', () => {
     )
   })
 
-  it('hands each Mention in the text to the app, and leaves code and emails alone', () => {
+  it('hands plain text to the app, so References show as chips, but not code or link text', () => {
     expect(
       renderToStaticMarkup(
         <MarkdownView
-          markdown={'- 1:1 with @ilse-vantongeren and **@bram**, mailed bram@corp.example `@bram`\n'}
+          markdown={'## PAY-1\n\n- Fixed PAY-2 with `PAY-3`, see [PAY-4](https://x.test)\n\n```\nPAY-5\n```\n'}
           todoLink={() => null}
-          mention={mention}
+          text={bracketTickets}
         />,
       ),
     ).toBe(
-      '<ul><li>1:1 with <i data-person="ilse-vantongeren">ilse-vantongeren</i> and <strong><i data-person="bram">bram</i></strong>, ' +
-        'mailed <a href="mailto:bram@corp.example" target="_blank" rel="noreferrer">bram@corp.example</a> <code>@bram</code></li></ul>',
+      '<h2>[PAY-1]</h2><ul><li>Fixed [PAY-2] with <code>PAY-3</code>, see ' +
+        '<a href="https://x.test" target="_blank" rel="noreferrer">PAY-4</a></li></ul><pre><code>PAY-5</code></pre>',
     )
-  })
-
-  it('keeps Mentions as text without a renderer', () => {
-    expect(render('Ask @bram\n')).toBe('<p>Ask @bram</p>')
   })
 })

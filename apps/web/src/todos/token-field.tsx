@@ -13,14 +13,13 @@ import { keymap } from '@milkdown/kit/prose/keymap'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { EditorView, type NodeView } from '@milkdown/kit/prose/view'
-import { UserRound } from 'lucide-react'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { usePeopleIndex } from '@/people/api'
-import { MentionChip } from '@/people/mention-chip'
+import { MentionChip, MentionSuggestionLabel } from '@/people/mention-chip'
 import { useReferenceIndex, useReferenceSites } from '@/references/api'
-import { ReferenceChip, ReferenceIcon } from '@/references/reference-chip'
+import { ReferenceChip, ReferenceSuggestionLabel } from '@/references/reference-chip'
 import { longDate, useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { PriorityFlag, TagPill } from './properties'
@@ -327,29 +326,8 @@ export function TokenField({
 }
 
 function SuggestionLabel({ suggestion }: { suggestion: Suggestion }) {
-  if (suggestion.kind === 'mention')
-    return (
-      <>
-        <UserRound aria-hidden className="text-muted-foreground size-3 shrink-0" />
-        <span className="min-w-0 truncate">{suggestion.name}</span>
-        <span className="text-muted-foreground min-w-0 truncate text-[11px]">{suggestion.token}</span>
-      </>
-    )
-  if (suggestion.kind === 'reference')
-    return (
-      <>
-        <ReferenceIcon reference={suggestion.reference} className="text-muted-foreground" />
-        <span className="shrink-0 text-xs font-medium tabular-nums">
-          {suggestion.reference.kind === 'mr' ? `!${suggestion.reference.iid}` : suggestion.reference.key}
-        </span>
-        <span className="min-w-0 flex-1 truncate">{suggestion.title}</span>
-        {suggestion.reference.kind === 'mr' && (
-          <span className="text-muted-foreground hidden max-w-24 shrink-0 truncate text-[11px] @md:inline">
-            {suggestion.reference.project}
-          </span>
-        )}
-      </>
-    )
+  if (suggestion.kind === 'mention') return <MentionSuggestionLabel suggestion={suggestion} />
+  if (suggestion.kind === 'reference') return <ReferenceSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'tag')
     return (
       <>

@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { chmod, mkdir, writeFile } from 'node:fs/promises'
+import { access, chmod, lstat, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -28,11 +28,19 @@ export const LAUNCH_AGENT_LABEL = 'com.ostraka.server'
 
 const REPO_DIR = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const BIN = join(REPO_DIR, 'packages', 'cli', 'bin', 'ostraka.ts')
+/** The repo's agent skills, the single source of the ones linked into ~/.claude/skills. */
+const SKILLS_DIR = join(REPO_DIR, '.claude', 'skills')
 
 export type InstallResult = {
   plist: string
   shim: string
   logs: string
+  /** `~/.claude/skills/<name>`, each a link to the repo's skill folder. */
+  skills: string[]
+  /** Skill paths already taken by something `install` didn't link there, left as they are. */
+  skippedSkills: string[]
+  /** The old Cursor `/devlog` command, when it is still there: the devlog skill replaces it. */
+  oldDevlogCommand?: string
 }
 
 /**
@@ -53,6 +61,12 @@ export async function install(homeDir: string, system: System): Promise<InstallR
   await mkdir(dirname(shim), { recursive: true })
   await writeFile(shim, `#!/bin/sh\n# Written by \`ostraka install\`.\nexec ${shellQuote(system.nodePath)} ${shellQuote(BIN)} "$@"\n`)
   await chmod(shim, 0o755)
+  const { skills, skippedSkills } = await linkSkills(homeDir)
+  const oldDevlogCommand = join(homeDir, '.cursor', 'commands', 'devlog.md')
+  const hasOldDevlogCommand = await access(oldDevlogCommand).then(
+    () => true,
+    () => false,
+  )
 
   const domain = `gui/${system.uid}`
   // Not loaded yet is fine: bootout only clears a previous install so bootstrap picks up the new file.
@@ -60,7 +74,32 @@ export async function install(homeDir: string, system: System): Promise<InstallR
   const { code, stderr } = await system.launchctl(['bootstrap', domain, plist])
   if (code !== 0) throw new Error(`launchctl bootstrap ${domain} ${plist} failed (${code}): ${stderr.trim()}`)
 
-  return { plist, shim, logs }
+  return { plist, shim, logs, skills, skippedSkills, ...(hasOldDevlogCommand && { oldDevlogCommand }) }
+}
+
+/**
+ * Links each skill folder of the repo into ~/.claude/skills, the user-level location Claude Code reads and Cursor
+ * reads for compatibility, so the skills work from any project and edits in the repo apply at once. A link from an
+ * earlier install is replaced; anything else already there is left alone.
+ */
+async function linkSkills(homeDir: string): Promise<{ skills: string[]; skippedSkills: string[] }> {
+  const userSkills = join(homeDir, '.claude', 'skills')
+  await mkdir(userSkills, { recursive: true })
+  const skills: string[] = []
+  const skippedSkills: string[] = []
+  for (const entry of await readdir(SKILLS_DIR, { withFileTypes: true })) {
+    if (!entry.isDirectory()) continue
+    const link = join(userSkills, entry.name)
+    const existing = await lstat(link).catch(() => undefined)
+    if (existing && !existing.isSymbolicLink()) {
+      skippedSkills.push(link)
+      continue
+    }
+    if (existing) await rm(link)
+    await symlink(join(SKILLS_DIR, entry.name), link)
+    skills.push(link)
+  }
+  return { skills, skippedSkills }
 }
 
 const string = (value: string) => `<string>${xmlEscape(value)}</string>`

@@ -34,16 +34,16 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { FileHistory, HistoryButton } from '@/history/file-history'
 import { ApiError } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
-import { MentionChip } from '@/people/mention-chip'
 import { PeoplePicker, PersonFilterChips } from '@/people/people-filter'
 import { cn } from '@/lib/utils'
+import { ReferenceText } from '@/references/reference-chip'
 import { EmptyState } from '@/shell/shell'
 import { dayToDate, localDay, useToday } from '@/todos/due'
 import { ActiveChip, FilterPicker, MatchToggle } from '@/todos/filters'
 import { TagDot, TagPill } from '@/todos/properties'
 import { useDevlog, useDevlogDays, useDevlogs, useTodoTitles, type BrokenDevlog, type Devlog, type DevlogListing } from './api'
 import { DevlogEditor, SaveStatus, type DevlogEditorHandle, type SaveState } from './devlog-editor'
-import { MarkdownView, type TodoLinkRenderer } from './markdown-view'
+import { MarkdownView, type TextRenderer, type TodoLinkRenderer } from './markdown-view'
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
 
@@ -325,6 +325,9 @@ function RangePicker({ view, today, onView }: { view: ViewState; today: string; 
 }
 
 /** A Todo link in a Dev log: the Todo's current title, done or open, whatever text the file stored. */
+/** A Dev log's text with its References as chips, each with its status dot and hover card. */
+const referenceText: TextRenderer = (text) => <ReferenceText text={text} />
+
 function useTodoLink(): TodoLinkRenderer {
   const { titles, ready } = useTodoTitles()
   return (id, storedText) => {
@@ -414,7 +417,7 @@ function DevlogDetail({ id }: { id: string }) {
           </div>
         ) : log.body.trim() ? (
           <div className="devlog-prose px-5 py-3">
-            <MarkdownView markdown={log.body} todoLink={todoLink} mention={renderMention} />
+            <MarkdownView markdown={log.body} todoLink={todoLink} text={referenceText} />
           </div>
         ) : (
           <EmptyState>
@@ -533,7 +536,7 @@ function StackedDay({
         </div>
       ) : log.body.trim() ? (
         <div className="devlog-prose px-5 pb-2.5">
-          <MarkdownView markdown={log.body} todoLink={todoLink} mention={renderMention} />
+          <MarkdownView markdown={log.body} todoLink={todoLink} text={referenceText} />
         </div>
       ) : (
         <div className="pb-2.5" />
@@ -551,9 +554,6 @@ function DayHeading({ onOpen, children }: { onOpen: () => void; children: ReactN
     </h3>
   )
 }
-
-/** A Mention in a Dev log: the Person's current name with their contact card, or an unknown id with an "add" offer. */
-const renderMention = (id: string) => <MentionChip id={id} />
 
 function SkeletonRows() {
   return (

@@ -2,8 +2,8 @@
 // card: a Slack DM first, then email, GitLab and Jira profile links, each value with a copy button. A Mention of an id
 // not in the People directory stays plain text, with an offer to add that Person. The same chip shows in lists and,
 // as an atom, inside the chip editor.
-import { mentionToken, personLinks, type PersonLinks } from '@ostraka/core/mentions'
-import { Check, Copy, GitBranch, Mail, MessageCircle, SquareKanban, UserPlus } from 'lucide-react'
+import { mentionToken, personLinks, type MentionSuggestion, type PersonLinks } from '@ostraka/core/mentions'
+import { Check, Copy, GitBranch, Mail, MessageCircle, SquareKanban, UserPlus, UserRound } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { buttonVariants, Button } from '@/components/ui/button'
 import { Input } from '@/components/ui/input'
@@ -212,5 +212,48 @@ function AddPersonForm({ id, onAdded }: { id: string; onAdded: () => void }) {
         <UserPlus /> Add Person
       </Button>
     </form>
+  )
+}
+
+/** A Person offered while a Mention is typed: their name, then the id it writes. */
+export function MentionSuggestionLabel({ suggestion }: { suggestion: MentionSuggestion }) {
+  return (
+    <>
+      <UserRound aria-hidden className="text-muted-foreground size-3 shrink-0" />
+      <span className="min-w-0 truncate">{suggestion.name}</span>
+      <span className="text-muted-foreground min-w-0 truncate text-[11px]">{suggestion.token}</span>
+    </>
+  )
+}
+
+/** The contact card of a Mention highlighted in an editor, anchored to it while hovered. */
+export function MentionHoverCard({
+  id,
+  anchor,
+  onOpenChange,
+  onHover,
+}: {
+  id: string
+  anchor: Element
+  onOpenChange: (open: boolean) => void
+  /** The pointer entered (`true`) or left the card. */
+  onHover: (inside: boolean) => void
+}) {
+  const person = usePeopleIndex().byId.get(id)
+  if (!person) return null
+  return (
+    <Popover open onOpenChange={onOpenChange}>
+      <PopoverContent
+        anchor={anchor}
+        align="start"
+        className="w-72 gap-2"
+        initialFocus={false}
+        finalFocus={false}
+        onMouseEnter={() => onHover(true)}
+        onMouseLeave={() => onHover(false)}
+      >
+        <ContactCard person={person} />
+      </PopoverContent>
+    </Popover>
   )
 }
