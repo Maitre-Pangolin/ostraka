@@ -92,3 +92,37 @@ export {
 export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
+export {
+  DAY_ID,
+  DEVLOG_SECTIONS,
+  DevlogChangeSchema,
+  DevlogHeaderSchema,
+  isBrokenDevlog,
+  MAX_DEVLOG_TAGS,
+  MONTH_ID,
+  MonthlySummaryHeaderSchema,
+  type BrokenDevlog,
+  type Devlog,
+  type DevlogChange,
+  type DevlogHeader,
+  type DevlogListing,
+  type DevlogSummary,
+  type MonthlySummary,
+  type MonthlySummaryHeader,
+  type MonthlySummaryListing,
+} from './devlog-schema.ts'
+export { listDevlogs, readDevlog, readDevlogsBetween, updateDevlog, type DevlogChangeOptions, type DevlogOptions } from './devlogs.ts'
+export {
+  devlogDays,
+  devlogList,
+  devlogRangePresets,
+  devlogSectionProblems,
+  filterDevlogDays,
+  parseDevlogsView,
+  type DevlogDay,
+  type DevlogFilter,
+  type DevlogMonth,
+  type DevlogRange,
+  type DevlogsView,
+  type DevlogWeek,
+} from './devlog-days.ts'
