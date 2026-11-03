@@ -171,3 +171,17 @@ export {
   type CloneResult,
 } from './backup.ts'
 export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
+export {
+  openSearchIndex,
+  parseSearchParams,
+  SEARCH_KINDS,
+  SearchQuerySchema,
+  searchParams,
+  searchContent,
+  searchIndexPath,
+  type SearchHit,
+  type SearchIndex,
+  type SearchKind,
+  type SearchQuery,
+  type SnippetPiece,
+} from './search.ts'
