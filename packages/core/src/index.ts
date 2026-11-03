@@ -81,6 +81,6 @@ export {
   type NoteListing,
   type NoteSummary,
 } from './note-schema.ts'
-export { createNote, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
+export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'

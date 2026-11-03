@@ -10,6 +10,7 @@ import {
   type MarkdownFileOptions,
 } from './markdown-files.ts'
 import {
+  isBrokenNote,
   NewNoteSchema,
   NoteChangeSchema,
   NoteHeaderSchema,
@@ -69,6 +70,28 @@ export async function createNote(input: NewNote, options: NoteOptions = {}): Pro
       if (!(error instanceof MarkdownFileExistsError)) throw error
     }
   }
+}
+
+/**
+ * Writes Notes in the house style (all of them, or those named), after an agent wrote them by hand: only the body
+ * changes. Says which were rewritten, and which have a broken header and were left alone.
+ */
+export async function formatNotes(
+  ids: string[] | undefined,
+  options: NoteOptions = {},
+): Promise<{ formatted: string[]; broken: BrokenNote[] }> {
+  const chosen = ids ?? (await listNotes(options)).map((note) => note.id)
+  const formatted: string[] = []
+  const broken: BrokenNote[] = []
+  for (const note of await Promise.all(chosen.map((id) => readNote(id, options)))) {
+    if (isBrokenNote(note)) {
+      broken.push(note)
+      continue
+    }
+    const written = await updateNote(note.id, { body: note.body }, { ...options, ifVersion: note.version })
+    if (written.version !== note.version) formatted.push(note.id)
+  }
+  return { formatted, broken }
 }
 
 /**
