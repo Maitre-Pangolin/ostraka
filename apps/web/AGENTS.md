@@ -7,9 +7,12 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 ## Stack
 
 - Vite, React 19, TanStack Router (`src/router.tsx`), shadcn/ui on Base UI, Tailwind v4, lucide-react.
+- View state worth a reload or a link (filters, a date range, the open item) lives in typed router search params: the route's `validateSearch` checks them with a parser from core, which leaves out empty and default values so a plain view has a clean URL (`parseTodoFilter` on `/todos`). Changing them navigates with `replace: true`.
 - Add components with the shadcn CLI (`pnpm exec shadcn add <name>` from `apps/web`), then edit the copy in `src/components/ui/`. Base UI composes through the `render` prop (see `src/shell/rail.tsx`).
 - Server state comes from the API under `/api`. In development Vite proxies `/api` to `ostraka serve` on 127.0.0.1:4747, so run both. In production the server serves `dist/` from the same origin.
 - Server state lives only in TanStack Query, with no second client store. Each section keeps its queries and mutations as hooks in one `api.ts` (see `src/todos/api.ts`), calling the server through `src/lib/api.ts`. The server's answer (order included) is shown as is. An immediate change updates the cache in `onMutate`, rolls back on error, and invalidates on settle.
+- Live updates: `src/lib/live-updates.tsx` turns the server's `{kind, id?}` change stream (`/api/events`) into query invalidations, whoever changed the file. So every content query key starts with its kind (`['todos', …]`, `['notes', id]`), and content is never polled.
+- A change to an existing item sends the `version` the server answered with that item (`post(path, body, { version })`, sent as `If-Match`). If the item changed elsewhere since, the server refuses it with 412 (`isStale(error)`): the error line in place adds “Showing the newer version.”, and the invalidation on settle shows it.
 - Content and config types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`, `Config` from `@ostraka/core/config-schema`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
 - The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`; a changed icon updates all of them.
 
@@ -44,13 +47,21 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Read-only settings sit in bordered definition lists, label then value (monospace for paths, URLs and ids), as in `src/settings/settings-view.tsx`. Settings has no form: `config.yml` is edited by hand.
 - Confirmations and text entry use the app's own Dialog and inputs; browser `prompt()`, `confirm()` and `alert()` stay unused.
 - The priority picker is a Popover of flags (`PriorityPicker`); the date picker is a Popover with quick picks over a Calendar and a Clear date (`DuePicker`), both in `src/todos/properties.tsx`.
-- Tags show as pills coloured `tag-1`…`tag-8` (`TagPill`), with × where one can be removed. Below `@md` a collapsed row shows them as dots.
+- Tags show as pills coloured `tag-1`…`tag-8` (`TagPill`), with × where one can be removed. Below `@md` a collapsed row shows them as dots. A Tag's colour comes from `tags.yml` through `GET /api/tags` (`useTagColor`); a Tag without one, or not in use yet, gets the colour its name hashes to (core's `defaultTagColor`).
 - A due date reads relative to today (`DueText`): overdue is highlighted strongly (`destructive` pill), due today lightly (`today` text).
 - An expanded row edits its text in place and shows no empty field: a description appears only once there is one, or after ⇧↵ in the title, and closes again when emptied.
 - Sub-todos (`src/todos/sub-todos.tsx`) show only under their expanded parent, in creation order, along a `border`-coloured guide line from the parent's checkbox, with an "Add a Sub-todo" entry last. Open ones are full `TodoRow`s; finished ones stay in place, muted and struck through. A collapsed parent shows a `ListTree` indicator with finished/total.
 - A warning on an item is a `TriangleAlert` in `warning` colour before its due date, carrying its text as a title and for screen readers (a Sub-todo due after its parent).
 - An offer the app must not act on by itself (finishing a parent once its last open Sub-todo is finished) is one muted inline line where it applies, with a secondary action and "Not now". It is never a toast or a Dialog.
 - A list with expandable rows has Expand all / Collapse all at its top right (ghost `xs` button); it reads Collapse all while any row is expanded.
+
+## Filters
+
+- A list is narrowed by filter chips over it (`TodoFilters` in `src/todos/filters.tsx`): each chip (Priority, Tags, later People) opens a Popover checklist (Tags alphabetical) with a search field past 6 options. A chip with values chosen is tinted `primary` and shows their count.
+- Groups combine with AND. Tags match all chosen by default, with an All/Any toggle in the Tags picker.
+- Active values follow as removable chips (×), then Clear all. With more than one Tag, the chips are labelled "All of" or "Any of".
+- Matching is core's (`@ostraka/core/todo-filter`), never the app's own, and keeps the server's order. A parent that matches only through its Sub-todos stays in the list dimmed (`DIMMED`), with the matching Sub-todos under it.
+- A filter that matches nothing shows the empty line, naming how to widen it.
 
 ## Quick-entry tokens
 

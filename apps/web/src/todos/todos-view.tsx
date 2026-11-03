@@ -1,3 +1,5 @@
+import { filterTodos, isFiltering, type TodoFilter } from '@ostraka/core/todo-filter'
+import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Ban, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
@@ -6,6 +8,7 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { Dialog, DialogContent, DialogDescription, DialogFooter, DialogHeader, DialogTitle } from '@/components/ui/dialog'
 import { Input } from '@/components/ui/input'
 import { Popover, PopoverContent, PopoverDescription, PopoverTrigger } from '@/components/ui/popover'
+import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { EmptyState } from '@/shell/shell'
@@ -17,31 +20,56 @@ import {
   useOpenTodos,
   useReopenTodo,
   useRestoreTodo,
-  useTags,
+  useTagNames,
   useUpdateTodo,
-  type SubTodo,
   type Todo,
+  type TodoItem,
 } from './api'
 import { useToday } from './due'
+import { TodoFilters } from './filters'
 import { QuickEntry } from './quick-entry'
 import { SubTodos } from './sub-todos'
-import { TodoRow } from './todo-row'
+import { DIMMED, SubTodoLines, TodoRow } from './todo-row'
 
-/** The Todos view: quick entry on top, open Todos below in their automatic order, Done & Dropped collapsed last. */
+/**
+ * The Todos view: quick entry on top, the filters, open Todos below in their automatic order, Done & Dropped
+ * collapsed last. The filter narrows both lists and lives in the URL.
+ */
 export function TodosView() {
+  const filter = useSearch({ from: '/todos' })
+  const navigate = useNavigate({ from: '/todos' })
+  const setFilter = (next: TodoFilter) => void navigate({ search: next, replace: true })
   return (
     <div className="mx-auto flex max-w-3xl flex-col gap-2 p-3">
       <h1 className="sr-only">Todos</h1>
       <QuickEntry />
+      <TodoFilters filter={filter} onChange={setFilter} />
       <section aria-label="Open Todos">
-        <OpenTodos />
+        <OpenTodos filter={filter} />
       </section>
-      <FinishedTodos />
+      <FinishedTodos filter={filter} />
     </div>
   )
 }
 
 const UNDO_TOAST = { duration: 5000 } as const
+
+/**
+ * A change made at once, with an Undo toast. Undo works from the item the server answered, so it carries the new
+ * version. A failed change (say, the item changed elsewhere) shows in place instead, and its toast goes.
+ */
+function withUndo<T extends TodoItem>(what: string, item: TodoItem, change: Promise<T>, undo: (changed: T) => void) {
+  let changed: Promise<T | undefined> = Promise.resolve(undefined)
+  const toastId = toast(what, {
+    ...UNDO_TOAST,
+    description: item.title,
+    action: { label: 'Undo', onClick: () => void changed.then((result) => result && undo(result)) },
+  })
+  changed = change.catch(() => {
+    toast.dismiss(toastId)
+    return undefined
+  })
+}
 
 type Finish = { status: 'done' | 'dropped'; reason?: string }
 
@@ -55,9 +83,9 @@ const toggled = (ids: ReadonlySet<string>, id: string, on?: boolean) => {
   return next
 }
 
-function OpenTodos() {
+function OpenTodos({ filter }: { filter: TodoFilter }) {
   const { data: todos, error, isPending } = useOpenTodos()
-  const tags = useTags().data ?? []
+  const tags = useTagNames()
   const complete = useCompleteTodo()
   const drop = useDropTodo()
   const remove = useDeleteTodo()
@@ -74,38 +102,41 @@ function OpenTodos() {
   if (error) return <p className="text-destructive px-1 text-sm break-words">Couldn’t load Todos: {error.message}</p>
   if (isPending) return showSkeleton ? <SkeletonRows /> : null
   if (!todos.length) return <EmptyState>No open Todos. Type one above and press ↵ to add it.</EmptyState>
+  const filtering = isFiltering(filter)
+  const shown = filterTodos(todos, filter)
+  if (!shown.length) return <EmptyState>No open Todos match these filters. Remove one, or clear all.</EmptyState>
 
   /** Done or Drop at once, with Undo. Finishing the last open Sub-todo makes its parent offer to be marked done. */
-  const finishNow = (item: SubTodo, { status, reason }: Finish, parent?: Todo) => {
-    if (status === 'done') complete.mutate(item.id)
-    else drop.mutate({ id: item.id, reason })
+  const finishNow = (item: TodoItem, { status, reason }: Finish, parent?: Todo) => {
     const what = `${parent ? 'Sub-todo' : 'Todo'} ${status === 'done' ? 'done' : 'Dropped'}`
-    toast(what, { ...UNDO_TOAST, description: item.title, action: { label: 'Undo', onClick: () => reopen.mutate(item.id) } })
+    const change = status === 'done' ? complete.mutateAsync(item) : drop.mutateAsync({ todo: item, reason })
+    withUndo(what, item, change, (finished) => reopen.mutate(finished))
     if (parent?.subTodos.every((sub) => sub.id === item.id || sub.status !== 'open')) setOffers((ids) => toggled(ids, parent.id, true))
   }
   /** A parent with open Sub-todos asks first, since they are finished with it. */
-  const finish = (item: SubTodo | Todo, how: Finish, parent?: Todo) => {
+  const finish = (item: TodoItem, how: Finish, parent?: Todo) => {
     const openSubTodos = 'subTodos' in item ? item.subTodos.filter((sub) => sub.status === 'open').length : 0
     if ('subTodos' in item && openSubTodos > 0) setPending({ ...how, todo: item, openSubTodos })
     else finishNow(item, how, parent)
   }
-  const deleteForGood = (item: SubTodo | Todo, parent?: Todo) => {
-    remove.mutate(item.id)
-    toast(parent ? 'Sub-todo deleted' : 'Todo deleted', {
-      ...UNDO_TOAST,
-      description: item.title,
-      action: { label: 'Undo', onClick: () => restore.mutate({ todo: item, parentId: parent?.id }) },
-    })
+  const deleteForGood = (item: TodoItem, parent?: Todo) => {
+    withUndo(`${parent ? 'Sub-todo' : 'Todo'} deleted`, item, remove.mutateAsync(item), (deleted) =>
+      restore.mutate({ todo: deleted, parentId: parent?.id }),
+    )
   }
 
-  const row = (item: SubTodo | Todo, parent?: Todo, warning?: string, children?: ReactNode) => (
+  const row = (
+    item: TodoItem,
+    { parent, warning, dimmed, children }: { parent?: Todo; warning?: string; dimmed?: boolean; children?: ReactNode },
+  ) => (
     <TodoRow
       key={item.id}
       todo={item}
+      dimmed={dimmed}
       open={openIds.has(item.id)}
       onToggle={() => setOpenIds((ids) => toggled(ids, item.id))}
       onDone={() => finish(item, { status: 'done' }, parent)}
-      onChange={(change) => update.mutate({ id: item.id, change })}
+      onChange={(change) => update.mutate({ todo: item, change })}
       tags={tags}
       today={today}
       warning={warning}
@@ -121,7 +152,39 @@ function OpenTodos() {
     </TodoRow>
   )
 
-  const dismissOffer = (id: string) => setOffers((ids) => toggled(ids, id, false))
+  /**
+   * Under an expanded Todo: all its Sub-todos and the entry for a new one. While filtering, the Sub-todos the filter
+   * matched show even when it is collapsed.
+   */
+  const subTodosOf = (todo: Todo, matchedIds: ReadonlySet<string>) => {
+    const expanded = openIds.has(todo.id)
+    const matched = todo.subTodos.filter((sub) => matchedIds.has(sub.id))
+    if (!expanded && !(filtering && matched.length)) return undefined
+    const dismissOffer = () => setOffers((ids) => toggled(ids, todo.id, false))
+    return (
+      <SubTodos
+        parent={todo}
+        shown={filtering ? matched : todo.subTodos}
+        entry={expanded}
+        tags={tags}
+        today={today}
+        renderOpen={(sub, warning) => row(sub, { parent: todo, warning })}
+        onReopen={(sub) => reopen.mutate(sub)}
+        offer={
+          offers.has(todo.id)
+            ? {
+                onAccept: () => {
+                  dismissOffer()
+                  finishNow(todo, { status: 'done' })
+                },
+                onDismiss: dismissOffer,
+              }
+            : undefined
+        }
+      />
+    )
+  }
+
   const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error ?? update.error
   return (
     <>
@@ -130,38 +193,21 @@ function OpenTodos() {
           size="xs"
           variant="ghost"
           className="text-muted-foreground"
-          onClick={() => setOpenIds(openIds.size ? new Set() : new Set(todos.map((todo) => todo.id)))}
+          onClick={() => setOpenIds(openIds.size ? new Set() : new Set(shown.map(({ todo }) => todo.id)))}
         >
           {openIds.size ? <ChevronsDownUp /> : <ChevronsUpDown />}
           {openIds.size ? 'Collapse all' : 'Expand all'}
         </Button>
       </div>
-      {changeError && <p className="text-destructive px-1 text-xs">{changeError.message}</p>}
+      {changeError && (
+        <p className="text-destructive px-1 text-xs">
+          {changeError.message}
+          {isStale(changeError) && ' Showing the newer version.'}
+        </p>
+      )}
       <ul className="flex flex-col">
-        {todos.map((todo) =>
-          row(
-            todo,
-            undefined,
-            undefined,
-            <SubTodos
-              parent={todo}
-              tags={tags}
-              today={today}
-              renderOpen={(sub, warning) => row(sub, todo, warning)}
-              onReopen={(sub) => reopen.mutate(sub.id)}
-              offer={
-                offers.has(todo.id)
-                  ? {
-                      onAccept: () => {
-                        dismissOffer(todo.id)
-                        finishNow(todo, { status: 'done' })
-                      },
-                      onDismiss: () => dismissOffer(todo.id),
-                    }
-                  : undefined
-              }
-            />,
-          ),
+        {shown.map(({ todo, dimmed, subTodos }) =>
+          row(todo, { dimmed, children: subTodosOf(todo, new Set(subTodos.map((sub) => sub.id))) }),
         )}
       </ul>
       <FinishParentDialog
@@ -215,7 +261,7 @@ function FinishParentDialog({
 }
 
 /** The row's Drop or delete Popover: an optional reason, ↵ or Drop to Drop it, Delete to remove a mistake. */
-function DropOrDelete({ todo, onDrop, onDelete }: { todo: SubTodo; onDrop: (reason: string) => void; onDelete: () => void }) {
+function DropOrDelete({ todo, onDrop, onDelete }: { todo: TodoItem; onDrop: (reason: string) => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
   const [reason, setReason] = useState('')
 
@@ -264,13 +310,16 @@ function DropOrDelete({ todo, onDrop, onDelete }: { todo: SubTodo; onDrop: (reas
 }
 
 /** Done and Dropped Todos, kept forever: collapsed under the open list, newest-finished first when shown. */
-function FinishedTodos() {
+function FinishedTodos({ filter }: { filter: TodoFilter }) {
   const [expanded, setExpanded] = useState(false)
   const { data: todos, error } = useFinishedTodos()
   const reopen = useReopenTodo()
+  const today = useToday()
 
   if (error) return <p className="text-destructive px-1 text-sm break-words">Couldn’t load Done & Dropped: {error.message}</p>
-  if (!todos?.length) return null
+  const filtering = isFiltering(filter)
+  const shown = filterTodos(todos ?? [], filter)
+  if (!shown.length) return null
 
   return (
     <section aria-label="Done & Dropped" className="flex flex-col pt-2">
@@ -282,14 +331,21 @@ function FinishedTodos() {
       >
         <ChevronRight className={cn('size-3.5 transition-transform', expanded && 'rotate-90')} />
         Done & Dropped
-        <span className="tabular-nums">{todos.length}</span>
+        <span className="tabular-nums">{shown.length}</span>
       </button>
       {expanded && (
         <>
-          {reopen.error && <p className="text-destructive px-1 text-xs">{reopen.error.message}</p>}
+          {reopen.error && (
+            <p className="text-destructive px-1 text-xs">
+              {reopen.error.message}
+              {isStale(reopen.error) && ' Showing the newer version.'}
+            </p>
+          )}
           <ul className="flex flex-col">
-            {todos.map((todo) => (
-              <FinishedRow key={todo.id} todo={todo} onReopen={() => reopen.mutate(todo.id)} />
+            {shown.map(({ todo, dimmed, subTodos }) => (
+              <FinishedRow key={todo.id} todo={todo} dimmed={dimmed} onReopen={() => reopen.mutate(todo)}>
+                {filtering && <SubTodoLines subTodos={subTodos} today={today} />}
+              </FinishedRow>
             ))}
           </ul>
         </>
@@ -300,35 +356,38 @@ function FinishedTodos() {
 
 const finishedDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 
-function FinishedRow({ todo, onReopen }: { todo: Todo; onReopen: () => void }) {
+function FinishedRow({ todo, dimmed, onReopen, children }: { todo: Todo; dimmed: boolean; onReopen: () => void; children?: ReactNode }) {
   const dropped = todo.status === 'dropped'
   return (
-    <li className="hover:bg-muted/70 flex min-h-8 items-center gap-2 rounded-md px-1.5">
-      {dropped ? (
-        <button
-          type="button"
-          onClick={onReopen}
-          aria-label={`Reopen “${todo.title}”`}
-          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 grid size-4 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-3"
-        >
-          <Ban className="size-4" />
-        </button>
-      ) : (
-        <Checkbox checked onCheckedChange={onReopen} aria-label={`Reopen “${todo.title}”`} className="rounded-full" />
-      )}
-      <span className="text-muted-foreground decoration-muted-foreground/50 min-w-0 flex-1 truncate text-sm line-through">
-        {todo.title}
-      </span>
-      {dropped && (
-        <span className="text-muted-foreground hidden max-w-[40%] truncate text-xs @md:block" title={todo.dropReason}>
-          {todo.dropReason ? `Dropped: ${todo.dropReason}` : 'Dropped'}
+    <li className="flex flex-col">
+      <div className={cn('hover:bg-muted/70 flex min-h-8 items-center gap-2 rounded-md px-1.5', dimmed && DIMMED)}>
+        {dropped ? (
+          <button
+            type="button"
+            onClick={onReopen}
+            aria-label={`Reopen “${todo.title}”`}
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 grid size-4 shrink-0 place-items-center rounded-full outline-none focus-visible:ring-3"
+          >
+            <Ban className="size-4" />
+          </button>
+        ) : (
+          <Checkbox checked onCheckedChange={onReopen} aria-label={`Reopen “${todo.title}”`} className="rounded-full" />
+        )}
+        <span className="text-muted-foreground decoration-muted-foreground/50 min-w-0 flex-1 truncate text-sm line-through">
+          {todo.title}
         </span>
-      )}
-      {todo.finishedAt && (
-        <time dateTime={todo.finishedAt} className="text-muted-foreground shrink-0 text-xs tabular-nums">
-          {finishedDay(todo.finishedAt)}
-        </time>
-      )}
+        {dropped && (
+          <span className="text-muted-foreground hidden max-w-[40%] truncate text-xs @md:block" title={todo.dropReason}>
+            {todo.dropReason ? `Dropped: ${todo.dropReason}` : 'Dropped'}
+          </span>
+        )}
+        {todo.finishedAt && (
+          <time dateTime={todo.finishedAt} className="text-muted-foreground shrink-0 text-xs tabular-nums">
+            {finishedDay(todo.finishedAt)}
+          </time>
+        )}
+      </div>
+      {children}
     </li>
   )
 }

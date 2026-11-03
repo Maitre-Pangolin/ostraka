@@ -15,10 +15,13 @@ import {
   type Todo,
   reopenTodo,
   restoreTodo,
+  StaleVersionError,
   TodoExistsError,
   TodoInputError,
   TodoNotFoundError,
+  TagsFileError,
   TodosFileError,
+  todoVersion,
   updateTodo,
   type TodoOptions,
 } from '../src/index.ts'
@@ -39,6 +42,7 @@ afterEach(async () => {
 })
 
 const todosFile = () => join(contentRoot, 'todos.json')
+const tagsFile = () => join(contentRoot, 'tags.yml')
 const lockFile = () => `${todosFile()}.lock`
 const deadPid = () => spawnSync(process.execPath, ['-e', '']).pid
 const writeLock = (pid: number, createdAt: Date) => writeFile(lockFile(), JSON.stringify({ pid, createdAt: createdAt.toISOString() }))
@@ -353,11 +357,41 @@ describe('listTags', () => {
         ],
       }),
     )
-    expect(await listTags(options)).toEqual(['api', 'auth', 'infra', 'zz-top'])
+    expect((await listTags(options)).map((tag) => tag.name)).toEqual(['api', 'auth', 'infra', 'zz-top'])
   })
 
   it('is empty without todos.json', async () => {
     expect(await listTags(options)).toEqual([])
+  })
+
+  it('gives each Tag its colour from tags.yml, and the Tags not in it a colour of their own', async () => {
+    await addTodo({ title: 'Ship #api #auth #infra' }, options)
+    await writeFile(tagsFile(), 'auth:\n  color: blue\ninfra: {}\n')
+    // Without a colour, a Tag keeps the one its name hashes to, as the app has shown it so far.
+    expect(await listTags(options)).toEqual([
+      { name: 'api', color: 'green' },
+      { name: 'auth', color: 'blue' },
+      { name: 'infra', color: 'orange' },
+    ])
+  })
+
+  it('lists only Tags in use: a colour alone does not make a Tag', async () => {
+    await addTodo({ title: 'Ship #api' }, options)
+    await writeFile(tagsFile(), 'old-tag:\n  color: red\n')
+    expect((await listTags(options)).map((tag) => tag.name)).toEqual(['api'])
+  })
+
+  it('takes an empty tags.yml as no settings', async () => {
+    await addTodo({ title: 'Ship #api' }, options)
+    await writeFile(tagsFile(), '# Tag colours\n')
+    expect(await listTags(options)).toEqual([{ name: 'api', color: 'green' }])
+  })
+
+  it('refuses a broken tags.yml, naming the file', async () => {
+    await addTodo({ title: 'Ship #api' }, options)
+    await writeFile(tagsFile(), 'api:\n  color: mauve\n')
+    await expect(listTags(options)).rejects.toThrow(TagsFileError)
+    await expect(listTags(options)).rejects.toThrow(tagsFile())
   })
 })
 
@@ -464,5 +498,30 @@ describe('listFinishedTodos', () => {
   it('rejects a day that is not YYYY-MM-DD', async () => {
     await expect(listFinishedTodos({ finishedOn: '2/11/2026' }, options)).rejects.toThrow(/YYYY-MM-DD/)
     await expect(listFinishedTodos({ finishedOn: '2026-02-30' }, options)).rejects.toThrow(/real day/)
+  })
+})
+
+describe('changing a Todo from a loaded copy', () => {
+  it('refuses when the Todo changed on disk since it was loaded, leaving the file as it is', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    const agentEdit = (await readFile(todosFile(), 'utf8')).replace('"Call Bob"', '"Call Bob about the contract"')
+    await writeFile(todosFile(), agentEdit)
+
+    await expect(completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(dropTodo(loaded.id, {}, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(deleteTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(StaleVersionError)
+    await expect(updateTodo(loaded.id, { title: 'Call Bobby' }, { ...options, ifVersion: todoVersion(loaded) })).rejects.toThrow(
+      StaleVersionError,
+    )
+    expect(await readFile(todosFile(), 'utf8')).toBe(agentEdit)
+  })
+
+  it('goes ahead when the loaded copy is current, whatever happened to other Todos', async () => {
+    const loaded = await addTodo({ title: 'Call Bob' }, options)
+    await addTodo({ title: 'Added by an agent' }, options)
+    const done = await completeTodo(loaded.id, { ...options, ifVersion: todoVersion(loaded) })
+    expect(done.status).toBe('done')
+    expect(await reopenTodo(loaded.id, { ...options, ifVersion: todoVersion(done) })).toEqual(loaded)
   })
 })

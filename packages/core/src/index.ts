@@ -1,5 +1,5 @@
 export { configPath, ConfigSchema, loadConfig, type Config, type ConfigOptions } from './config.ts'
-export { CONTENT_KINDS, contentPath, isContentKind, type ContentKind } from './content-path.ts'
+export { CONTENT_KINDS, contentChangeAt, contentPath, isContentKind, type ContentChange, type ContentKind } from './content-path.ts'
 export { locateContentRoot, resolveContentRoot, type ContentRootOptions, type ContentRootSource } from './content-root.ts'
 export {
   DropTodoSchema,
@@ -22,8 +22,13 @@ export {
   type TodosFile,
   type TodoStatus,
 } from './todo-schema.ts'
+export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { dueAfterParent } from './sub-todos.ts'
+export { defaultTagColor, TAG_COLORS, type Tag, type TagColor } from './tag-color.ts'
+export { TagSettingsSchema, TagsFileSchema, type TagSettings, type TagsFile } from './tag-schema.ts'
+export { readTagsFile, TagsFileError } from './tags.ts'
+export { filterTodos, isFiltering, parseTodoFilter, type FilteredTodo, type TodoFilter } from './todo-filter.ts'
 export {
   normalizeTag,
   pullCompletedTokens,
@@ -50,7 +55,11 @@ export {
   TodoInputError,
   TodoNotFoundError,
   TodosFileError,
+  todoVersion,
+  type TodoChangeOptions,
   updateTodo,
   type TodoItem,
   type TodoOptions,
 } from './todos.ts'
+export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
+export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'

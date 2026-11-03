@@ -1,7 +1,7 @@
 import type { TokenProps } from '@ostraka/core/todo-tokens'
 import { CalendarDays, X } from 'lucide-react'
 import { useState } from 'react'
-import { useAddTodo, useTags } from './api'
+import { useAddTodo, useTagNames } from './api'
 import { useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { DueText, PriorityFlag, TagPill } from './properties'
@@ -18,7 +18,7 @@ export function QuickEntry() {
   const [description, setDescription] = useState<string | null>(null)
   const [props, setProps] = useState(NO_PROPS)
   const add = useAddTodo()
-  const tags = useTags().data ?? []
+  const tags = useTagNames()
   const today = useToday()
   const addProps = (added: TokenProps) => setProps((before) => mergeProps(before, added))
 

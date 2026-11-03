@@ -14,6 +14,10 @@ import { mergeProps, NO_PROPS } from './token-props'
 
 export type SubTodosProps = {
   parent: Todo
+  /** The Sub-todos to list, in creation order: all of them, or those a filter matched. */
+  shown: SubTodo[]
+  /** Whether to end with the entry for a new Sub-todo (the parent is expanded). */
+  entry: boolean
   tags: string[]
   today: string
   /** An open Sub-todo's row, as a `TodoRow` given its warning. */
@@ -25,13 +29,13 @@ export type SubTodosProps = {
 
 const dueAfterWarning = (parent: Todo) => (parent.due ? `Due after its parent, due ${longDate(parent.due)}` : undefined)
 
-export function SubTodos({ parent, tags, today, renderOpen, onReopen, offer }: SubTodosProps) {
+export function SubTodos({ parent, shown, entry, tags, today, renderOpen, onReopen, offer }: SubTodosProps) {
   const allFinished = parent.subTodos.length > 0 && parent.subTodos.every((sub) => sub.status !== 'open')
   return (
     <div className="flex flex-col pl-10">
-      {parent.subTodos.length > 0 && (
+      {shown.length > 0 && (
         <ul aria-label={`Sub-todos of “${parent.title}”`} className="flex flex-col">
-          {parent.subTodos.map((sub) =>
+          {shown.map((sub) =>
             sub.status === 'open' ? (
               renderOpen(sub, dueAfterParent(sub, parent) ? dueAfterWarning(parent) : undefined)
             ) : (
@@ -51,7 +55,7 @@ export function SubTodos({ parent, tags, today, renderOpen, onReopen, offer }: S
           </Button>
         </div>
       )}
-      <SubTodoEntry parentId={parent.id} tags={tags} today={today} />
+      {entry && <SubTodoEntry parentId={parent.id} tags={tags} today={today} />}
     </div>
   )
 }

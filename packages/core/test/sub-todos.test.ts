@@ -13,10 +13,12 @@ import {
   reopenTodo,
   restoreSubTodo,
   restoreTodo,
+  StaleVersionError,
   TodoExistsError,
   TodoInputError,
   TodoNotFoundError,
   TodosFileError,
+  todoVersion,
   updateTodo,
   type TodoOptions,
 } from '../src/index.ts'
@@ -225,5 +227,26 @@ describe('dueAfterParent', () => {
     const parent = await addTodo({ title: 'Release 2.0 ^2026-11-06' }, options)
     const late = await addSubTodo(parent.id, { title: 'Write the notes ^2026-11-09' }, options)
     expect(dueAfterParent(await completeTodo(late.id, options), parent)).toBe(false)
+  })
+})
+
+describe('changing a Sub-todo from a loaded copy', () => {
+  it('refuses when the Sub-todo changed since it was loaded', async () => {
+    const parent = await addTodo({ title: 'Release 2.0' }, options)
+    const loaded = await addSubTodo(parent.id, { title: 'Write the notes' }, options)
+    await updateTodo(loaded.id, { title: 'Write the notes in English' }, options) // an agent's edit
+    const stale = { ...options, ifVersion: todoVersion(loaded) }
+    await expect(completeTodo(loaded.id, stale)).rejects.toThrow(StaleVersionError)
+    await expect(updateTodo(loaded.id, { priority: 'high' }, stale)).rejects.toThrow(/Sub-todo “Write the notes in English” changed/)
+    await expect(deleteTodo(loaded.id, stale)).rejects.toThrow(StaleVersionError)
+  })
+
+  it('keeps a parent and its Sub-todos versioned apart, so changing one never makes the other stale', async () => {
+    const parent = await addTodo({ title: 'Release 2.0' }, options)
+    const sub = await addSubTodo(parent.id, { title: 'Write the notes' }, options)
+    const done = await completeTodo(sub.id, { ...options, ifVersion: todoVersion(sub) })
+    const renamed = await updateTodo(parent.id, { title: 'Release 2.1' }, { ...options, ifVersion: todoVersion(parent) })
+    expect(renamed.title).toBe('Release 2.1')
+    expect(await reopenTodo(sub.id, { ...options, ifVersion: todoVersion(done) })).toEqual(sub)
   })
 })

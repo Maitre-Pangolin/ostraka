@@ -1,15 +1,16 @@
 import type { TokenProps } from '@ostraka/core/todo-tokens'
-import { AlignLeft, ChevronRight, ListTree, TriangleAlert } from 'lucide-react'
+import type { SubTodo as StoredSubTodo } from '@ostraka/core/todo-schema'
+import { AlignLeft, Ban, Check, ChevronRight, ListTree, TriangleAlert } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
-import type { SubTodo, Todo, TodoChange } from './api'
-import { DuePicker, PriorityPicker, TagDot, TagPill } from './properties'
+import type { TodoChange, TodoItem } from './api'
+import { DuePicker, DueText, PriorityFlag, PriorityPicker, TagDot, TagPill } from './properties'
 import { TokenField } from './token-field'
 
 export type TodoRowProps = {
   /** A Todo, or a Sub-todo: they look and edit the same. */
-  todo: SubTodo | Todo
+  todo: TodoItem
   open: boolean
   onToggle: () => void
   onDone: () => void
@@ -21,11 +22,16 @@ export type TodoRowProps = {
   actions?: ReactNode
   /** A warning shown before the due date, such as a Sub-todo due after its parent. */
   warning?: string
-  /** Shown under the expanded row, along a guide line from its checkbox: a Todo's Sub-todos. */
+  /** Shown only for context: the Todo doesn't match the filter, some of its Sub-todos do. */
+  dimmed?: boolean
+  /** Under the row, along a guide line from its checkbox: a Todo's Sub-todos. */
   children?: ReactNode
 }
 
-const PRIORITY_RING: Record<SubTodo['priority'], string> = {
+/** A row shown only for context around what a filter matched. */
+export const DIMMED = 'opacity-50 hover:opacity-100 focus-within:opacity-100'
+
+const PRIORITY_RING: Record<StoredSubTodo['priority'], string> = {
   high: 'border-prio-high',
   medium: 'border-prio-med',
   low: 'border-prio-low',
@@ -46,7 +52,7 @@ function tokenChange(tags: string[], props: TokenProps): TodoChange {
  * Expanded, its title and description are edited in place, its Tags can be removed, and its Sub-todos show under it
  * along a guide line from its checkbox. The date and the flag open their pickers either way.
  */
-export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, warning, children }: TodoRowProps) {
+export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, warning, dimmed, children }: TodoRowProps) {
   const [describing, setDescribing] = useState(false)
   const showDescription = open && (todo.description !== undefined || describing)
   // The Tags as last sent, so tokens typed in quick succession add up before the list has caught up.
@@ -65,7 +71,7 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
   }
   return (
     <li className="flex flex-col">
-      <div className="group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1">
+      <div className={cn('group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1', dimmed && DIMMED)}>
         <button
           type="button"
           onClick={onToggle}
@@ -99,9 +105,9 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
         <PriorityPicker priority={todo.priority} quiet onChange={(priority) => onChange({ priority })} />
         {actions}
       </div>
-      {open && (showDescription || todo.tags.length > 0 || children) && (
+      {((open && (showDescription || todo.tags.length > 0)) || children) && (
         <div className={cn('relative flex flex-col', children && GUIDE_LINE)}>
-          {(showDescription || todo.tags.length > 0) && (
+          {open && (showDescription || todo.tags.length > 0) && (
             <div className="mb-1 ml-11 flex flex-col gap-1 pr-2">
               {showDescription && (
                 <DescriptionEditor
@@ -132,7 +138,43 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
 // A vertical line from the centre of the row's checkbox (padding, chevron, gap, half the checkbox) down its Sub-todos.
 const GUIDE_LINE = 'before:bg-border before:absolute before:top-0 before:bottom-4 before:left-[calc(var(--spacing)*9.5)] before:w-px'
 
-function Indicators({ todo }: { todo: SubTodo | Todo }) {
+const PRIORITY_DOT: Record<StoredSubTodo['priority'], string> = { ...PRIORITY_RING, none: 'border-input' }
+
+/**
+ * Sub-todos of a finished Todo, as a filter matched them in Done & Dropped: read-only lines with a guide from the
+ * parent's checkbox. Open Todos show their Sub-todos as full rows instead (`SubTodos`).
+ */
+export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; today: string }) {
+  if (!subTodos.length) return null
+  return (
+    <ul aria-label="Matching Sub-todos" className="border-border mb-1 ml-8 flex flex-col border-l pl-2">
+      {subTodos.map((subTodo) => {
+        const finished = subTodo.status !== 'open'
+        return (
+          <li key={subTodo.id} className="flex min-h-7 items-center gap-1.5 px-1">
+            {subTodo.status === 'done' ? (
+              <Check aria-label="Done" className="text-muted-foreground size-3.5 shrink-0" />
+            ) : subTodo.status === 'dropped' ? (
+              <Ban aria-label="Dropped" className="text-muted-foreground size-3.5 shrink-0" />
+            ) : (
+              <span aria-hidden className={cn('size-3.5 shrink-0 rounded-full border', PRIORITY_DOT[subTodo.priority])} />
+            )}
+            <span className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through')}>{subTodo.title}</span>
+            <span className="hidden shrink-0 items-center gap-1 @md:flex">
+              {subTodo.tags.map((tag) => (
+                <TagPill key={tag} tag={tag} />
+              ))}
+            </span>
+            {subTodo.due && !finished && <DueText due={subTodo.due} today={today} />}
+            {subTodo.priority !== 'none' && <PriorityFlag priority={subTodo.priority} className="shrink-0" />}
+          </li>
+        )
+      })}
+    </ul>
+  )
+}
+
+function Indicators({ todo }: { todo: TodoItem }) {
   const subTodos = 'subTodos' in todo ? todo.subTodos : []
   const finished = subTodos.filter((sub) => sub.status !== 'open').length
   return (
@@ -177,7 +219,7 @@ function Indicators({ todo }: { todo: SubTodo | Todo }) {
   )
 }
 
-type EditorProps = { todo: SubTodo; onChange: (change: TodoChange) => void; onTokens: (props: TokenProps) => void; tags: string[] }
+type EditorProps = { todo: TodoItem; onChange: (change: TodoChange) => void; onTokens: (props: TokenProps) => void; tags: string[] }
 
 /** The text being edited, following the stored text while the field isn't being edited. */
 function useDraft(stored: string) {

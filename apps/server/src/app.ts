@@ -3,6 +3,8 @@ import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
 import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
+import { streamSSE } from 'hono/streaming'
+import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
 
@@ -14,15 +16,19 @@ export type AppOptions = {
   webDist: string
   /** Where content and config.yml live (env and home folder) and the clock; defaults to the real ones. Tests point it at a temp folder. */
   content?: TodoOptions
+  /** Called after each successful write to content through the API; the server schedules a Snapshot from it. */
+  onContentChange?: () => void
   /** Read from the Keychain once at startup. Routes may say whether one exists, never return it. */
   credentials?: Credentials
+  /** Changes to the content folder, sent to the browser as live updates; shared with the server's other listeners. */
+  events?: ContentEvents
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist, content = {}, credentials = {} }: AppOptions) {
+export function createApp({ webDist, content = {}, credentials = {}, onContentChange, events = contentEvents(content) }: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -40,9 +46,29 @@ export function createApp({ webDist, content = {}, credentials = {} }: AppOption
     await next()
   })
 
+  // Every API write goes through core to the content folder, so a successful one means the content changed.
+  app.use('/api/*', async (c, next) => {
+    await next()
+    if (!SAFE_METHODS.has(c.req.method) && c.res.ok) onContentChange?.()
+  })
+
   app.get('/api/health', (c) => c.json({ ok: true }))
   app.route('/api/todos', todoRoutes(content))
   app.route('/api/tags', tagRoutes(content))
+
+  // Live updates: one stream of `{kind, id?}` changes. `ready` comes first, once changes are being watched.
+  app.get('/api/events', (c) =>
+    streamSSE(c, async (stream) => {
+      const closed = new Promise<void>((resolve) => stream.onAbort(resolve))
+      const unsubscribe = await events.subscribe((change) => void stream.writeSSE({ data: JSON.stringify(change) }))
+      try {
+        await stream.writeSSE({ event: 'ready', data: '' })
+        await closed
+      } finally {
+        unsubscribe()
+      }
+    }),
+  )
 
   // Read on each request, so the Settings view shows edits to config.yml without a restart.
   app.get('/api/settings', async (c) => {

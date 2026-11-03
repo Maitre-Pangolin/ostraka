@@ -1,4 +1,4 @@
-import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -21,15 +21,21 @@ afterEach(async () => {
 
 const headers = { host: '127.0.0.1:4747', origin: 'http://127.0.0.1:4747' }
 const get = (path: string) => app.request(path, { headers })
-const post = (path: string, body?: unknown) =>
+const post = (path: string, body?: unknown, ifMatch?: string) =>
   app.request(path, {
     method: 'POST',
-    headers: { ...headers, ...(body !== undefined && { 'content-type': 'application/json' }) },
+    headers: {
+      ...headers,
+      ...(body !== undefined && { 'content-type': 'application/json' }),
+      ...(ifMatch !== undefined && { 'if-match': ifMatch }),
+    },
     ...(body !== undefined && { body: JSON.stringify(body) }),
   })
+type VersionedTodo = Todo & { version: string }
 const patch = (path: string, body: unknown) =>
   app.request(path, { method: 'PATCH', headers: { ...headers, 'content-type': 'application/json' }, body: JSON.stringify(body) })
-const del = (path: string) => app.request(path, { method: 'DELETE', headers })
+const del = (path: string, ifMatch?: string) =>
+  app.request(path, { method: 'DELETE', headers: { ...headers, ...(ifMatch !== undefined && { 'if-match': ifMatch }) } })
 const json = async <T = Todo>(res: Response | Promise<Response>) => (await (await res).json()) as T
 
 const fixture = (id: string, extra: object) => ({
@@ -97,7 +103,15 @@ describe('Todo routes', () => {
     const res = await patch(`/api/todos/${todo.id}`, { title: 'Ship it now *low', description: 'Check first', tags: ['api'], due: null })
     expect(res.status).toBe(200)
     const changed = await json(res)
-    expect(changed).toEqual({ ...todo, title: 'Ship it now', description: 'Check first', tags: ['api'], priority: 'low', due: undefined })
+    expect(changed).toEqual({
+      ...todo,
+      title: 'Ship it now',
+      description: 'Check first',
+      tags: ['api'],
+      priority: 'low',
+      due: undefined,
+      version: expect.any(String),
+    })
     expect(await json<Todo[]>(get('/api/todos'))).toEqual([changed])
   })
 
@@ -115,10 +129,23 @@ describe('Todo routes', () => {
     expect((await patch('/api/todos/zzzzz', { priority: 'high' })).status).toBe(404)
   })
 
-  it('lists the Tags in use', async () => {
+  it('lists the Tags in use with their colours from tags.yml', async () => {
     await post('/api/todos', { title: 'One #infra #api' })
     await post('/api/todos', { title: 'Two #auth' })
-    expect(await json<string[]>(get('/api/tags'))).toEqual(['api', 'auth', 'infra'])
+    await writeFile(join(contentRoot, 'tags.yml'), 'infra:\n  color: teal\n')
+    expect(await json(get('/api/tags'))).toEqual([
+      { name: 'api', color: 'green' },
+      { name: 'auth', color: 'green' },
+      { name: 'infra', color: 'teal' },
+    ])
+  })
+
+  it('answers a broken tags.yml with its error, so the app shows it', async () => {
+    await post('/api/todos', { title: 'One #api' })
+    await writeFile(join(contentRoot, 'tags.yml'), 'api: [not, settings]\n')
+    const res = await get('/api/tags')
+    expect(res.status).toBe(409)
+    expect(await res.json()).toEqual({ error: expect.stringContaining('tags.yml') })
   })
 
   it('Drops a Todo with an optional reason, lists it as finished, and reopens it (Undo)', async () => {
@@ -126,10 +153,16 @@ describe('Todo routes', () => {
 
     const dropped = await post(`/api/todos/${todo.id}/drop`, { reason: 'Superseded' })
     expect(dropped.status).toBe(200)
-    expect(await dropped.json()).toEqual({ ...todo, status: 'dropped', dropReason: 'Superseded', finishedAt: NOW.toISOString() })
+    expect(await dropped.json()).toEqual({
+      ...todo,
+      status: 'dropped',
+      dropReason: 'Superseded',
+      finishedAt: NOW.toISOString(),
+      version: expect.any(String),
+    })
     expect(await json(get('/api/todos'))).toEqual([])
     expect(await json(get('/api/todos/finished'))).toEqual([
-      { ...todo, status: 'dropped', dropReason: 'Superseded', finishedAt: NOW.toISOString() },
+      { ...todo, status: 'dropped', dropReason: 'Superseded', finishedAt: NOW.toISOString(), version: expect.any(String) },
     ])
 
     await post(`/api/todos/${todo.id}/reopen`)
@@ -139,7 +172,12 @@ describe('Todo routes', () => {
 
   it('Drops without a reason when no body is sent', async () => {
     const todo = await json(post('/api/todos', { title: 'Migrate the old CI' }))
-    expect(await json(post(`/api/todos/${todo.id}/drop`))).toEqual({ ...todo, status: 'dropped', finishedAt: NOW.toISOString() })
+    expect(await json(post(`/api/todos/${todo.id}/drop`))).toEqual({
+      ...todo,
+      status: 'dropped',
+      finishedAt: NOW.toISOString(),
+      version: expect.any(String),
+    })
   })
 
   it('rejects a reason that is not text', async () => {
@@ -161,6 +199,7 @@ describe('Todo routes', () => {
     expect((await json<Todo[]>(get('/api/todos/finished'))).map((todo) => todo.id)).toEqual(['newer', 'older'])
   })
 
+  // The deleted Todo is posted back as the API answered it, version included.
   it('deletes a Todo, and restores it (Undo)', async () => {
     const todo = await json(post('/api/todos', { title: 'Typo' }))
 
@@ -197,6 +236,43 @@ describe('Todo routes', () => {
     expect(await res.json()).toEqual({ error: 'No Todo with id zzzzz' })
   })
 
+  it('refuses a change made from a stale copy of a Todo, and takes one made from the current copy', async () => {
+    const loaded = await json<VersionedTodo>(post('/api/todos', { title: 'Call Bob' }))
+    const [listed] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(listed).toEqual(loaded)
+
+    const file = join(contentRoot, 'todos.json')
+    const agentEdit = (await readFile(file, 'utf8')).replace('"Call Bob"', '"Call Bob about the contract"')
+    await writeFile(file, agentEdit)
+
+    const staleIfMatch = `"${loaded.version}"`
+    for (const stale of [
+      await post(`/api/todos/${loaded.id}/done`, undefined, staleIfMatch),
+      await post(`/api/todos/${loaded.id}/drop`, {}, staleIfMatch),
+      await del(`/api/todos/${loaded.id}`, staleIfMatch),
+      await app.request(`/api/todos/${loaded.id}`, {
+        method: 'PATCH',
+        headers: { ...headers, 'content-type': 'application/json', 'if-match': staleIfMatch },
+        body: JSON.stringify({ title: 'Call Bobby' }),
+      }),
+    ]) {
+      expect(stale.status).toBe(412)
+      expect(await stale.json()).toEqual({ error: 'The Todo “Call Bob about the contract” changed since it was loaded.' })
+    }
+    expect(await readFile(file, 'utf8')).toBe(agentEdit)
+
+    const [current] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(current!.version).not.toBe(loaded.version)
+    const done = await post(`/api/todos/${loaded.id}/done`, undefined, `"${current!.version}"`)
+    expect(done.status).toBe(200)
+    const doneTodo = await json<VersionedTodo>(done)
+    expect(doneTodo.status).toBe('done')
+
+    // Undo sends the version the done answer carried.
+    const reopened = await post(`/api/todos/${loaded.id}/reopen`, undefined, `"${doneTodo.version}"`)
+    expect(reopened.status).toBe(200)
+  })
+
   it('reports an invalid todos.json instead of overwriting it', async () => {
     await writeFile(join(contentRoot, 'todos.json'), '{ "todos": [')
     for (const res of [await get('/api/todos'), await post('/api/todos', { title: 'Ship it' })]) {
@@ -220,6 +296,7 @@ describe('Sub-todo routes', () => {
       tags: [],
       status: 'open',
       createdAt: NOW.toISOString(),
+      version: expect.any(String),
     })
     expect(await json(get('/api/todos'))).toEqual([{ ...parent, subTodos: [sub] }])
   })
@@ -241,8 +318,32 @@ describe('Sub-todo routes', () => {
     const parent = await json(post('/api/todos', { title: 'Release 2.0' }))
     const sub = await json(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' }))
     const done = await json(post(`/api/todos/${parent.id}/done`))
-    expect(done.subTodos).toEqual([{ ...sub, status: 'done', finishedAt: NOW.toISOString() }])
+    expect(done.subTodos).toEqual([{ ...sub, status: 'done', finishedAt: NOW.toISOString(), version: expect.any(String) }])
     expect(await json(post(`/api/todos/${parent.id}/reopen`))).toEqual({ ...parent, subTodos: [sub] })
+  })
+
+  it('answers each Sub-todo with its own version, and refuses a change from a stale copy (412)', async () => {
+    const parent = await json<VersionedTodo>(post('/api/todos', { title: 'Release 2.0' }))
+    const sub = await json<VersionedTodo>(post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' }))
+    const [listed] = await json<VersionedTodo[]>(get('/api/todos'))
+    expect(listed!.subTodos).toEqual([sub])
+    expect(sub.version).not.toBe(parent.version)
+
+    const done = await post(`/api/todos/${sub.id}/done`, undefined, `"${sub.version}"`)
+    expect(done.status).toBe(200)
+    const stale = await post(`/api/todos/${sub.id}/reopen`, undefined, `"${sub.version}"`)
+    expect(stale.status).toBe(412)
+    // The parent's copy is still current: a Sub-todo has its own version.
+    expect((await del(`/api/todos/${parent.id}`, `"${parent.version}"`)).status).toBe(200)
+  })
+
+  it('restores a deleted Todo posted back as answered, Sub-todo versions and all', async () => {
+    const parent = await json<VersionedTodo>(post('/api/todos', { title: 'Release 2.0' }))
+    await post(`/api/todos/${parent.id}/sub-todos`, { title: 'Write the notes' })
+    const deleted = await json<VersionedTodo>(del(`/api/todos/${parent.id}`))
+    const restored = await post('/api/todos/restore', deleted)
+    expect(restored.status).toBe(201)
+    expect(await restored.json()).toEqual(deleted)
   })
 
   it('deletes a Sub-todo, and restores it under its parent (Undo)', async () => {

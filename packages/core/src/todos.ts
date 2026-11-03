@@ -3,8 +3,11 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { contentPath } from './content-path.ts'
+import { assertCurrentVersion, contentVersion } from './content-version.ts'
 import type { ContentRootOptions } from './content-root.ts'
 import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
+import { defaultTagColor, type Tag } from './tag-color.ts'
+import { readTagsFile } from './tags.ts'
 import { compareFinishedTodos, compareOpenTodos, localDay } from './todo-order.ts'
 import {
   DropTodoSchema,
@@ -30,6 +33,9 @@ export type TodoOptions = ContentRootOptions & {
   now?: () => Date
   lock?: LockOptions
 }
+
+/** For a change to an existing Todo made from a loaded copy: the `todoVersion` of that copy. */
+export type TodoChangeOptions = TodoOptions & { ifVersion?: string }
 
 const clock = (options: TodoOptions) => (options.now ?? (() => new Date()))()
 
@@ -164,20 +170,34 @@ export async function addSubTodo(parentId: string, input: NewTodo, options: Todo
   })
 }
 
+/** A Todo, or a Sub-todo under its parent. Both are written the same way. */
+export type TodoItem = Todo | SubTodo
+
+/**
+ * The version of one Todo or Sub-todo: a hash of its own fields as todos.json holds them, keys in their stable order.
+ * A parent's Sub-todos are left out, so a change to one Sub-todo never makes its parent's copy stale.
+ */
+export function todoVersion(item: TodoItem): string {
+  return contentVersion(formatTodosFile({ todos: [{ ...item, subTodos: [] }] }))
+}
+
 /** A Todo or Sub-todo by id; a Sub-todo comes with its parent. */
 type Found = { todo: Todo; parent?: undefined } | { todo: SubTodo; parent: Todo }
 
-function locate(file: TodosFile, id: string): Found {
-  for (const todo of file.todos) {
-    if (todo.id === id) return { todo }
-    const sub = todo.subTodos.find((candidate) => candidate.id === id)
-    if (sub) return { todo: sub, parent: todo }
-  }
-  throw new TodoNotFoundError(`No Todo with id ${id}`)
+/** Finds a Todo or Sub-todo; with `ifVersion`, refuses it if it changed since that copy was loaded. */
+function locate(file: TodosFile, id: string, ifVersion?: string): Found {
+  const found = ((): Found | undefined => {
+    for (const todo of file.todos) {
+      if (todo.id === id) return { todo }
+      const sub = todo.subTodos.find((candidate) => candidate.id === id)
+      if (sub) return { todo: sub, parent: todo }
+    }
+  })()
+  if (!found) throw new TodoNotFoundError(`No Todo with id ${id}`)
+  const what = `The ${found.parent ? 'Sub-todo' : 'Todo'} “${found.todo.title}”`
+  assertCurrentVersion(ifVersion, todoVersion(found.todo), what)
+  return found
 }
-
-/** A Todo, or a Sub-todo under its parent. Both are written the same way. */
-export type TodoItem = Todo | SubTodo
 
 /** Done or Dropped from now on, with a reason only when Dropped for one. */
 function finish(todo: SubTodo, status: 'done' | 'dropped', finishedAt: string, reason?: string) {
@@ -191,8 +211,8 @@ function finish(todo: SubTodo, status: 'done' | 'dropped', finishedAt: string, r
  * Finishes a Todo or Sub-todo. Finishing a parent finishes its open Sub-todos too, at the same moment, so that
  * reopening it knows which ones to bring back.
  */
-function finishItem(file: TodosFile, id: string, status: 'done' | 'dropped', now: Date, reason?: string): TodoItem {
-  const { todo, parent } = locate(file, id)
+function finishItem(found: Found, status: 'done' | 'dropped', now: Date, reason?: string): TodoItem {
+  const { todo, parent } = found
   const finishedAt = now.toISOString()
   if (!parent) for (const sub of todo.subTodos) if (sub.status === 'open') finish(sub, status, finishedAt, reason)
   finish(todo, status, finishedAt, reason)
@@ -200,19 +220,19 @@ function finishItem(file: TodosFile, id: string, status: 'done' | 'dropped', now
 }
 
 /** Marks a Todo or Sub-todo done and sets its finished timestamp. A parent's open Sub-todos are marked done with it. */
-export async function completeTodo(id: string, options: TodoOptions = {}): Promise<TodoItem> {
+export async function completeTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
   const now = clock(options)
-  return updateTodos(options, (file) => finishItem(file, id, 'done', now))
+  return updateTodos(options, (file) => finishItem(locate(file, id, options.ifVersion), 'done', now))
 }
 
 /**
  * Drops a Todo or Sub-todo: abandoned without being done, with an optional reason, and its finished timestamp set.
  * A parent's open Sub-todos are Dropped with it, for the same reason.
  */
-export async function dropTodo(id: string, input: DropTodo, options: TodoOptions = {}): Promise<TodoItem> {
+export async function dropTodo(id: string, input: DropTodo, options: TodoChangeOptions = {}): Promise<TodoItem> {
   const reason = DropTodoSchema.parse(input).reason?.trim()
   const now = clock(options)
-  return updateTodos(options, (file) => finishItem(file, id, 'dropped', now, reason))
+  return updateTodos(options, (file) => finishItem(locate(file, id, options.ifVersion), 'dropped', now, reason))
 }
 
 const reopen = (todo: SubTodo) => {
@@ -225,9 +245,9 @@ const reopen = (todo: SubTodo) => {
  * Puts a done or Dropped Todo or Sub-todo back on the open list, clearing its finished timestamp (Undo). A parent
  * brings back the Sub-todos it finished; those finished before it stay finished.
  */
-export async function reopenTodo(id: string, options: TodoOptions = {}): Promise<TodoItem> {
+export async function reopenTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
   return updateTodos(options, (file) => {
-    const { todo, parent } = locate(file, id)
+    const { todo, parent } = locate(file, id, options.ifVersion)
     if (!parent && todo.finishedAt) {
       for (const sub of todo.subTodos) if (sub.finishedAt === todo.finishedAt) reopen(sub)
     }
@@ -240,11 +260,11 @@ export async function reopenTodo(id: string, options: TodoOptions = {}): Promise
  * Changes a Todo's or Sub-todo's title, description, Tags, priority or due date; only the fields given change.
  * Tokens in a new title or description apply to it, as on add.
  */
-export async function updateTodo(id: string, input: TodoChange, options: TodoOptions = {}): Promise<TodoItem> {
+export async function updateTodo(id: string, input: TodoChange, options: TodoChangeOptions = {}): Promise<TodoItem> {
   const change = TodoChangeSchema.parse(input)
   const today = localDay(clock(options))
   return updateTodos(options, (file) => {
-    const { todo } = locate(file, id)
+    const { todo } = locate(file, id, options.ifVersion)
     const chosen: Editable = {
       title: todo.title,
       description: todo.description,
@@ -268,9 +288,9 @@ export async function updateTodo(id: string, input: TodoChange, options: TodoOpt
  * Removes a Todo (with its Sub-todos) or a Sub-todo for good (for mistakes) and returns it, so the caller can offer
  * Undo through `restoreTodo` or `restoreSubTodo`.
  */
-export async function deleteTodo(id: string, options: TodoOptions = {}): Promise<TodoItem> {
+export async function deleteTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
   return updateTodos(options, (file) => {
-    const { todo, parent } = locate(file, id)
+    const { todo, parent } = locate(file, id, options.ifVersion)
     if (parent) parent.subTodos.splice(parent.subTodos.indexOf(todo), 1)
     else file.todos.splice(file.todos.indexOf(todo), 1)
     return todo
@@ -310,11 +330,15 @@ export async function restoreSubTodo(parentId: string, input: SubTodo, options: 
   })
 }
 
-/** Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. */
-export async function listTags(options: TodoOptions = {}): Promise<string[]> {
+/**
+ * Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. Each has its
+ * colour from `tags.yml`, or the one its name hashes to.
+ */
+export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
-  const tags = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
-  return [...tags].toSorted()
+  const settings = await readTagsFile(options)
+  const names = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
+  return [...names].toSorted().map((name) => ({ name, color: settings[name]?.color ?? defaultTagColor(name) }))
 }
 
 /** Open Todos in their automatic order. */
