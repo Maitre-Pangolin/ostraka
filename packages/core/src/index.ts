@@ -24,6 +24,7 @@ export {
 } from './todo-schema.ts'
 export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
+export { dueAfterParent } from './sub-todos.ts'
 export { defaultTagColor, TAG_COLORS, type Tag, type TagColor } from './tag-color.ts'
 export { TagSettingsSchema, TagsFileSchema, type TagSettings, type TagsFile } from './tag-schema.ts'
 export { readTagsFile, TagsFileError } from './tags.ts'
@@ -39,6 +40,7 @@ export {
   type TokenSuggestion,
 } from './todo-tokens.ts'
 export {
+  addSubTodo,
   addTodo,
   completeTodo,
   deleteTodo,
@@ -47,6 +49,7 @@ export {
   listTags,
   listTodos,
   reopenTodo,
+  restoreSubTodo,
   restoreTodo,
   TodoExistsError,
   TodoInputError,
@@ -55,6 +58,7 @@ export {
   todoVersion,
   type TodoChangeOptions,
   updateTodo,
+  type TodoItem,
   type TodoOptions,
 } from './todos.ts'
 export { formatMarkdown, HOUSE_STYLE, joinFrontmatter, splitFrontmatter, type Frontmatter } from './markdown.ts'

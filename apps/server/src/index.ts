@@ -1,3 +1,7 @@
+export { systemClock, type Clock } from './activity/clock.ts'
+export type { GitLabOverview, MergeRequest } from './activity/gitlab.ts'
+export type { Activity, SourceStatus } from './activity/poller.ts'
+export { workOverview, type WorkOverviewOptions } from './activity/work-overview.ts'
 export { createApp, HOSTNAME, PORT, type AppOptions } from './app.ts'
 export {
   KEYCHAIN_ITEMS,
@@ -9,4 +13,5 @@ export {
   type Keychain,
   type RunSecurity,
 } from './keychain.ts'
+export type { ContentEvents } from './content-events.ts'
 export { DEFAULT_WEB_DIST, startServer, type RunningServer, type StartOptions } from './serve.ts'

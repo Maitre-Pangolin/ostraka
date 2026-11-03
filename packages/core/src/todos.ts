@@ -15,6 +15,7 @@ import {
   FinishedQuerySchema,
   formatTodosFile,
   NewTodoSchema,
+  SubTodoSchema,
   TodoChangeSchema,
   TodoSchema,
   TodosFileSchema,
@@ -118,99 +119,153 @@ function applyText(todo: Editable, typed: { title?: string; description?: string
   return result
 }
 
+/**
+ * The properties of a new item from what was typed: tokens in its title and description become properties, on top
+ * of those already pulled out in quick entry. Throws when no title is left.
+ */
+function typedProperties(input: NewTodo, now: Date): Editable {
+  const { title, description, tags = [], priority = 'none', due } = NewTodoSchema.parse(input)
+  const chosen: Editable = { title, tags, priority, ...(due !== undefined && { due }) }
+  return applyText(chosen, { title, description }, localDay(now))
+}
+
+/** A new open item with a fresh id. */
+function newItem({ title, description, tags, priority, due }: Editable, file: TodosFile, now: Date): SubTodo {
+  return {
+    id: newId(allIds(file)),
+    title,
+    ...(description !== undefined && { description }),
+    priority,
+    ...(due !== undefined && { due }),
+    tags,
+    status: 'open',
+    createdAt: now.toISOString(),
+  }
+}
+
 /** Adds an open Todo at the top level. Tokens in its title and description become its properties. */
 export async function addTodo(input: NewTodo, options: TodoOptions = {}): Promise<Todo> {
-  const {
-    title: typedTitle,
-    description: typedDescription,
-    tags: chosenTags = [],
-    priority: chosenPriority = 'none',
-    due: chosenDue,
-  } = NewTodoSchema.parse(input)
   const now = clock(options)
-  const chosen: Editable = {
-    title: typedTitle,
-    tags: chosenTags,
-    priority: chosenPriority,
-    ...(chosenDue !== undefined && { due: chosenDue }),
-  }
-  const { title, description, tags, priority, due } = applyText(chosen, { title: typedTitle, description: typedDescription }, localDay(now))
+  const properties = typedProperties(input, now)
   return updateTodos(options, (file) => {
-    const todo: Todo = {
-      id: newId(allIds(file)),
-      title,
-      ...(description !== undefined && { description }),
-      priority,
-      ...(due !== undefined && { due }),
-      tags,
-      status: 'open',
-      createdAt: now.toISOString(),
-      subTodos: [],
-    }
+    const todo: Todo = { ...newItem(properties, file, now), subTodos: [] }
     file.todos.push(todo)
     return todo
   })
 }
 
-/** The version of one Todo: a hash of its text as todos.json holds it, keys in their stable order. */
-export function todoVersion(todo: Todo): string {
-  return contentVersion(formatTodosFile({ todos: [todo] }))
-}
-
-// Top-level Todos only until Sub-todos arrive with their own finishing rules.
-function findTodo(file: TodosFile, id: string, ifVersion?: string): Todo {
-  const todo = file.todos.find((candidate) => candidate.id === id)
-  if (!todo) throw new TodoNotFoundError(`No Todo with id ${id}`)
-  assertCurrentVersion(ifVersion, todoVersion(todo), `The Todo “${todo.title}”`)
-  return todo
-}
-
-/** Marks a Todo done and sets its finished timestamp. */
-export async function completeTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
+/**
+ * Adds an open Sub-todo at the end of a Todo's Sub-todos (they keep creation order). It inherits nothing from its
+ * parent. A Sub-todo can't have Sub-todos of its own: one level only.
+ */
+export async function addSubTodo(parentId: string, input: NewTodo, options: TodoOptions = {}): Promise<SubTodo> {
   const now = clock(options)
+  const properties = typedProperties(input, now)
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id, options.ifVersion)
-    todo.status = 'done'
-    todo.finishedAt = now.toISOString()
-    delete todo.dropReason
-    return structuredClone(todo)
+    const found = locate(file, parentId)
+    if (found.parent) throw new TodoInputError('A Sub-todo can’t have Sub-todos of its own')
+    const parent = found.todo
+    const sub = newItem(properties, file, now)
+    parent.subTodos.push(sub)
+    return structuredClone(sub)
   })
 }
 
-/** Drops a Todo: abandoned without being done, with an optional reason, and its finished timestamp set. */
-export async function dropTodo(id: string, input: DropTodo, options: TodoChangeOptions = {}): Promise<Todo> {
+/** A Todo, or a Sub-todo under its parent. Both are written the same way. */
+export type TodoItem = Todo | SubTodo
+
+/**
+ * The version of one Todo or Sub-todo: a hash of its own fields as todos.json holds them, keys in their stable order.
+ * A parent's Sub-todos are left out, so a change to one Sub-todo never makes its parent's copy stale.
+ */
+export function todoVersion(item: TodoItem): string {
+  return contentVersion(formatTodosFile({ todos: [{ ...item, subTodos: [] }] }))
+}
+
+/** A Todo or Sub-todo by id; a Sub-todo comes with its parent. */
+type Found = { todo: Todo; parent?: undefined } | { todo: SubTodo; parent: Todo }
+
+/** Finds a Todo or Sub-todo; with `ifVersion`, refuses it if it changed since that copy was loaded. */
+function locate(file: TodosFile, id: string, ifVersion?: string): Found {
+  const found = ((): Found | undefined => {
+    for (const todo of file.todos) {
+      if (todo.id === id) return { todo }
+      const sub = todo.subTodos.find((candidate) => candidate.id === id)
+      if (sub) return { todo: sub, parent: todo }
+    }
+  })()
+  if (!found) throw new TodoNotFoundError(`No Todo with id ${id}`)
+  const what = `The ${found.parent ? 'Sub-todo' : 'Todo'} “${found.todo.title}”`
+  assertCurrentVersion(ifVersion, todoVersion(found.todo), what)
+  return found
+}
+
+/** Done or Dropped from now on, with a reason only when Dropped for one. */
+function finish(todo: SubTodo, status: 'done' | 'dropped', finishedAt: string, reason?: string) {
+  todo.status = status
+  todo.finishedAt = finishedAt
+  if (reason) todo.dropReason = reason
+  else delete todo.dropReason
+}
+
+/**
+ * Finishes a Todo or Sub-todo. Finishing a parent finishes its open Sub-todos too, at the same moment, so that
+ * reopening it knows which ones to bring back.
+ */
+function finishItem(found: Found, status: 'done' | 'dropped', now: Date, reason?: string): TodoItem {
+  const { todo, parent } = found
+  const finishedAt = now.toISOString()
+  if (!parent) for (const sub of todo.subTodos) if (sub.status === 'open') finish(sub, status, finishedAt, reason)
+  finish(todo, status, finishedAt, reason)
+  return structuredClone(todo)
+}
+
+/** Marks a Todo or Sub-todo done and sets its finished timestamp. A parent's open Sub-todos are marked done with it. */
+export async function completeTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
+  const now = clock(options)
+  return updateTodos(options, (file) => finishItem(locate(file, id, options.ifVersion), 'done', now))
+}
+
+/**
+ * Drops a Todo or Sub-todo: abandoned without being done, with an optional reason, and its finished timestamp set.
+ * A parent's open Sub-todos are Dropped with it, for the same reason.
+ */
+export async function dropTodo(id: string, input: DropTodo, options: TodoChangeOptions = {}): Promise<TodoItem> {
   const reason = DropTodoSchema.parse(input).reason?.trim()
   const now = clock(options)
-  return updateTodos(options, (file) => {
-    const todo = findTodo(file, id, options.ifVersion)
-    todo.status = 'dropped'
-    todo.finishedAt = now.toISOString()
-    if (reason) todo.dropReason = reason
-    else delete todo.dropReason
-    return structuredClone(todo)
-  })
+  return updateTodos(options, (file) => finishItem(locate(file, id, options.ifVersion), 'dropped', now, reason))
 }
 
-/** Puts a done or Dropped Todo back on the open list, clearing its finished timestamp (Undo). */
-export async function reopenTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
+const reopen = (todo: SubTodo) => {
+  todo.status = 'open'
+  delete todo.finishedAt
+  delete todo.dropReason
+}
+
+/**
+ * Puts a done or Dropped Todo or Sub-todo back on the open list, clearing its finished timestamp (Undo). A parent
+ * brings back the Sub-todos it finished; those finished before it stay finished.
+ */
+export async function reopenTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id, options.ifVersion)
-    todo.status = 'open'
-    delete todo.finishedAt
-    delete todo.dropReason
+    const { todo, parent } = locate(file, id, options.ifVersion)
+    if (!parent && todo.finishedAt) {
+      for (const sub of todo.subTodos) if (sub.finishedAt === todo.finishedAt) reopen(sub)
+    }
+    reopen(todo)
     return structuredClone(todo)
   })
 }
 
 /**
- * Changes a Todo's title, description, Tags, priority or due date; only the fields given change. Tokens in a new
- * title or description apply to the Todo, as on add.
+ * Changes a Todo's or Sub-todo's title, description, Tags, priority or due date; only the fields given change.
+ * Tokens in a new title or description apply to it, as on add.
  */
-export async function updateTodo(id: string, input: TodoChange, options: TodoChangeOptions = {}): Promise<Todo> {
+export async function updateTodo(id: string, input: TodoChange, options: TodoChangeOptions = {}): Promise<TodoItem> {
   const change = TodoChangeSchema.parse(input)
   const today = localDay(clock(options))
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id, options.ifVersion)
+    const { todo } = locate(file, id, options.ifVersion)
     const chosen: Editable = {
       title: todo.title,
       description: todo.description,
@@ -230,24 +285,49 @@ export async function updateTodo(id: string, input: TodoChange, options: TodoCha
   })
 }
 
-/** Removes a Todo for good (for mistakes) and returns it, so the caller can offer Undo through `restoreTodo`. */
-export async function deleteTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
+/**
+ * Removes a Todo (with its Sub-todos) or a Sub-todo for good (for mistakes) and returns it, so the caller can offer
+ * Undo through `restoreTodo` or `restoreSubTodo`.
+ */
+export async function deleteTodo(id: string, options: TodoChangeOptions = {}): Promise<TodoItem> {
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id, options.ifVersion)
-    file.todos.splice(file.todos.indexOf(todo), 1)
+    const { todo, parent } = locate(file, id, options.ifVersion)
+    if (parent) parent.subTodos.splice(parent.subTodos.indexOf(todo), 1)
+    else file.todos.splice(file.todos.indexOf(todo), 1)
     return todo
   })
+}
+
+const refuseTaken = (file: TodosFile, ids: string[]) => {
+  const taken = allIds(file)
+  const clash = ids.find((id) => taken.has(id))
+  if (clash) throw new TodoExistsError(`A Todo with id ${clash} already exists`)
 }
 
 /** Puts a deleted Todo back as it was (Undo of delete). Refused if any of its ids is taken meanwhile. */
 export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promise<Todo> {
   const todo = TodoSchema.parse(input)
   return updateTodos(options, (file) => {
-    const taken = allIds(file)
-    const clash = [todo.id, ...todo.subTodos.map((sub) => sub.id)].find((id) => taken.has(id))
-    if (clash) throw new TodoExistsError(`A Todo with id ${clash} already exists`)
+    refuseTaken(file, [todo.id, ...todo.subTodos.map((sub) => sub.id)])
     file.todos.push(todo)
     return structuredClone(todo)
+  })
+}
+
+/**
+ * Puts a deleted Sub-todo back under its parent as it was, in its creation place (Undo of delete). Refused if its id
+ * is taken meanwhile.
+ */
+export async function restoreSubTodo(parentId: string, input: SubTodo, options: TodoOptions = {}): Promise<SubTodo> {
+  const sub = SubTodoSchema.parse(input)
+  return updateTodos(options, (file) => {
+    const found = locate(file, parentId)
+    if (found.parent) throw new TodoInputError('A Sub-todo can’t have Sub-todos of its own')
+    refuseTaken(file, [sub.id])
+    const subTodos = found.todo.subTodos
+    const after = subTodos.findIndex((other) => other.createdAt > sub.createdAt)
+    subTodos.splice(after === -1 ? subTodos.length : after, 0, sub)
+    return structuredClone(sub)
   })
 }
 

@@ -117,6 +117,32 @@ describe('ostraka todo', () => {
     })
   })
 
+  it('adds a Sub-todo under a parent id, listed indented under it in creation order', async () => {
+    const parent = idOf((await ostraka('todo', 'add', 'Release 2.0', '*high')).stdout)
+    const added = await ostraka('todo', 'add', 'Write the notes #docs', '--parent', parent)
+    expect(added).toMatchObject({ code: 0, stderr: '' })
+    const first = idOf(added.stdout)
+    expect(added.stdout).toBe(`Added ${first}  Write the notes  #docs (Sub-todo of ${parent})\n`)
+    const second = JSON.parse((await ostraka('todo', 'add', 'Tag the release', '--parent', parent, '--json')).stdout)
+    expect(second).toMatchObject({ title: 'Tag the release', priority: 'none', tags: [], status: 'open' })
+    expect(second).not.toHaveProperty('subTodos')
+
+    await ostraka('todo', 'done', first)
+    expect((await ostraka('todo', 'list')).stdout).toBe(
+      `${parent}  Release 2.0  *high\n  ${first}  Write the notes  #docs (done)\n  ${second.id}  Tag the release\n`,
+    )
+  })
+
+  it('refuses a Sub-todo under a Sub-todo', async () => {
+    const parent = idOf((await ostraka('todo', 'add', 'Release 2.0')).stdout)
+    const sub = idOf((await ostraka('todo', 'add', 'Write the notes', '--parent', parent)).stdout)
+    expect(await ostraka('todo', 'add', 'Too deep', '--parent', sub)).toEqual({
+      code: 1,
+      stdout: '',
+      stderr: 'A Sub-todo can’t have Sub-todos of its own\n',
+    })
+  })
+
   it('joins several words into one title', async () => {
     const { stdout } = await ostraka('todo', 'add', 'Ship', 'it')
     expect(stdout).toMatch(/ Ship it\n$/)

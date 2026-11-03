@@ -1,4 +1,5 @@
 import {
+  addSubTodo,
   addTodo,
   completeTodo,
   deleteTodo,
@@ -11,8 +12,10 @@ import {
   TagsFileError,
   NewTodoSchema,
   reopenTodo,
+  restoreSubTodo,
   restoreTodo,
   StaleVersionError,
+  SubTodoSchema,
   TodoChangeSchema,
   TodoExistsError,
   TodoInputError,
@@ -21,13 +24,25 @@ import {
   TodosFileError,
   todoVersion,
   updateTodo,
-  type Todo,
+  type SubTodo,
+  type TodoItem,
   type TodoOptions,
 } from '@ostraka/core'
 import { Hono, type Context } from 'hono'
 import { loadedVersion, withoutVersion, withVersion } from './versions.ts'
 
-const versioned = (todo: Todo) => withVersion(todo, todoVersion(todo))
+const versionedSub = (sub: SubTodo) => withVersion(sub, todoVersion(sub))
+
+/** A Todo or Sub-todo with its version; a Todo's Sub-todos each carry their own. */
+const versioned = (item: TodoItem) =>
+  'subTodos' in item ? { ...withVersion(item, todoVersion(item)), subTodos: item.subTodos.map(versionedSub) } : versionedSub(item)
+
+/** A Todo posted back as the API answered it: without its version or its Sub-todos' versions. */
+function withoutVersions(value: unknown): unknown {
+  const item = withoutVersion(value)
+  if (typeof item !== 'object' || item === null || !('subTodos' in item) || !Array.isArray(item.subTodos)) return item
+  return { ...item, subTodos: item.subTodos.map(withoutVersion) }
+}
 
 export type Schema<T> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } }
@@ -54,9 +69,11 @@ function onTodoError(error: Error, c: Context) {
 }
 
 /**
- * `/api/todos`: list open and finished Todos, add one, change one, mark one done, Drop one, reopen one (Undo of done
- * or Drop), delete one and restore it (Undo of delete). All writes go through core. Every Todo answered carries its
- * `version`; a change to an existing Todo sent with `If-Match` is refused (412) if the Todo changed since.
+ * `/api/todos`: list open and finished Todos, add one or a Sub-todo under one, change one, mark one done, Drop one,
+ * reopen one (Undo of done or Drop), delete one and restore it (Undo of delete). Every action on a Todo works on a
+ * Sub-todo by its id, and finishing a parent finishes its open Sub-todos. All writes go through core. Every Todo and
+ * Sub-todo answered carries its own `version`; a change to an existing one sent with `If-Match` is refused (412) if it
+ * changed since.
  */
 export function todoRoutes(options: TodoOptions) {
   const routes = new Hono()
@@ -81,9 +98,21 @@ export function todoRoutes(options: TodoOptions) {
   })
 
   routes.post('/restore', async (c) => {
-    const body = await readBody(c, { safeParse: (value: unknown) => TodoSchema.safeParse(withoutVersion(value)) })
+    const body = await readBody(c, { safeParse: (value: unknown) => TodoSchema.safeParse(withoutVersions(value)) })
     if (!body.ok) return body.response
     return c.json(versioned(await restoreTodo(body.data, options)), 201)
+  })
+
+  routes.post('/:id/sub-todos', async (c) => {
+    const body = await readBody(c, NewTodoSchema)
+    if (!body.ok) return body.response
+    return c.json(versioned(await addSubTodo(c.req.param('id'), body.data, options)), 201)
+  })
+
+  routes.post('/:id/sub-todos/restore', async (c) => {
+    const body = await readBody(c, { safeParse: (value: unknown) => SubTodoSchema.safeParse(withoutVersions(value)) })
+    if (!body.ok) return body.response
+    return c.json(versioned(await restoreSubTodo(c.req.param('id'), body.data, options)), 201)
   })
 
   routes.post('/:id/done', async (c) => c.json(versioned(await completeTodo(c.req.param('id'), changing(c)))))
