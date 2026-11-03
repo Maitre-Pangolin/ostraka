@@ -85,15 +85,21 @@ function isWholeToken(word: string): boolean {
 
 const INLINE = new Set(['text', 'inlineCode', 'emphasis', 'strong', 'delete', 'link', 'linkReference', 'break'])
 
-/** A Markdown body as the words a reader sees, without marks: what is indexed and what snippets show. */
-function plainText(markdown: string): string {
+/**
+ * A Markdown body as the words a reader sees, without marks: what is indexed and what snippets show. A first `# `
+ * heading that reads as `title` is left out, since the title is indexed and shown on its own.
+ */
+function plainText(markdown: string, title?: string): string {
+  const tree = parseMarkdown(markdown)
   const visit = (node: MarkdownTree | MarkdownNode): string => {
     if ('value' in node && typeof node.value === 'string' && node.type !== 'html') return node.value
     if (node.type === 'image') return node.alt ?? ''
     if (!('children' in node)) return ''
     return node.children.map((child) => (INLINE.has(child.type) ? visit(child) : ` ${visit(child)} `)).join('')
   }
-  return visit(parseMarkdown(markdown)).replace(/\s+/g, ' ').trim()
+  const [first] = tree.children
+  if (first?.type === 'heading' && first.depth === 1 && visit(first).trim() === title) tree.children.shift()
+  return visit(tree).replace(/\s+/g, ' ').trim()
 }
 
 // --- Query ------------------------------------------------------------------------------------------------------
@@ -353,7 +359,14 @@ async function readDoc(kind: Exclude<SearchKind, 'todo'>, id: string, options: C
     if (kind === 'note') {
       const note = await readNote(id, options)
       if (isBrokenNote(note)) return undefined
-      return { kind, id, title: note.title, body: plainText(note.body), day: localDay(new Date(note.modifiedAt)), tags: note.tags }
+      return {
+        kind,
+        id,
+        title: note.title,
+        body: plainText(note.body, note.title),
+        day: localDay(new Date(note.modifiedAt)),
+        tags: note.tags,
+      }
     }
     if (kind === 'devlog') {
       const log = await readDevlog(id, options)

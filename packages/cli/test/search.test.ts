@@ -45,7 +45,7 @@ describe('ostraka search', () => {
     const [first, second, third] = stdout.split('\n')
     expect(first).toMatch(/^note {2}plan1 {2}Release plan {2}\d{4}-\d{2}-\d{2} {2}#work$/)
     expect(second).toBe(`  ${join(contentRoot, 'notes', 'plan1.md')}`)
-    expect(third).toBe('  Release plan Ship the payment **gateway** on Friday.')
+    expect(third).toBe('  Ship the payment **gateway** on Friday.')
   })
 
   it('says when nothing matches', async () => {

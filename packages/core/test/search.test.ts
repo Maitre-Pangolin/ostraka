@@ -105,7 +105,14 @@ describe('searchContent', () => {
   it('shows the snippet as plain text, without Markdown marks', async () => {
     await note('a', '# Plan\n\n- Ship the **payment** [gateway](https://example.com/gw) with `retry`\n> quoted')
     const [hit] = await searchContent({ text: 'gateway' }, options)
-    expect(hit!.snippet.map((piece) => piece.text).join('')).toBe('Plan Ship the payment gateway with retry quoted')
+    expect(hit!.snippet.map((piece) => piece.text).join('')).toBe('Ship the payment gateway with retry quoted')
+  })
+
+  it('leaves out of the snippet the heading a Note is titled by, but still finds the Note by its title', async () => {
+    await note('a', '# Gateway plan\n\nShip it on Friday.')
+    const [hit] = await searchContent({ text: 'gateway' }, options)
+    expect(hit).toMatchObject({ title: 'Gateway plan' })
+    expect(hit!.snippet.map((piece) => piece.text).join('')).toBe('Ship it on Friday.')
   })
 
   it('reads nothing typed as query syntax', async () => {
