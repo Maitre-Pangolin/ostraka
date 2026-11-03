@@ -4,6 +4,7 @@ import { serveStatic } from '@hono/node-server/serve-static'
 import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import { activityPoller, type Activity } from './activity/poller.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
@@ -22,13 +23,22 @@ export type AppOptions = {
   credentials?: Credentials
   /** Changes to the content folder, sent to the browser as live updates; shared with the server's other listeners. */
   events?: ContentEvents
+  /** The work overview's pollers (`workOverview()`), started by the caller. None by default, so nothing is polled. */
+  activity?: Activity
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist, content = {}, credentials = {}, onContentChange, events = contentEvents(content) }: AppOptions) {
+export function createApp({
+  webDist,
+  content = {},
+  credentials = {},
+  onContentChange,
+  events = contentEvents(content),
+  activity = activityPoller({ sources: [], clock: { now: Date.now, setTimeout: () => () => {} } }),
+}: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -46,10 +56,11 @@ export function createApp({ webDist, content = {}, credentials = {}, onContentCh
     await next()
   })
 
-  // Every API write goes through core to the content folder, so a successful one means the content changed.
+  // Every API write goes through core to the content folder, so a successful one means the content changed;
+  // except the work overview's, which only report a window's visibility.
   app.use('/api/*', async (c, next) => {
     await next()
-    if (!SAFE_METHODS.has(c.req.method) && c.res.ok) onContentChange?.()
+    if (!SAFE_METHODS.has(c.req.method) && c.res.ok && !c.req.path.startsWith('/api/activity/')) onContentChange?.()
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
@@ -60,15 +71,32 @@ export function createApp({ webDist, content = {}, credentials = {}, onContentCh
   app.get('/api/events', (c) =>
     streamSSE(c, async (stream) => {
       const closed = new Promise<void>((resolve) => stream.onAbort(resolve))
-      const unsubscribe = await events.subscribe((change) => void stream.writeSSE({ data: JSON.stringify(change) }))
+      const send = (change: object) => void stream.writeSSE({ data: JSON.stringify(change) })
+      const unsubscribe = await events.subscribe(send)
+      // `?client=` names the window, which then reports its visibility to the work overview's schedule.
+      const client = c.req.query('client')
+      const disconnect = client ? activity.connect(client) : undefined
       try {
         await stream.writeSSE({ event: 'ready', data: '' })
         await closed
       } finally {
         unsubscribe()
+        disconnect?.()
       }
     }),
   )
+
+  // The work overview: each Activity source's latest data, or why it is failing or off.
+  app.get('/api/activity', (c) => c.json({ sources: activity.statuses() }))
+  // A window shows or hides the app: the server owns the schedule, the window only says whether it is seen.
+  app.post('/api/activity/visibility', async (c) => {
+    const body = (await c.req.json().catch(() => undefined)) as { client?: unknown; visible?: unknown } | undefined
+    if (typeof body?.client !== 'string' || typeof body.visible !== 'boolean') {
+      return c.json({ error: 'Expected { client: string, visible: boolean }' }, 400)
+    }
+    activity.setVisibility(body.client, body.visible)
+    return c.body(null, 204)
+  })
 
   // Read on each request, so the Settings view shows edits to config.yml without a restart.
   app.get('/api/settings', async (c) => {

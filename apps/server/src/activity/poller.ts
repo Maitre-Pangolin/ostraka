@@ -1,0 +1,175 @@
+// The work overview's schedule: every Activity source the app polls (GitLab now, Jira next) runs its jobs here.
+// The server owns the schedule; the UI only reports whether a window is visible.
+import type { Clock } from './clock.ts'
+
+/** How often a job runs while a window shows the app, and while none does. */
+export type Rates = { visibleMs: number; hiddenMs: number }
+
+/** Turns the data a job last saw into the data after this run, applied to the source's latest data. */
+export type Update<T> = (latest: T | undefined) => T
+
+export type Job<T> = {
+  rates: Rates
+  /** Whether the job runs at all, given the source's latest data. Re-checked after every run; always when omitted. */
+  active?: (data: T | undefined) => boolean
+  run(data: T | undefined): Promise<Update<T>>
+}
+
+export type ActivitySource<T> = {
+  /** Its name in `/api/activity` and in live updates (`{ kind: 'activity', id: name }`). */
+  name: string
+  jobs: Job<T>[]
+}
+
+/** One source as the app sees it. Data from before a failure is kept, and marked stale. */
+export type SourceStatus = {
+  source: string
+  /** `loading` before the first answer; `off` when it is not set up. */
+  state: 'loading' | 'ok' | 'failing' | 'off'
+  /** Why it is failing or off. */
+  reason?: string
+  data?: unknown
+  /** When data last arrived, as an ISO date. */
+  updatedAt?: string
+  stale: boolean
+}
+
+export type ActivityChange = { kind: 'activity'; id: string }
+export type ActivityListener = (change: ActivityChange) => void
+
+export type Activity = {
+  start(): void
+  stop(): void
+  statuses(): SourceStatus[]
+  /** Called with `{ kind: 'activity', id }` whenever a source's status changes. */
+  subscribe(listener: ActivityListener): () => void
+  /** A window opened the app (its live-updates stream); hidden until it reports otherwise. Returns its disconnect. */
+  connect(client: string): () => void
+  /** A connected window became visible or hidden. Sources poll at their visible rates while any window is visible. */
+  setVisibility(client: string, visible: boolean): void
+}
+
+/** A source that is not set up (no base URL, no token): it is off, not failing, and holds no data. */
+export class SourceOffError extends Error {}
+
+type JobState<T> = {
+  job: Job<T>
+  /** When it last started, or when it became active: the data that made it active is that fresh. */
+  lastRun?: number
+  active: boolean
+  running: boolean
+  error?: string
+  cancel?: () => void
+}
+
+type SourceState<T> = {
+  source: ActivitySource<T>
+  jobs: JobState<T>[]
+  data?: T
+  updatedAt?: number
+  off?: string
+}
+
+export function activityPoller({ sources, clock }: { sources: ActivitySource<any>[]; clock: Clock }): Activity {
+  const listeners = new Set<ActivityListener>()
+  const states: SourceState<unknown>[] = sources.map((source) => ({ source, jobs: source.jobs.map((job) => ({ job, active: false, running: false })) }))
+  let started = false
+  /** Each connected window, and whether it is visible. */
+  const windows = new Map<string, boolean>()
+
+  const visible = () => [...windows.values()].some(Boolean)
+  const interval = (job: Job<unknown>) => (visible() ? job.rates.visibleMs : job.rates.hiddenMs)
+  // An off source keeps its schedule: each run checks the config again, without calling out.
+  const isActive = (state: SourceState<unknown>, job: Job<unknown>) => job.active?.(state.data) ?? true
+
+  const notify = (state: SourceState<unknown>) => {
+    for (const listener of listeners) listener({ kind: 'activity', id: state.source.name })
+  }
+
+  const schedule = (state: SourceState<unknown>, jobState: JobState<unknown>) => {
+    jobState.cancel?.()
+    jobState.cancel = undefined
+    const wasActive = jobState.active
+    jobState.active = isActive(state, jobState.job)
+    if (!jobState.active) {
+      if (jobState.job.active) jobState.error = undefined
+      return
+    }
+    if (!wasActive && jobState.job.active) jobState.lastRun = clock.now()
+    if (!started || jobState.running) return
+    const due = jobState.lastRun === undefined ? clock.now() : jobState.lastRun + interval(jobState.job)
+    jobState.cancel = clock.setTimeout(() => run(state, jobState), Math.max(0, due - clock.now()))
+  }
+
+  const run = async (state: SourceState<unknown>, jobState: JobState<unknown>) => {
+    jobState.cancel = undefined
+    jobState.running = true
+    jobState.lastRun = clock.now()
+    try {
+      const update = await jobState.job.run(state.data)
+      if (!started) return
+      state.data = update(state.data)
+      state.updatedAt = clock.now()
+      state.off = undefined
+      jobState.error = undefined
+    } catch (error) {
+      if (!started) return
+      if (error instanceof SourceOffError) {
+        state.off = error.message
+        state.data = undefined
+        state.updatedAt = undefined
+      } else {
+        jobState.error = error instanceof Error ? error.message : String(error)
+      }
+    } finally {
+      jobState.running = false
+    }
+    // The new data may start or stop another job (running pipelines).
+    for (const other of state.jobs) schedule(state, other)
+    notify(state)
+  }
+
+  const status = (state: SourceState<unknown>): SourceStatus => {
+    const failure = state.jobs.find((jobState) => jobState.error !== undefined)?.error
+    const base = { source: state.source.name, data: state.data, updatedAt: state.updatedAt === undefined ? undefined : new Date(state.updatedAt).toISOString() }
+    if (state.off !== undefined) return { source: state.source.name, state: 'off', reason: state.off, stale: false }
+    if (failure !== undefined) return { ...base, state: 'failing', reason: failure, stale: state.data !== undefined }
+    if (state.updatedAt === undefined) return { ...base, state: 'loading', stale: false }
+    return { ...base, state: 'ok', stale: false }
+  }
+
+  const rescheduleAll = () => {
+    for (const state of states) for (const jobState of state.jobs) schedule(state, jobState)
+  }
+
+  /** Applies a change to the windows; a change of overall visibility moves every job to its new rate. */
+  const changeWindows = (change: () => void) => {
+    const before = visible()
+    change()
+    if (visible() !== before) rescheduleAll()
+  }
+
+  return {
+    start() {
+      if (started) return
+      started = true
+      rescheduleAll()
+    },
+    stop() {
+      started = false
+      for (const state of states) for (const jobState of state.jobs) jobState.cancel?.()
+    },
+    statuses: () => states.map(status),
+    subscribe(listener) {
+      listeners.add(listener)
+      return () => void listeners.delete(listener)
+    },
+    connect(client) {
+      windows.set(client, false)
+      return () => changeWindows(() => windows.delete(client))
+    },
+    setVisibility(client, isVisible) {
+      if (windows.has(client)) changeWindows(() => windows.set(client, isVisible))
+    },
+  }
+}
