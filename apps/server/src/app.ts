@@ -8,6 +8,7 @@ import { activityPoller, type Activity } from './activity/poller.ts'
 import type { Backups } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
+import { historyRoutes } from './history.ts'
 import { noteRoutes } from './notes.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
 
@@ -27,8 +28,11 @@ export type AppOptions = {
   events?: ContentEvents
   /** The work overview's pollers (`workOverview()`), started by the caller. None by default, so nothing is polled. */
   activity?: Activity
-  /** The server's backup schedule, for the top bar's warning. Without one, the status comes from the repo alone. */
-  backups?: Pick<Backups, 'status'>
+  /**
+   * The server's backup schedule, for the top bar's warning and to push a restore's Snapshot. Without one, the
+   * status comes from the repo alone and nothing is pushed.
+   */
+  backups?: Pick<Backups, 'status'> & Partial<Pick<Backups, 'snapshotted'>>
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
@@ -72,6 +76,7 @@ export function createApp({
   app.route('/api/todos', todoRoutes(content))
   app.route('/api/tags', tagRoutes(content))
   app.route('/api/notes', noteRoutes(content))
+  app.route('/api/history', historyRoutes(content, { onSnapshot: () => backups.snapshotted?.() }))
 
   // Live updates: one stream of `{kind, id?}` changes, to content and to the work overview (`{ kind: 'activity',
   // id: source }`). `ready` comes first, once changes are being watched.
