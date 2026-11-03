@@ -23,8 +23,8 @@ export function PeoplePicker({ chosen, onToggle }: { chosen: string[]; onToggle:
       onToggle={onToggle}
       render={(id) => (
         <span className="flex min-w-0 items-baseline gap-1.5">
-          <span className="truncate">{nameOf(id)}</span>
-          <span className="text-muted-foreground truncate text-[11px]">{mentionToken(id)}</span>
+          <span className="max-w-full shrink-0 truncate">{nameOf(id)}</span>
+          <span className="text-muted-foreground min-w-0 truncate text-[11px]">{mentionToken(id)}</span>
         </span>
       )}
       name={(id) => `Mentions ${nameOf(id)}`}

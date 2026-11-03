@@ -60,9 +60,9 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 ## Filters
 
-- A list is narrowed by filter chips over it (`TodoFilters` in `src/todos/filters.tsx`): each chip (Priority, Tags, later People) opens a Popover checklist (Tags alphabetical) with a search field past 6 options. A chip with values chosen is tinted `primary` and shows their count.
-- Groups combine with AND. Tags match all chosen by default, with an All/Any toggle in the Tags picker.
-- Active values follow as removable chips (×), then Clear all. With more than one Tag, the chips are labelled "All of" or "Any of".
+- A list is narrowed by filter chips over it (`TodoFilters` in `src/todos/filters.tsx`): each chip (Priority, People, Tags) opens a Popover checklist (Tags alphabetical, People by name) with a search field past 6 options (`searchText` says what it matches: People by name, id and aliases). A chip with values chosen is tinted `primary` and shows their count.
+- Groups combine with AND. Tags match all chosen by default, with an All/Any toggle in the Tags picker. People (`PeoplePicker`, `PersonFilterChips` in `src/people/people-filter.tsx`, `?person=` in the URL) keep what mentions all the chosen Persons; the same chip narrows stacked Dev logs.
+- Active values follow as removable chips (×), then Clear all. With more than one Tag, the chips are labelled "All of" or "Any of"; with more than one Person, "All of".
 - Matching is core's (`@ostraka/core/todo-filter`), never the app's own, and keeps the server's order. A parent that matches only through its Sub-todos stays in the list dimmed (`DIMMED`), with the matching Sub-todos under it.
 - A filter that matches nothing shows the empty line, naming how to widen it.
 
@@ -82,7 +82,8 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Dev logs and monthly summaries open read-only, rendered by `MarkdownView` (`src/devlogs/markdown-view.tsx`) from core's parser (`parseMarkdown`) and styled by `.devlog-prose` in `src/index.css`. Raw HTML shows as text; only web and mail links are links, opening in a new tab. Edit in the header switches to the Notes editor (`DevlogEditor`, same saving rules as Notes), View back.
 - A Todo link, `[title](todo:<id>)`, shows the Todo's current title from the Todo queries, with a square (open) or checked square (finished); a Todo that no longer exists keeps the stored text, muted and struck through.
 - The list opens first, never the first item: months newest first, each month's summary on top, then its weeks (a week header opens that week stacked). A weekday up to today without a Dev log shows as a muted row with the skill's command (`/devlog`); an off day shows its label with a `Palmtree`. Layout by month, week and gap, the range presets and the Tag filter are core's (`@ostraka/core/devlog-days`).
-- A date range is a Popover from the `Dates` chip: presets over a range Calendar (first click from, second to). The range and Tags live in the URL (`parseDevlogsView`). Stacked days reuse the Tags chip from the Todo filters (`FilterPicker`, `MatchToggle`, `ActiveChip`).
+- A date range is a Popover from the `Dates` chip: presets over a range Calendar (first click from, second to). The range, Tags and People live in the URL (`parseDevlogsView`). Stacked days reuse the People and Tags chips from the Todo filters (`PeoplePicker`, `FilterPicker`, `MatchToggle`, `ActiveChip`).
+- A Mention in a Dev log is drawn by the app (`mention` on `MarkdownView`), as `MentionChip`.
 - A day whose sections stray from Done / Meetings & discussions / Notes shows a `warning` `TriangleAlert` in its header, carrying the problems as its title.
 
 ## Sketches
@@ -103,7 +104,15 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - A Reference (`group/project!<iid>`, `<KEY>-<number>`) is plain text in storage. Its grammar, URL → token, completion and suggestions are core's (`@ostraka/core/references`), never the app's own.
 - Shown text renders each Reference as a chip (`ReferenceText`, `ReferenceChip` in `src/references/reference-chip.tsx`): icon, number (`!809`, `PAY-1432`), status dot. Hovering or focusing one opens a Popover card with the token, title, pipeline and approvals or Jira status, and Open.
 - Status comes from the top bar's polled data (`useReferenceIndex` in `src/references/api.ts`); a Reference it didn't poll shows a dashed dot and is fetched when its card opens (`GET /api/references?token=`), its error in the card. Dot colours live in `src/references/status.ts`.
-- `TokenField` is a small ProseMirror editor (model in `src/todos/token-doc.ts`, tested in `test/token-doc.test.ts`) where References are atomic chips: typing next to one can't break it, Backspace removes it whole. `!` + number or words suggests my open MRs, `KEY-` my open sprint tickets. A complete token, or a `!<iid>` only one open MR has, becomes a chip on a space or punctuation; a pasted MR or Jira URL under the configured sites becomes its token. On save a word touching a chip gets a space (core's `joinPieces`). Mentions (#47) join as another chip kind.
+- `TokenField` is a small ProseMirror editor (model in `src/todos/token-doc.ts`, tested in `test/token-doc.test.ts`) where References are atomic chips: typing next to one can't break it, Backspace removes it whole. `!` + number or words suggests my open MRs, `KEY-` my open sprint tickets. A complete token, or a `!<iid>` only one open MR has, becomes a chip on a space or punctuation; a pasted MR or Jira URL under the configured sites becomes its token. On save a word touching a chip gets a space (core's `joinPieces`). Mentions are another chip kind (see Mentions).
+
+## Mentions
+
+- A Mention (`@<person id>`) is plain text in storage. Its grammar, Person suggestions, completion and contact links are core's (`@ostraka/core/mentions`); the People directory comes from `GET /api/people` (`usePeopleIndex` in `src/people/api.ts`, query key `['people']`).
+- Shown text renders a Mention of a known Person as their current display name in `primary` (`MentionChip` in `src/people/mention-chip.tsx`, through `ReferenceText` and `MarkdownView`). Hovering or focusing it opens the contact card: Slack DM first, then email, then GitLab and Jira profile links, each value with a copy button.
+- A Mention of an id not in the directory stays plain text followed by a muted `UserPlus` button: its Popover offers an inline form (name guessed from the id, optional email) that adds the Person (`POST /api/people`).
+- In `TokenField`, `@` suggests Persons by id, name words and aliases (accents ignored); a picked one, or a known `@<person id>` followed by a space or punctuation, becomes an atomic Mention chip showing the name. An unknown id stays text there.
+- In the Notes editor (and a Dev log being edited), Mentions of known Persons stay `@<person id>` text, highlighted by their own ProseMirror plugin (`src/people/mention-highlight.ts`, `.ostraka-mention` in `src/index.css`) with the name as a title.
 
 ## Keyboard
 
