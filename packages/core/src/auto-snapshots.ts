@@ -1,6 +1,6 @@
 // Automatic Snapshots for the server: one commit once changes settle, rather than one per change.
 import type { ContentRootOptions } from './content-root.ts'
-import { ensureContentRepo, snapshot } from './snapshots.ts'
+import { AUTO_SNAPSHOT_MESSAGE, ensureContentRepo, snapshot } from './snapshots.ts'
 
 export type AutoSnapshotOptions = ContentRootOptions & {
   /** Commit once the content has had no change for this long. Default 60 s. */
@@ -20,7 +20,7 @@ export type AutoSnapshots = {
   stop(): Promise<void>
 }
 
-export const AUTO_SNAPSHOT_MESSAGE = 'Automatic snapshot'
+export { AUTO_SNAPSHOT_MESSAGE }
 
 /** Makes the content folder a git repo if needed, then commits after changes settle. */
 export async function startAutoSnapshots({
