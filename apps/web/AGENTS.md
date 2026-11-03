@@ -105,6 +105,12 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Status comes from the top bar's polled data (`useReferenceIndex` in `src/references/api.ts`); a Reference it didn't poll shows a dashed dot and is fetched when its card opens (`GET /api/references?token=`), its error in the card. Dot colours live in `src/references/status.ts`.
 - `TokenField` is a small ProseMirror editor (model in `src/todos/token-doc.ts`, tested in `test/token-doc.test.ts`) where References are atomic chips: typing next to one can't break it, Backspace removes it whole. `!` + number or words suggests my open MRs, `KEY-` my open sprint tickets. A complete token, or a `!<iid>` only one open MR has, becomes a chip on a space or punctuation; a pasted MR or Jira URL under the configured sites becomes its token. On save a word touching a chip gets a space (core's `joinPieces`). Mentions (#47) join as another chip kind.
 
+## Search
+
+- ⌘K (Ctrl+K) opens `SearchDialog` (`src/search/search-dialog.tsx`), mounted once in the shell, from anywhere: the shortcut is caught before editors see it. Each opening starts empty. It is shadcn's `command` (cmdk) in a Dialog, with `shouldFilter={false}`: the server finds and ranks (`GET /api/search`, `useSearch` in `src/search/api.ts`), the dialog only lays the hits out and moves the selection.
+- Hits are grouped by kind, kinds in the order of their best hit (`groupHits`), the server's order kept within each. A row is the kind's rail icon, the title (a Dev log's day or a monthly summary's month, written out), the date at the end; under it the snippet with matches in `<mark>` (`bg-primary/15`) and the Tags as pills. A finished Todo is muted and struck through, a Dropped one says so. ↵ opens the item's view.
+- One muted line stands in for the hits while there is no text, while the server is still indexing ("Indexing…", asked again every 500 ms) and when nothing matches; an error is that line in `text-destructive`. Live updates refetch `['search']` on any content change.
+
 ## Keyboard
 
 - ↵ commits.

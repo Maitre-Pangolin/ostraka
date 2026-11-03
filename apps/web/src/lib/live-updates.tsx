@@ -30,8 +30,11 @@ export function LiveUpdates() {
     events.addEventListener('message', (event) => {
       const { kind } = JSON.parse(event.data as string) as LiveChange
       void queryClient.invalidateQueries({ queryKey: [kind] })
-      // Tags are gathered from every kind's content.
-      if (kind !== 'activity') void queryClient.invalidateQueries({ queryKey: ['tags'] })
+      // Tags are gathered from every kind's content, and search covers every kind.
+      if (kind !== 'activity') {
+        void queryClient.invalidateQueries({ queryKey: ['tags'] })
+        void queryClient.invalidateQueries({ queryKey: ['search'] })
+      }
     })
     // `ready` starts every connection, the first and each reconnect: changes made while the stream was down
     // (or before it was up) were never sent, so everything shown is refetched. The server knows this window
