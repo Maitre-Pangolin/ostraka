@@ -20,6 +20,8 @@ export const ConfigSchema = z.looseObject({
       site: z.url({ protocol: /^https?$/ }).optional(),
       /** Scoped tokens go through https://api.atlassian.com/ex/jira/<cloud_id>; from <site>/_edge/tenant_info. */
       cloud_id: z.guid().optional(),
+      /** The Atlassian account's email: a scoped API token signs in with it (Basic auth). */
+      email: z.email().optional(),
       /** The board whose active sprint is shown. */
       board_id: z.int().positive().optional(),
       /** The "my tickets" JQL. */

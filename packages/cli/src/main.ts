@@ -18,7 +18,8 @@ import {
   type SubTodo,
   type Todo,
 } from '@ostraka/core'
-import { HOSTNAME, macKeychain, PORT, startServer } from '@ostraka/server'
+import { HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
+import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
 import { install as installAgent, realSystem, type System } from './install.ts'
 
 export type { System } from './install.ts'
@@ -28,6 +29,10 @@ export type Io = {
   homeDir?: string
   /** launchd, node and the platform, for `install`. Tests pass a fake. */
   system?: System
+  /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
+  keychain?: Keychain
+  /** Asks the user one line, for the `init` walkthrough. */
+  readLine?: (prompt: string) => Promise<string>
   stdout: (text: string) => void
   stderr: (text: string) => void
 }
@@ -61,7 +66,7 @@ const USAGE = `Usage:
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -80,6 +85,10 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await todoCommand(rest, io)
       case 'note':
         return await noteCommand(rest, io)
+      case 'backup':
+        return await backupCommand(rest, io)
+      case 'init':
+        return await initCommand(rest, io)
       default:
         io.stderr(USAGE)
         return 1

@@ -1,33 +1,16 @@
 // Snapshots: the content folder is its own git repo, and a Snapshot is one commit across the whole folder.
-import { execFile } from 'node:child_process'
 import { access, appendFile, mkdir, readFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
-import { promisify } from 'node:util'
 import { contentFileAt } from './content-path.ts'
 import { resolveContentRoot, type ContentRootOptions } from './content-root.ts'
+import { git, runGit } from './git.ts'
+import type { FileSnapshot, Restore } from './history-schema.ts'
 import { withFileLock, writeFileAtomic } from './locked-file.ts'
-
-const execFileAsync = promisify(execFile)
 
 export type Snapshot = { commit: string; message: string }
 
 /** The message of a Snapshot made once changes settle, or of changes committed before a restore. */
 export const AUTO_SNAPSHOT_MESSAGE = 'Automatic snapshot'
-
-// Variables that would point git at another repo than the content folder (set when called from a git hook, say).
-const REPO_LOCATION_VARS = ['GIT_DIR', 'GIT_WORK_TREE', 'GIT_INDEX_FILE', 'GIT_OBJECT_DIRECTORY', 'GIT_COMMON_DIR', 'GIT_PREFIX']
-
-async function git(root: string, args: string[]): Promise<string> {
-  return (await gitRaw(root, args)).trim()
-}
-
-// A content file may be large (a warning comes at 10 MB): its text comes back whole, never trimmed.
-async function gitRaw(root: string, args: string[]): Promise<string> {
-  const env = { ...process.env }
-  for (const name of REPO_LOCATION_VARS) delete env[name]
-  const { stdout } = await execFileAsync('git', ['-C', root, ...args], { encoding: 'utf8', env, maxBuffer: 256 * 1024 * 1024 })
-  return stdout
-}
 
 /** Makes the content folder its own git repo (no remote) unless it already is one. */
 export async function ensureContentRepo(options: ContentRootOptions = {}): Promise<string> {
@@ -84,9 +67,6 @@ async function commitAll(root: string, message: string): Promise<Snapshot | unde
   return { commit: await git(root, ['rev-parse', 'HEAD']), message }
 }
 
-/** A Snapshot in a file's history: when it was made, and its message. */
-export type FileSnapshot = Snapshot & { date: string }
-
 const FIELD = '\x1f'
 
 /**
@@ -111,10 +91,6 @@ async function snapshotsIn(root: string, args: string[]): Promise<FileSnapshot[]
       return { commit, message, date }
     })
 }
-
-/** What a restore did: the Snapshot it made (none when the file already was that version), and the Snapshot of
- * the content folder just before it, which restoring undoes the restore. */
-export type Restore = { restored: FileSnapshot | undefined; before: FileSnapshot | undefined }
 
 /**
  * Brings back a file as one Snapshot held it, without rewriting history: changes not yet in a Snapshot are
@@ -149,11 +125,10 @@ export async function fileAtSnapshot(path: string, commit: string, options: Cont
   const root = await resolveContentRoot(options)
   const notFound = new SnapshotNotFoundError(`No Snapshot ${commit} of ${path}`)
   if (!/^[0-9a-f]{4,64}$/i.test(commit) || !(await hasHead(root))) throw notFound
-  try {
-    return await gitRaw(root, ['cat-file', 'blob', `${commit}:${path}`])
-  } catch {
-    throw notFound
-  }
+  // The text whole, never trimmed.
+  const blob = await runGit(root, ['cat-file', 'blob', `${commit}:${path}`])
+  if (blob.code !== 0) throw notFound
+  return blob.stdout
 }
 
 /** Whether the content folder is its own repo with a first commit (and not a folder inside another repo). */

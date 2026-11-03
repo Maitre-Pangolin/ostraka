@@ -456,7 +456,11 @@ describe('startServer', () => {
       const { port } = server.address() as { port: number }
       await expect.poll(() => gitlab.calls.length).toBe(1)
       const { sources } = JSON.parse(await httpGet(port, '/api/activity')) as { sources: { source: string; state: string }[] }
-      expect(sources).toEqual([expect.objectContaining({ source: 'gitlab', state: 'ok' })])
+      // Jira, the other source, is off here: no jira section in config.yml.
+      expect(sources).toEqual([
+        expect.objectContaining({ source: 'gitlab', state: 'ok' }),
+        expect.objectContaining({ source: 'jira', state: 'off' }),
+      ])
     } finally {
       await stop()
     }

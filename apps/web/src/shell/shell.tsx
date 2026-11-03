@@ -2,6 +2,7 @@ import { Outlet } from '@tanstack/react-router'
 import { useState, type ReactNode } from 'react'
 import { Toaster } from '@/components/ui/sonner'
 import { TooltipProvider } from '@/components/ui/tooltip'
+import { BackupWarning } from '@/backup/backup-warning'
 import { SourceChips, WorkCounts, WorkDetails } from '@/work/work-overview'
 import { Rail } from './rail'
 
@@ -34,6 +35,7 @@ function TopBar() {
       <div className="flex h-9 min-w-0 items-center gap-3 px-3 text-xs">
         <WorkCounts expanded={expanded} onToggle={() => setExpanded(!expanded)} />
         <SourceChips />
+        <BackupWarning />
       </div>
       {expanded && <WorkDetails />}
     </header>

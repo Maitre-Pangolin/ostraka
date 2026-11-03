@@ -49,6 +49,7 @@ export function SettingsView() {
           <Section title="Jira">
             <Row label="Site">{data.jira.site}</Row>
             <Row label="Cloud ID">{data.jira.cloud_id}</Row>
+            <Row label="Account email">{data.jira.email}</Row>
             <Row label="Board">{data.jira.board_id}</Row>
             <Row label="My tickets JQL">{data.jira.my_tickets_jql}</Row>
           </Section>

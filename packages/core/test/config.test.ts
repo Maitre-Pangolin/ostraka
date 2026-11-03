@@ -25,6 +25,7 @@ gitlab:
 jira:
   site: https://acme.atlassian.net
   cloud_id: 0b6e4f0a-3c1d-4e7b-9a8f-2d5c6b7a8e9f
+  email: me@acme.test
   board_id: 42
   my_tickets_jql: assignee = currentUser() AND statusCategory != Done
 `
@@ -42,6 +43,7 @@ describe('loadConfig', () => {
       jira: {
         site: 'https://acme.atlassian.net',
         cloud_id: '0b6e4f0a-3c1d-4e7b-9a8f-2d5c6b7a8e9f',
+        email: 'me@acme.test',
         board_id: 42,
         my_tickets_jql: 'assignee = currentUser() AND statusCategory != Done',
       },
@@ -57,6 +59,7 @@ describe('loadConfig', () => {
     ['gitlab.base_url', 'gitlab:\n  base_url: not a url\n'],
     ['jira.site', 'jira:\n  site: acme\n'],
     ['jira.cloud_id', 'jira:\n  cloud_id: nope\n'],
+    ['jira.email', 'jira:\n  email: me\n'],
     ['jira.board_id', 'jira:\n  board_id: -3\n'],
   ])('reports an invalid %s with the file and the key', async (key, yaml) => {
     await writeConfig(yaml)

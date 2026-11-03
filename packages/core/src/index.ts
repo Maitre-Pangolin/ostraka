@@ -99,15 +99,19 @@ export {
   type NoteSummary,
 } from './note-schema.ts'
 export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
-export {
-  ensureContentRepo,
-  fileAtSnapshot,
-  fileHistory,
-  restoreFile,
-  snapshot,
-  SnapshotNotFoundError,
-  type FileSnapshot,
-  type Restore,
-  type Snapshot,
-} from './snapshots.ts'
+export { ensureContentRepo, fileAtSnapshot, fileHistory, restoreFile, snapshot, SnapshotNotFoundError, type Snapshot } from './snapshots.ts'
+export { RestoreFileSchema, type FileSnapshot, type FileVersion, type Restore, type RestoreFile } from './history-schema.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
+export { findSecrets } from './secret-scan.ts'
+export {
+  BACKUP_REMOTE,
+  backup,
+  backupState,
+  checkBackup,
+  cloneContent,
+  LARGE_FILE_BYTES,
+  STALE_AFTER_MS,
+  type BackupOptions,
+  type CloneResult,
+} from './backup.ts'
+export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
