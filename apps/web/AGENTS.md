@@ -76,6 +76,14 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - A list item whose file is broken shows its path and error in `destructive`; opening it shows the error and where to fix it.
 - An Idea is a Note tagged `idea`: the list switches between All Notes and Ideas, and the lightbulb in a Note's header toggles the Tag.
 
+## Reading Markdown (Dev logs)
+
+- Dev logs and monthly summaries open read-only, rendered by `MarkdownView` (`src/devlogs/markdown-view.tsx`) from core's parser (`parseMarkdown`) and styled by `.devlog-prose` in `src/index.css`. Raw HTML shows as text; only web and mail links are links, opening in a new tab. Edit in the header switches to the Notes editor (`DevlogEditor`, same saving rules as Notes), View back.
+- A Todo link, `[title](todo:<id>)`, shows the Todo's current title from the Todo queries, with a square (open) or checked square (finished); a Todo that no longer exists keeps the stored text, muted and struck through.
+- The list opens first, never the first item: months newest first, each month's summary on top, then its weeks (a week header opens that week stacked). A weekday up to today without a Dev log shows as a muted row with the skill's command (`/devlog`); an off day shows its label with a `Palmtree`. Layout by month, week and gap, the range presets and the Tag filter are core's (`@ostraka/core/devlog-days`).
+- A date range is a Popover from the `Dates` chip: presets over a range Calendar (first click from, second to). The range and Tags live in the URL (`parseDevlogsView`). Stacked days reuse the Tags chip from the Todo filters (`FilterPicker`, `MatchToggle`, `ActiveChip`).
+- A day whose sections stray from Done / Meetings & discussions / Notes shows a `warning` `TriangleAlert` in its header, carrying the problems as its title.
+
 ## Quick-entry tokens
 
 - `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` are parsed by core (`@ostraka/core/todo-tokens`), never by the app itself, so the CLI and agents read them the same way.

@@ -96,7 +96,7 @@ export function TodoFilters({ filter, onChange }: { filter: TodoFilter; onChange
 }
 
 /** A filter chip: shows how many values are chosen and opens a checklist, with a search field past six options. */
-function FilterPicker<T extends string>({
+export function FilterPicker<T extends string>({
   label,
   icon,
   options,
@@ -175,7 +175,7 @@ function FilterPicker<T extends string>({
 }
 
 /** Tags match all of the chosen ones by default; one click switches to any of them. */
-function MatchToggle({ match, onChange }: { match: 'all' | 'any'; onChange: (match: 'all' | 'any') => void }) {
+export function MatchToggle({ match, onChange }: { match: 'all' | 'any'; onChange: (match: 'all' | 'any') => void }) {
   return (
     <div className="text-muted-foreground flex items-center justify-between px-2 py-1 text-[11px]">
       Match
@@ -196,7 +196,8 @@ function MatchToggle({ match, onChange }: { match: 'all' | 'any'; onChange: (mat
   )
 }
 
-function ActiveChip({ label, onRemove, children }: { label: string; onRemove: () => void; children: ReactNode }) {
+/** An active filter value, removable with ×. */
+export function ActiveChip({ label, onRemove, children }: { label: string; onRemove: () => void; children: ReactNode }) {
   return (
     <span className="bg-muted flex h-6 shrink-0 items-center gap-1 rounded-full pr-1 pl-2 text-xs">
       {children}

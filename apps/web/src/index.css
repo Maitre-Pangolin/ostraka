@@ -209,6 +209,85 @@
   height: auto;
 }
 
+/* Markdown read, not edited (Dev logs): the editor's look, from plain elements (`MarkdownView`). */
+.devlog-prose {
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.devlog-prose > * + * {
+  margin-top: 0.6em;
+}
+.devlog-prose h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.devlog-prose h2 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin-top: 1em;
+}
+.devlog-prose h3,
+.devlog-prose h4 {
+  font-weight: 600;
+}
+.devlog-prose ul,
+.devlog-prose ol {
+  padding-left: 1.4em;
+}
+.devlog-prose ul {
+  list-style: disc;
+}
+.devlog-prose ol {
+  list-style: decimal;
+}
+.devlog-prose li::marker {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+.devlog-prose li > ul,
+.devlog-prose li > ol {
+  margin-top: 0.2em;
+}
+.devlog-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.devlog-prose code {
+  background: var(--muted);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 0 0.25em;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+}
+.devlog-prose pre {
+  background: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+}
+.devlog-prose pre code {
+  padding: 0;
+}
+.devlog-prose blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted-foreground);
+}
+.devlog-prose hr {
+  border-color: var(--border);
+}
+.devlog-prose table {
+  border-collapse: collapse;
+}
+.devlog-prose th,
+.devlog-prose td {
+  border: 1px solid var(--border);
+  padding: 0.2em 0.5em;
+  text-align: left;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
