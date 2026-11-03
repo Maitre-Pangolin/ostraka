@@ -34,7 +34,16 @@ export {
 export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { dueAfterParent } from './sub-todos.ts'
-export { defaultTagColor, TAG_COLORS, type Tag, type TagColor } from './tag-color.ts'
+export {
+  defaultTagColor,
+  TAG_COLORS,
+  TAGGED_KINDS,
+  type Tag,
+  type TagColor,
+  type TagCounts,
+  type TaggedKind,
+  type TagUsage,
+} from './tag-color.ts'
 export {
   MergeTagSchema,
   RenameTagSchema,
@@ -45,20 +54,7 @@ export {
   type TagsFile,
 } from './tag-schema.ts'
 export { changeTagSettings, readTagsFile, TagsFileError } from './tags.ts'
-export {
-  deleteTag,
-  mergeTag,
-  renameTag,
-  setTagColor,
-  TAGGED_KINDS,
-  TagExistsError,
-  TagNameError,
-  TagNotFoundError,
-  tagUsage,
-  type TagCounts,
-  type TaggedKind,
-  type TagUsage,
-} from './tag-changes.ts'
+export { deleteTag, mergeTag, renameTag, setTagColor, TagExistsError, TagNameError, TagNotFoundError, tagUsage } from './tag-changes.ts'
 export { filterTodos, isFiltering, parseTodoFilter, type FilteredTodo, type TodoFilter } from './todo-filter.ts'
 export {
   normalizeTag,

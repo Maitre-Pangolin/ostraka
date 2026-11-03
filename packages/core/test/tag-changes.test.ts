@@ -109,6 +109,13 @@ describe('renameTag', () => {
     expect(await read('tags.yml')).toBe('# Tag colours\napi:\n  color: red\nplatform:\n  color: teal\n')
   })
 
+  it('keeps the comment heading tags.yml when the renamed Tag is its only entry', async () => {
+    await writeContent()
+    await write('tags.yml', '# Tag colours\ninfra:\n  color: teal\n')
+    await renameTag('infra', 'platform', options)
+    expect(await read('tags.yml')).toBe('# Tag colours\nplatform:\n  color: teal\n')
+  })
+
   it('takes the new name as typed: lowercased, without its #', async () => {
     await writeContent()
     await renameTag('infra', '#Platform', options)

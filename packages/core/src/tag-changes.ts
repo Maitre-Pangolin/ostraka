@@ -6,20 +6,10 @@ import { listDevlogs } from './devlogs.ts'
 import { markdownFiles, MarkdownFileNotFoundError, type MarkdownKind } from './markdown-files.ts'
 import { listNotes } from './notes.ts'
 import { listSketches } from './sketches.ts'
-import { defaultTagColor, type Tag, type TagColor } from './tag-color.ts'
+import { defaultTagColor, TAGGED_KINDS, type TagColor, type TagCounts, type TaggedKind, type TagUsage } from './tag-color.ts'
 import { changeTagSettings, readTagsFile } from './tags.ts'
 import { normalizeTag } from './todo-tokens.ts'
 import { allTodoItems, retagTodos, type TodoOptions } from './todos.ts'
-
-/** The kinds of content that hold Tags. */
-export const TAGGED_KINDS = ['todos', 'notes', 'devlogs', 'sketches'] as const
-export type TaggedKind = (typeof TAGGED_KINDS)[number]
-
-/** How many items of each kind: use a Tag, or were rewritten by a change to one. A Sub-todo counts as a Todo. */
-export type TagCounts = Record<TaggedKind, number>
-
-/** A Tag in use, with how many items of each kind hold it. */
-export type TagUsage = Tag & { uses: TagCounts }
 
 /** The name isn't a Tag: Tags are lowercase letters, digits and hyphens. */
 export class TagNameError extends Error {}
@@ -122,7 +112,7 @@ export async function renameTag(from: string, typed: string, options: TodoOption
   if (usage.some((tag) => tag.name === to)) throw new TagExistsError(`The Tag ${to} is already in use: merge ${from} into it instead`)
   const settings = (await readTagsFile(options))[from]
   const changed = await rewriteTag(from, to, options)
-  await changeTagSettings({ [from]: undefined, [to]: settings }, options)
+  await changeTagSettings({ [to]: settings, [from]: undefined }, options)
   return changed
 }
 

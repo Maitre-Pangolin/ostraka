@@ -69,11 +69,18 @@ export async function changeTagSettings(
 function removeEntry(doc: ReturnType<typeof parseDocument>, name: string) {
   if (!isMap(doc.contents)) return
   const items = doc.contents.items
-  const index = items.findIndex((pair) => isScalar(pair.key) && pair.key.value === name)
+  const index = items.findIndex((pair) => (isScalar(pair.key) ? pair.key.value : pair.key) === name)
   if (index === -1) return
   const heading = index === 0 && isScalar(items[0]!.key) ? items[0]!.key.commentBefore : undefined
   items.splice(index, 1)
   const next = items[0]
-  if (heading && next && isScalar(next.key)) next.key.commentBefore = [heading, next.key.commentBefore].filter(Boolean).join('\n')
-  else if (heading) doc.commentBefore = heading
+  if (!heading) return
+  if (!next) {
+    doc.commentBefore = heading
+    return
+  }
+  // An entry set in this same change has a plain key, with nowhere to hold a comment yet.
+  const key = isScalar(next.key) ? next.key : doc.createNode(next.key)
+  key.commentBefore = [heading, key.commentBefore].filter(Boolean).join('\n')
+  next.key = key
 }
