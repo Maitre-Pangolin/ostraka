@@ -65,6 +65,17 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - Matching is core's (`@ostraka/core/todo-filter`), never the app's own, and keeps the server's order. A parent that matches only through its Sub-todos stays in the list dimmed (`DIMMED`), with the matching Sub-todos under it.
 - A filter that matches nothing shows the empty line, naming how to widen it.
 
+## Markdown editing (Notes)
+
+- Notes are edited in Milkdown Crepe (`src/notes/note-editor.tsx`): selection toolbar, `/` block menu, Markdown shortcuts. Crepe's own themes stay unloaded; its `--crepe-*` variables map onto the app tokens in `src/index.css` (`.ostraka-md`).
+- The editor sees the body only; the YAML header stays on the server and changes through fields (Tags), never through the editor.
+- The editor serializes in core's house style (`HOUSE_STYLE` from `@ostraka/core/markdown`, set in `src/notes/note-editor-setup.ts`), so an unchanged Note round-trips byte-identical; `test/note-editor.test.ts` guards it. A new Milkdown feature or custom node gets a case there.
+- Nothing is written on opening. An edit saves after a 600 ms pause, on leaving the Note and when the window closes, from the version the editor was loaded with. A save shows as a quiet status (Editing, Saving…, Saved) in the Note's header, never a toast.
+- A change made elsewhere reloads the editor when no edit is waiting; with one waiting, the save is refused (412), the error line says so and the newer content shows.
+- Mermaid code blocks render in place (`src/notes/mermaid-preview.ts`), source one toggle away. Milkdown and Mermaid load lazily, with the first open Note and diagram.
+- A list item whose file is broken shows its path and error in `destructive`; opening it shows the error and where to fix it.
+- An Idea is a Note tagged `idea`: the list switches between All Notes and Ideas, and the lightbulb in a Note's header toggles the Tag.
+
 ## Quick-entry tokens
 
 - `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` are parsed by core (`@ostraka/core/todo-tokens`), never by the app itself, so the CLI and agents read them the same way.

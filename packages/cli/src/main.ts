@@ -8,6 +8,9 @@ import {
   CONTENT_KINDS,
   contentPath,
   dropTodo,
+  formatNotes,
+  isBrokenNote,
+  listNotes,
   isContentKind,
   listFinishedTodos,
   listTodos,
@@ -44,6 +47,11 @@ const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
                                 List the Todos done or Dropped that day, newest first
 `
 
+const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently changed first (a broken one with its error)
+  ostraka note format [<id>...] [--json]
+                                Write Notes in the house style after editing them by hand
+`
+
 const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
                                 Commit the content folder now (after an agent writes)
 `
@@ -53,7 +61,7 @@ const USAGE = `Usage:
   ostraka install               Start the app at login (LaunchAgent) and put \`ostraka\` in ~/.local/bin
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${SNAPSHOT_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${SNAPSHOT_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -70,6 +78,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await snapshotCommand(rest, io)
       case 'todo':
         return await todoCommand(rest, io)
+      case 'note':
+        return await noteCommand(rest, io)
       default:
         io.stderr(USAGE)
         return 1
@@ -169,6 +179,30 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
     return 0
   }
   io.stderr(`Usage:\n${TODO_USAGE}`)
+  return 1
+}
+
+async function noteCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
+  const [action, ...ids] = positionals
+  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
+  if (action === 'list' && ids.length === 0) {
+    const notes = await listNotes(options)
+    const line = (note: (typeof notes)[number]) =>
+      isBrokenNote(note)
+        ? `${note.id}  broken: ${note.error}`
+        : [`${note.id}  ${note.title}`, ...(note.tags.length ? [note.tags.map((tag) => `#${tag}`).join(' ')] : [])].join('  ')
+    io.stdout(values.json ? `${JSON.stringify(notes, null, 2)}\n` : notes.length ? `${notes.map(line).join('\n')}\n` : 'No Notes.\n')
+    return 0
+  }
+  if (action === 'format') {
+    const { formatted, broken } = await formatNotes(ids.length ? ids : undefined, options)
+    if (values.json) io.stdout(`${JSON.stringify({ formatted, broken }, null, 2)}\n`)
+    else io.stdout(formatted.length ? formatted.map((id) => `Formatted ${id}\n`).join('') : 'All in house style.\n')
+    for (const note of broken) io.stderr(`${note.id}: ${note.error}\n`)
+    return broken.length ? 1 : 0
+  }
+  io.stderr(`Usage:\n${NOTE_USAGE}`)
   return 1
 }
 

@@ -44,12 +44,12 @@ function withoutVersions(value: unknown): unknown {
   return { ...item, subTodos: item.subTodos.map(withoutVersion) }
 }
 
-type Schema<T> = {
+export type Schema<T> = {
   safeParse(value: unknown): { success: true; data: T } | { success: false; error: { issues: { message: string }[] } }
 }
 
 /** The request body checked against one of core's schemas. A missing or unparsable body counts as `fallback`. */
-async function readBody<T>(c: Context, schema: Schema<T>, fallback?: unknown) {
+export async function readBody<T>(c: Context, schema: Schema<T>, fallback?: unknown) {
   const body = schema.safeParse(await c.req.json().catch(() => fallback))
   if (body.success) return { ok: true, data: body.data } as const
   return { ok: false, response: c.json({ error: body.error.issues.map((issue) => issue.message).join('; ') }, 400) } as const
@@ -129,7 +129,7 @@ export function todoRoutes(options: TodoOptions) {
   return routes
 }
 
-/** `/api/tags`: the Tags in use with their colours, for suggestions, pills and the Tag filter. */
+/** `/api/tags`: the Tags in use by Todos and Notes with their colours, for suggestions, pills and the Tag filter. */
 export function tagRoutes(options: TodoOptions) {
   const routes = new Hono()
   routes.onError(onTodoError)
