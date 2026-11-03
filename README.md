@@ -29,7 +29,7 @@ title: Release plan # optional; otherwise the first `# ` heading names the Note
 # Release plan
 ```
 
-Bodies are written in one house style (`-` bullets and rules, `*emphasis*`, `**strong**`, fenced code, `#` headings), which the app's editor writes too, so opening and saving an unchanged Note leaves it byte-identical and the header is never touched. After writing a Note by hand, run `pnpm ostraka note format [<id>…]` to put it in house style; `note list [--json]` lists Notes with any broken header.
+Bodies are written in one house style (`-` bullets and rules, `*emphasis*`, `**strong**`, fenced code, `#` headings), which the app's editor writes too, so opening and saving an unchanged Note leaves it byte-identical and the header is never touched. After writing a Note by hand, run `pnpm ostraka note format [<id>…]` to put it in house style; `note list [--json]` lists Notes with any broken header. MR and Jira tokens in a Note or Dev log stay plain text too: the app highlights them in the editor with their status dot and card (as chips in a rendered Dev log), and suggests them while you type `!` or a Jira key like `PAY-`.
 
 Dev logs are `devlogs/<YYYY-MM-DD>.md`, one per day, plus a monthly summary `devlogs/<YYYY-MM>.md`. The Dev log skill writes them; the app lists them by week under each month's summary, shows any date range stacked by day, and edits a day's body (never its header). Their format, which agents follow, is in [`.claude/skills/devlog/format.md`](.claude/skills/devlog/format.md), next to the skill: a header with `date`, at most 3 `tags`, the `sources` used and `off: true` plus a `label` on an off day, then the sections Done, Meetings & discussions and Notes.
 
