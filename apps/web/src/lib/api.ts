@@ -31,6 +31,12 @@ const afterOwnChanges = (version: string) => {
   return version
 }
 
+/**
+ * A restore can bring a file back to a version the app moved on from: a later change made from that version must
+ * name it, not where the app's own changes once led. Called as a restore starts.
+ */
+export const forgetOwnChanges = () => ownChanges.clear()
+
 /** `keepalive` lets the request finish while the page closes (a save on leaving). */
 type Send = { version?: string; keepalive?: boolean }
 

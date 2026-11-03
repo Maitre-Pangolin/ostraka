@@ -9,6 +9,8 @@ import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip
 import { ApiError, isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
+import { onFileRestore } from '@/history/api'
+import { FileHistory, HistoryButton } from '@/history/file-history'
 import { EmptyState } from '@/shell/shell'
 import { useTagNames } from '@/todos/api'
 import { TagDot, TagPill } from '@/todos/properties'
@@ -181,19 +183,24 @@ function NoteDetail({ id }: { id: string }) {
   const [loaded, setLoaded] = useState<{ body: string; version: string; count: number }>()
   const [state, setState] = useState<SaveState>('saved')
   const [error, setError] = useState<string>()
+  const [historyOpen, setHistoryOpen] = useState(false)
   const pending = useRef<string | undefined>(undefined)
   const editor = useRef<NoteEditorHandle | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   // Versions this view wrote: the refetch after its own save is not a change made elsewhere.
   const own = useRef(new Set<string>())
+  // A restore of this Note started: its result reloads the editor even at a version seen before.
+  const restored = useRef(false)
 
   const note = query.data
   useEffect(() => {
-    if (!note || own.current.has(note.version)) return
+    if (!note || (own.current.has(note.version) && !restored.current)) return
     // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
     if (pending.current !== undefined || update.isPending) return
+    const reload = restored.current
+    restored.current = false
     setLoaded((current) =>
-      current?.version === note.version ? current : { body: note.body, version: note.version, count: (current?.count ?? 0) + 1 },
+      current?.version === note.version && !reload ? current : { body: note.body, version: note.version, count: (current?.count ?? 0) + 1 },
     )
   }, [note, update.isPending])
 
@@ -205,6 +212,8 @@ function NoteDetail({ id }: { id: string }) {
       {
         onSuccess: (saved: Note) => {
           own.current.add(saved.version)
+          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
+          restored.current = false
           setError(undefined)
           setState(pending.current === undefined ? 'saved' : 'editing')
         },
@@ -241,6 +250,16 @@ function NoteDetail({ id }: { id: string }) {
   useEffect(() => {
     flushRef.current = { flush, flushOnClose }
   })
+  // A restore may bring back a version this view saved or loaded earlier: the restored file is shown regardless.
+  useEffect(
+    () =>
+      onFileRestore((path) => {
+        if (path !== `notes/${id}.md`) return
+        own.current.clear()
+        restored.current = true
+      }),
+    [id],
+  )
   // Leaving the Note (another one opened, the view or the window closed) saves what is waiting.
   useEffect(() => {
     const leave = () => flushRef.current.flushOnClose()
@@ -295,9 +314,21 @@ function NoteDetail({ id }: { id: string }) {
         <span className="flex-1" />
         <SaveStatus state={state} />
         <span className="text-muted-foreground hidden truncate font-mono text-[11px] @md:inline">notes/{id}.md</span>
+        <HistoryButton
+          open={historyOpen}
+          onClick={() => {
+            // What is waiting is saved first, so the history and a restore start from it.
+            if (!historyOpen) flush()
+            setHistoryOpen(!historyOpen)
+          }}
+        />
       </div>
-      {error && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {historyOpen && (
+        <FileHistory path={`notes/${id}.md`} onClose={() => setHistoryOpen(false)} onRestored={() => setHistoryOpen(false)} />
+      )}
+      {error && !historyOpen && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
+      {/* Hidden, not unmounted, behind the history: the editor keeps what it shows. */}
+      <div className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
         <Suspense>
           <NoteEditor key={loaded.count} markdown={loaded.body} onEdit={onEdit} handle={editor} />
         </Suspense>
