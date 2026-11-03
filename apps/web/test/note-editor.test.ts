@@ -110,21 +110,21 @@ const CANDIDATES: ReferenceCandidates = {
   ],
 }
 
-describe('Reference suggestions in the Notes editor', () => {
-  /** Opens `markdown` with suggestions on, the caret at its end, and types `typed`. */
-  async function typeAtEnd(markdown: string, typed: string) {
-    let offered: OpenSuggestions<ReferenceSuggestion> | undefined
-    const suggest = tokenSuggest<ReferenceSuggestion>({
-      suggest: (fragment) => suggestReferences(fragment, CANDIDATES),
-      onChange: (next) => (offered = next),
-    })
-    await open(markdown, { plugins: [suggest] })
-    const view = editor!.editor.action((ctx) => ctx.get(editorViewCtx))
-    view.focus()
-    view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).insertText(typed))
-    return { view, current: () => offered }
-  }
+/** Opens `markdown` with suggestions on, the caret at its end, and types `typed`. */
+async function typeAtEnd(markdown: string, typed: string) {
+  let offered: OpenSuggestions<ReferenceSuggestion> | undefined
+  const suggest = tokenSuggest<ReferenceSuggestion>({
+    suggest: (fragment) => suggestReferences(fragment, CANDIDATES),
+    onChange: (next) => (offered = next),
+  })
+  await open(markdown, { plugins: [suggest] })
+  const view = editor!.editor.action((ctx) => ctx.get(editorViewCtx))
+  view.focus()
+  view.dispatch(view.state.tr.setSelection(TextSelection.atEnd(view.state.doc)).insertText(typed))
+  return { view, current: () => offered }
+}
 
+describe('Reference suggestions in the Notes editor', () => {
   it('offers my open MRs after ! and a number, and picking one writes its token', async () => {
     const { view, current } = await typeAtEnd('Rebased\n', ' !81')
     expect(current()?.suggestions.map((suggestion) => suggestion.token)).toEqual(['pay/api!812', 'pay/api!815'])
