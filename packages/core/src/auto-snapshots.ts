@@ -1,6 +1,6 @@
 // Automatic Snapshots for the server: one commit once changes settle, rather than one per change.
 import type { ContentRootOptions } from './content-root.ts'
-import { ensureContentRepo, snapshot } from './snapshots.ts'
+import { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 
 export type AutoSnapshotOptions = ContentRootOptions & {
   /** Commit once the content has had no change for this long. Default 60 s. */
@@ -9,6 +9,8 @@ export type AutoSnapshotOptions = ContentRootOptions & {
   maxWaitMs?: number
   /** A failed automatic commit is reported here and retried on the next change. Default: console.error. */
   onError?: (error: unknown) => void
+  /** Called after each automatic commit (not when nothing changed); the server schedules a backup from it. */
+  onSnapshot?: (snapshot: Snapshot) => void
 }
 
 export type AutoSnapshots = {
@@ -27,6 +29,7 @@ export async function startAutoSnapshots({
   quietMs = 60_000,
   maxWaitMs = 10 * 60_000,
   onError = (error) => console.error('Automatic snapshot failed:', error),
+  onSnapshot,
   ...options
 }: AutoSnapshotOptions = {}): Promise<AutoSnapshots> {
   await ensureContentRepo(options)
@@ -40,7 +43,9 @@ export async function startAutoSnapshots({
     clearTimeout(maxWaitTimer)
     quietTimer = maxWaitTimer = undefined
     // snapshot() queues behind any commit already running, so this settles after all of them.
-    inProgress = snapshot(AUTO_SNAPSHOT_MESSAGE, options).then(() => {}, onError)
+    inProgress = snapshot(AUTO_SNAPSHOT_MESSAGE, options).then((made) => {
+      if (made) onSnapshot?.(made)
+    }, onError)
   }
 
   const changed = () => {

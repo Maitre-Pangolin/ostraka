@@ -8,6 +8,9 @@ export function fakeKeychain(items: Record<string, string>) {
       reads.push(service)
       return items[service]
     },
+    async has(service) {
+      return items[service] !== undefined
+    },
   }
   return { keychain, reads }
 }

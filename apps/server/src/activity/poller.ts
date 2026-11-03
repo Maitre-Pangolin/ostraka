@@ -1,4 +1,4 @@
-// The work overview's schedule: every Activity source the app polls (GitLab now, Jira next) runs its jobs here.
+// The work overview's schedule: every Activity source the app polls (GitLab, Jira) runs its jobs here.
 // The server owns the schedule; the UI only reports whether a window is visible.
 import type { Clock } from './clock.ts'
 

@@ -3,7 +3,7 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startAutoSnapshots, type AutoSnapshots } from '../src/index.ts'
+import { startAutoSnapshots, type AutoSnapshots, type Snapshot } from '../src/index.ts'
 
 let contentRoot: string
 let auto: AutoSnapshots | undefined
@@ -88,6 +88,17 @@ describe('startAutoSnapshots', { timeout: 60_000 }, () => {
     await auto!.stop()
 
     expect(commitCount()).toBe(1)
+  })
+
+  it('tells the server about each Snapshot it makes (the backup trigger), and only those', async () => {
+    const made: Snapshot[] = []
+    auto = await startAutoSnapshots({ env: { OSTRAKA_HOME: contentRoot }, onSnapshot: (snapshot) => made.push(snapshot) })
+    await edit()
+    await wait(60 * SECOND)
+    auto.changed()
+    await wait(60 * SECOND)
+
+    expect(made).toEqual([{ commit: git('rev-parse', 'HEAD'), message: 'Automatic snapshot' }])
   })
 
   it('reports a failed commit and keeps snapshotting afterwards', async () => {

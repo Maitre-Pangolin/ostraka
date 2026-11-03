@@ -51,6 +51,10 @@ _Avoid_: Drawing, diagram, whiteboard
 A commit of the content folder's history, made after changes settle or by a skill; what the app restores to.
 _Avoid_: Backup, version, save
 
+**Backup**:
+A push of the content folder's Snapshots to its private remote on the work gitlab.com; the content is backed up when its latest Snapshot is on that remote.
+_Avoid_: Sync, upload, Snapshot
+
 ## People
 
 **Person**:

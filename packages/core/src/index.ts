@@ -126,3 +126,16 @@ export {
   type DevlogsView,
   type DevlogWeek,
 } from './devlog-days.ts'
+export { findSecrets } from './secret-scan.ts'
+export {
+  BACKUP_REMOTE,
+  backup,
+  backupState,
+  checkBackup,
+  cloneContent,
+  LARGE_FILE_BYTES,
+  STALE_AFTER_MS,
+  type BackupOptions,
+  type CloneResult,
+} from './backup.ts'
+export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
