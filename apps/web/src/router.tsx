@@ -1,9 +1,11 @@
 import { parseNotesView } from '@ostraka/core/note-schema'
+import { parseSketchesView } from '@ostraka/core/sketch-schema'
 import { parseTodoFilter } from '@ostraka/core/todo-filter'
 import { createRootRoute, createRoute, createRouter, redirect } from '@tanstack/react-router'
 import { NotesView } from './notes/notes-view'
 import { SettingsView } from './settings/settings-view'
 import { EmptyState, Shell } from './shell/shell'
+import { SketchesView } from './sketches/sketches-view'
 import { TodosView } from './todos/todos-view'
 
 const rootRoute = createRootRoute({ component: Shell })
@@ -26,7 +28,8 @@ const routeTree = rootRoute.addChildren([
   // The open Note and the Ideas switch live in search params, so a reload keeps them and a Note can be linked.
   createRoute({ getParentRoute: () => rootRoute, path: '/notes', validateSearch: parseNotesView, component: NotesView }),
   view('/devlogs', "No Dev logs yet. Run the Dev log skill to write today's."),
-  view('/sketches', 'No Sketches yet. Start one to draw a diagram.'),
+  // The open Sketch and its mode live in search params; without one the view opens on its list.
+  createRoute({ getParentRoute: () => rootRoute, path: '/sketches', validateSearch: parseSketchesView, component: SketchesView }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsView }),
 ])
 

@@ -92,6 +92,28 @@ export {
 export { createNote, formatNotes, listNotes, readNote, updateNote, type NoteChangeOptions, type NoteOptions } from './notes.ts'
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
+export {
+  isBrokenSketch,
+  NewSketchSchema,
+  SketchChangeSchema,
+  SketchHeaderSchema,
+  type BrokenSketch,
+  type NewSketch,
+  type Sketch,
+  type SketchChange,
+  type SketchHeader,
+  type SketchListing,
+  type SketchSummary,
+} from './sketch-schema.ts'
+export {
+  createSketch,
+  listSketches,
+  readSketch,
+  STARTER_MERMAID,
+  updateSketch,
+  type SketchChangeOptions,
+  type SketchOptions,
+} from './sketches.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,
