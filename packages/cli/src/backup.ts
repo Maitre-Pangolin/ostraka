@@ -170,6 +170,7 @@ function initialConfig(root: string, homeDir: string, baseUrl: string | undefine
     '# jira:',
     '#   site: https://acme.atlassian.net',
     '#   cloud_id: 00000000-0000-0000-0000-000000000000 # from <site>/_edge/tenant_info',
+    '#   email: you@acme.com # your Atlassian account; the API token signs in with it',
     '#   board_id: 42 # its active sprint is shown',
     '#   my_tickets_jql: assignee = currentUser() AND statusCategory != Done',
     '',
