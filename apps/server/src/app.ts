@@ -1,9 +1,10 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
+import { backupState, configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
+import type { Backups } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
 import { tagRoutes, todoRoutes } from './todos.ts'
@@ -22,13 +23,22 @@ export type AppOptions = {
   credentials?: Credentials
   /** Changes to the content folder, sent to the browser as live updates; shared with the server's other listeners. */
   events?: ContentEvents
+  /** The server's backup schedule, for the top bar's warning. Without one, the status comes from the repo alone. */
+  backups?: Pick<Backups, 'status'>
 }
 
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 
-export function createApp({ webDist, content = {}, credentials = {}, onContentChange, events = contentEvents(content) }: AppOptions) {
+export function createApp({
+  webDist,
+  content = {},
+  credentials = {},
+  onContentChange,
+  events = contentEvents(content),
+  backups = { status: async () => ({ ...(await backupState(content)), stopped: false }) },
+}: AppOptions) {
   const app = new Hono()
 
   // DNS rebinding: a foreign page resolving its own name to 127.0.0.1 still sends its own Host.
@@ -69,6 +79,14 @@ export function createApp({ webDist, content = {}, credentials = {}, onContentCh
       }
     }),
   )
+
+  app.get('/api/backup', async (c) => {
+    try {
+      return c.json(await backups.status())
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
+    }
+  })
 
   // Read on each request, so the Settings view shows edits to config.yml without a restart.
   app.get('/api/settings', async (c) => {
