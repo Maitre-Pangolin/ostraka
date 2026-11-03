@@ -26,11 +26,12 @@ import {
   SquareCheck,
   TriangleAlert,
 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useRef, useState, type ReactNode } from 'react'
 import type { DateRange } from 'react-day-picker'
 import { Button } from '@/components/ui/button'
 import { Calendar } from '@/components/ui/calendar'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
+import { FileHistory, HistoryButton } from '@/history/file-history'
 import { ApiError } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
@@ -39,7 +40,7 @@ import { dayToDate, localDay, useToday } from '@/todos/due'
 import { ActiveChip, FilterPicker, MatchToggle } from '@/todos/filters'
 import { TagDot, TagPill } from '@/todos/properties'
 import { useDevlog, useDevlogDays, useDevlogs, useTodoTitles, type BrokenDevlog, type Devlog, type DevlogListing } from './api'
-import { DevlogEditor, SaveStatus, type SaveState } from './devlog-editor'
+import { DevlogEditor, SaveStatus, type DevlogEditorHandle, type SaveState } from './devlog-editor'
 import { MarkdownView, type TodoLinkRenderer } from './markdown-view'
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
@@ -341,6 +342,8 @@ function DevlogDetail({ id }: { id: string }) {
   const [editing, setEditing] = useState(false)
   const [state, setState] = useState<SaveState>('saved')
   const [error, setError] = useState<string>()
+  const [historyOpen, setHistoryOpen] = useState(false)
+  const editor = useRef<DevlogEditorHandle | null>(null)
 
   if (query.error) {
     const missing = query.error instanceof ApiError && query.error.status === 404
@@ -377,15 +380,29 @@ function DevlogDetail({ id }: { id: string }) {
         {log.kind === 'day' && log.sources.length > 0 && (
           <span className="text-muted-foreground hidden truncate text-[11px] @md:inline">From {log.sources.join(', ')}</span>
         )}
-        <Button size="xs" variant="ghost" onClick={() => setEditing(!editing)}>
-          {editing ? <Eye /> : <Pencil />} {editing ? 'View' : 'Edit'}
-        </Button>
+        {!historyOpen && (
+          <Button size="xs" variant="ghost" onClick={() => setEditing(!editing)}>
+            {editing ? <Eye /> : <Pencil />} {editing ? 'View' : 'Edit'}
+          </Button>
+        )}
+        <HistoryButton
+          open={historyOpen}
+          onClick={() => {
+            // What is waiting is saved first, so the history and a restore start from it.
+            if (!historyOpen) editor.current?.flush()
+            setHistoryOpen(!historyOpen)
+          }}
+        />
       </div>
-      {error && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      {historyOpen && (
+        <FileHistory path={`devlogs/${id}.md`} onClose={() => setHistoryOpen(false)} onRestored={() => setHistoryOpen(false)} />
+      )}
+      {error && !historyOpen && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
+      {/* Hidden, not unmounted, behind the history: the editor keeps what it shows. */}
+      <div className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
         {editing ? (
           <div className="ostraka-md min-h-full">
-            <DevlogEditor id={id} onState={setState} onError={setError} />
+            <DevlogEditor id={id} onState={setState} onError={setError} handle={editor} />
           </div>
         ) : log.body.trim() ? (
           <div className="devlog-prose px-5 py-3">

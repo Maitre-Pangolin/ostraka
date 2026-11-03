@@ -2,7 +2,8 @@
 // on leaving and when the window closes, from the version the editor was loaded with; a stale save is refused and
 // the newer content shown.
 import { Check, Pencil } from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
+import { onFileRestore } from '@/history/api'
 import { isStale } from '@/lib/api'
 import type { NoteEditorHandle } from '@/notes/note-editor'
 import { saveDevlog, useDevlog, useUpdateDevlog, type Devlog, type MonthlySummary } from './api'
@@ -15,6 +16,9 @@ const SAVE_AFTER_MS = 600
 
 export type SaveState = 'saved' | 'editing' | 'saving'
 
+/** `flush()` saves what is waiting now: before the history opens, so it and a restore start from it. */
+export type DevlogEditorHandle = { flush(): void }
+
 /**
  * The editor over one file's body. `onState` reports the save state for the header, `onError` a refused or failed
  * save. Nothing is saved until the user edits.
@@ -23,10 +27,12 @@ export function DevlogEditor({
   id,
   onState,
   onError,
+  handle,
 }: {
   id: string
   onState: (state: SaveState) => void
   onError: (error: string | undefined) => void
+  handle?: RefObject<DevlogEditorHandle | null>
 }) {
   const query = useDevlog(id)
   const update = useUpdateDevlog(id)
@@ -36,14 +42,18 @@ export function DevlogEditor({
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   // Versions this editor wrote: the refetch after its own save is not a change made elsewhere.
   const own = useRef(new Set<string>())
+  // A restore of this file started: its result reloads the editor even at a version seen before.
+  const restored = useRef(false)
 
   const log = query.data
   useEffect(() => {
-    if (!log || own.current.has(log.version)) return
+    if (!log || (own.current.has(log.version) && !restored.current)) return
     // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
     if (pending.current !== undefined || update.isPending) return
+    const reload = restored.current
+    restored.current = false
     setLoaded((current) =>
-      current?.version === log.version ? current : { body: log.body, version: log.version, count: (current?.count ?? 0) + 1 },
+      current?.version === log.version && !reload ? current : { body: log.body, version: log.version, count: (current?.count ?? 0) + 1 },
     )
   }, [log, update.isPending])
 
@@ -55,6 +65,8 @@ export function DevlogEditor({
       {
         onSuccess: (saved: Devlog | MonthlySummary) => {
           own.current.add(saved.version)
+          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
+          restored.current = false
           onError(undefined)
           onState(pending.current === undefined ? 'saved' : 'editing')
         },
@@ -91,6 +103,17 @@ export function DevlogEditor({
   useEffect(() => {
     flushRef.current = { flush, flushOnClose }
   })
+  useImperativeHandle(handle, () => ({ flush: () => flushRef.current.flush() }), [])
+  // A restore may bring back a version this editor saved or loaded earlier: the restored file is shown regardless.
+  useEffect(
+    () =>
+      onFileRestore((path) => {
+        if (path !== `devlogs/${id}.md`) return
+        own.current.clear()
+        restored.current = true
+      }),
+    [id],
+  )
   // Leaving the editor (View pressed, another day opened, the window closed) saves what is waiting.
   useEffect(() => {
     const leave = () => flushRef.current.flushOnClose()
