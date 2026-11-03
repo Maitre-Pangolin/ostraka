@@ -1,7 +1,7 @@
 import { execFile } from 'node:child_process'
-import { mkdtemp, readFile, rm, stat } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { promisify } from 'node:util'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
@@ -107,6 +107,42 @@ describe('ostraka install', () => {
   it('stays quiet about PATH when ~/.local/bin is on it', async () => {
     const { stdout } = await ostraka(['install'], { env: { PATH: `/usr/bin:${join(home, '.local', 'bin')}` } })
     expect(stdout).not.toMatch(/PATH/)
+  })
+
+  it('links each of the repo’s skills into ~/.claude/skills, where Claude Code and Cursor both find them', async () => {
+    const { stdout } = await ostraka(['install'])
+    const skill = join(home, '.claude', 'skills', 'devlog')
+    expect((await lstat(skill)).isSymbolicLink()).toBe(true)
+    expect(await readlink(skill)).toBe(`${REPO}/.claude/skills/devlog`)
+    expect(stdout).toContain(skill)
+  })
+
+  it('replaces a link left by an earlier install', async () => {
+    const skill = join(home, '.claude', 'skills', 'devlog')
+    await mkdir(dirname(skill), { recursive: true })
+    await symlink('/moved/repo/.claude/skills/devlog', skill)
+    expect((await ostraka(['install'])).code).toBe(0)
+    expect(await readlink(skill)).toBe(`${REPO}/.claude/skills/devlog`)
+  })
+
+  it('leaves a skill of the same name that it did not install alone, and says so', async () => {
+    const skill = join(home, '.claude', 'skills', 'devlog')
+    await mkdir(skill, { recursive: true })
+    await writeFile(join(skill, 'SKILL.md'), 'mine')
+    const { code, stdout } = await ostraka(['install'])
+    expect(code).toBe(0)
+    expect(await readFile(join(skill, 'SKILL.md'), 'utf8')).toBe('mine')
+    expect(stdout).toMatch(new RegExp(`${skill} .*not a link`))
+  })
+
+  it('points out the old Cursor /devlog command, which the devlog skill replaces', async () => {
+    const command = join(home, '.cursor', 'commands', 'devlog.md')
+    expect((await ostraka(['install'])).stdout).not.toContain(command)
+    await mkdir(dirname(command), { recursive: true })
+    await writeFile(command, 'old')
+    const { stdout } = await ostraka(['install'])
+    expect(stdout).toMatch(new RegExp(`${command}.*replaces`))
+    expect(await readFile(command, 'utf8')).toBe('old')
   })
 
   it('reports a LaunchAgent that would not load', async () => {
