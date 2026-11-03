@@ -2,7 +2,9 @@
 // Kept free of React and CSS so the round-trip test runs it as the app does.
 import { HOUSE_STYLE } from '@ostraka/core/markdown'
 import { Crepe } from '@milkdown/crepe'
-import { remarkStringifyOptionsCtx } from '@milkdown/kit/core'
+import { editorViewCtx, remarkStringifyOptionsCtx } from '@milkdown/kit/core'
+import { $prose } from '@milkdown/kit/utils'
+import { mentionHighlight, setMentionNames, type MentionNames } from '../people/mention-highlight.ts'
 
 export type NoteEditor = Crepe
 
@@ -36,5 +38,11 @@ export function createNoteEditor({ root, markdown, renderPreview }: NoteEditorOp
     },
   })
   crepe.editor.config((ctx) => ctx.update(remarkStringifyOptionsCtx, (options) => ({ ...options, ...HOUSE_STYLE })))
+  crepe.editor.use($prose(mentionHighlight))
   return crepe
+}
+
+/** Highlights Mentions of these Persons (name by id) in a created editor. */
+export function setMentionPeople(editor: NoteEditor, names: MentionNames): void {
+  editor.editor.action((ctx) => setMentionNames(ctx.get(editorViewCtx), names))
 }

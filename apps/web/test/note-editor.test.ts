@@ -5,7 +5,7 @@
 import { formatMarkdown } from '@ostraka/core/markdown'
 import { afterEach, describe, expect, it } from 'vitest'
 import { AGENT_STYLE, HOUSE_STYLE_BODY } from '../../../packages/core/test/markdown-samples.ts'
-import { createNoteEditor, type NoteEditor } from '../src/notes/note-editor-setup.ts'
+import { createNoteEditor, setMentionPeople, type NoteEditor } from '../src/notes/note-editor-setup.ts'
 
 // jsdom has no layout, so no observers; code blocks only use them to render lazily.
 class NoObserver {
@@ -33,6 +33,20 @@ async function roundTrip(markdown: string): Promise<string> {
   await editor.create()
   return editor.getMarkdown()
 }
+
+const highlighted = () => [...document.querySelectorAll<HTMLElement>('.ostraka-mention')].map((span) => [span.textContent, span.title])
+
+describe('Mentions in the Notes editor', () => {
+  it('highlights Mentions of known Persons with their name, leaving the text and code alone', async () => {
+    const markdown = 'Ask @bram and @quentin, not `@bram`.\n'
+    expect(await roundTrip(markdown)).toBe(markdown)
+    expect(highlighted()).toEqual([])
+
+    setMentionPeople(editor!, new Map([['bram', 'Bram Okonkwo']]))
+    expect(highlighted()).toEqual([['@bram', 'Bram Okonkwo']])
+    expect(editor!.getMarkdown()).toBe(markdown)
+  })
+})
 
 describe('Notes editor round trip', () => {
   it('serializes a house-style body back byte-identical', async () => {

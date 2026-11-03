@@ -1,9 +1,10 @@
 // The Notes editor as a React component: Crepe (toolbar on selection, `/` menu, Markdown shortcuts) styled with
-// the app's tokens in index.css, Mermaid blocks drawn in place.
+// the app's tokens in index.css, Mermaid blocks drawn in place, Mentions of known Persons highlighted.
 import '@milkdown/crepe/theme/common/style.css'
-import { useEffect, useRef, type RefObject } from 'react'
+import { useEffect, useMemo, useRef, useState, type RefObject } from 'react'
+import { usePeopleIndex } from '@/people/api'
 import { renderMermaidPreview } from './mermaid-preview'
-import { createNoteEditor } from './note-editor-setup'
+import { createNoteEditor, setMentionPeople, type NoteEditor as Editor } from './note-editor-setup'
 
 export type NoteEditorHandle = { flush(): void }
 
@@ -22,6 +23,9 @@ export function NoteEditor({
   handle?: RefObject<NoteEditorHandle | null>
 }) {
   const root = useRef<HTMLDivElement>(null)
+  const [created, setCreated] = useState<Editor>()
+  const { people } = usePeopleIndex()
+  const names = useMemo(() => new Map(people.map((person) => [person.id, person.name])), [people])
   const onEditRef = useRef(onEdit)
   useEffect(() => {
     onEditRef.current = onEdit
@@ -40,12 +44,18 @@ export function NoteEditor({
     const ready = editor.create().then(() => {
       last = editor.getMarkdown()
       if (handle) handle.current = { flush: () => report(editor.getMarkdown()) }
+      setCreated(editor)
     })
     return () => {
       if (handle) handle.current = null
+      setCreated(undefined)
       void ready.then(() => editor.destroy())
     }
   }, [markdown, handle])
+
+  useEffect(() => {
+    if (created) setMentionPeople(created, names)
+  }, [created, names])
 
   return <div ref={root} className="ostraka-md min-h-full" />
 }
