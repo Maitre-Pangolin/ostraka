@@ -3,8 +3,11 @@ import { mkdir, readFile } from 'node:fs/promises'
 import { dirname } from 'node:path'
 import { z } from 'zod'
 import { contentPath } from './content-path.ts'
+import { assertCurrentVersion, contentVersion } from './content-version.ts'
 import type { ContentRootOptions } from './content-root.ts'
 import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
+import { defaultTagColor, type Tag } from './tag-color.ts'
+import { readTagsFile } from './tags.ts'
 import { compareFinishedTodos, compareOpenTodos, localDay } from './todo-order.ts'
 import {
   DropTodoSchema,
@@ -29,6 +32,9 @@ export type TodoOptions = ContentRootOptions & {
   now?: () => Date
   lock?: LockOptions
 }
+
+/** For a change to an existing Todo made from a loaded copy: the `todoVersion` of that copy. */
+export type TodoChangeOptions = TodoOptions & { ifVersion?: string }
 
 const clock = (options: TodoOptions) => (options.now ?? (() => new Date()))()
 
@@ -145,18 +151,24 @@ export async function addTodo(input: NewTodo, options: TodoOptions = {}): Promis
   })
 }
 
+/** The version of one Todo: a hash of its text as todos.json holds it, keys in their stable order. */
+export function todoVersion(todo: Todo): string {
+  return contentVersion(formatTodosFile({ todos: [todo] }))
+}
+
 // Top-level Todos only until Sub-todos arrive with their own finishing rules.
-function findTodo(file: TodosFile, id: string): Todo {
+function findTodo(file: TodosFile, id: string, ifVersion?: string): Todo {
   const todo = file.todos.find((candidate) => candidate.id === id)
   if (!todo) throw new TodoNotFoundError(`No Todo with id ${id}`)
+  assertCurrentVersion(ifVersion, todoVersion(todo), `The Todo “${todo.title}”`)
   return todo
 }
 
 /** Marks a Todo done and sets its finished timestamp. */
-export async function completeTodo(id: string, options: TodoOptions = {}): Promise<Todo> {
+export async function completeTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
   const now = clock(options)
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id)
+    const todo = findTodo(file, id, options.ifVersion)
     todo.status = 'done'
     todo.finishedAt = now.toISOString()
     delete todo.dropReason
@@ -165,11 +177,11 @@ export async function completeTodo(id: string, options: TodoOptions = {}): Promi
 }
 
 /** Drops a Todo: abandoned without being done, with an optional reason, and its finished timestamp set. */
-export async function dropTodo(id: string, input: DropTodo, options: TodoOptions = {}): Promise<Todo> {
+export async function dropTodo(id: string, input: DropTodo, options: TodoChangeOptions = {}): Promise<Todo> {
   const reason = DropTodoSchema.parse(input).reason?.trim()
   const now = clock(options)
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id)
+    const todo = findTodo(file, id, options.ifVersion)
     todo.status = 'dropped'
     todo.finishedAt = now.toISOString()
     if (reason) todo.dropReason = reason
@@ -179,9 +191,9 @@ export async function dropTodo(id: string, input: DropTodo, options: TodoOptions
 }
 
 /** Puts a done or Dropped Todo back on the open list, clearing its finished timestamp (Undo). */
-export async function reopenTodo(id: string, options: TodoOptions = {}): Promise<Todo> {
+export async function reopenTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id)
+    const todo = findTodo(file, id, options.ifVersion)
     todo.status = 'open'
     delete todo.finishedAt
     delete todo.dropReason
@@ -193,11 +205,11 @@ export async function reopenTodo(id: string, options: TodoOptions = {}): Promise
  * Changes a Todo's title, description, Tags, priority or due date; only the fields given change. Tokens in a new
  * title or description apply to the Todo, as on add.
  */
-export async function updateTodo(id: string, input: TodoChange, options: TodoOptions = {}): Promise<Todo> {
+export async function updateTodo(id: string, input: TodoChange, options: TodoChangeOptions = {}): Promise<Todo> {
   const change = TodoChangeSchema.parse(input)
   const today = localDay(clock(options))
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id)
+    const todo = findTodo(file, id, options.ifVersion)
     const chosen: Editable = {
       title: todo.title,
       description: todo.description,
@@ -218,9 +230,9 @@ export async function updateTodo(id: string, input: TodoChange, options: TodoOpt
 }
 
 /** Removes a Todo for good (for mistakes) and returns it, so the caller can offer Undo through `restoreTodo`. */
-export async function deleteTodo(id: string, options: TodoOptions = {}): Promise<Todo> {
+export async function deleteTodo(id: string, options: TodoChangeOptions = {}): Promise<Todo> {
   return updateTodos(options, (file) => {
-    const todo = findTodo(file, id)
+    const todo = findTodo(file, id, options.ifVersion)
     file.todos.splice(file.todos.indexOf(todo), 1)
     return todo
   })
@@ -238,11 +250,15 @@ export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promi
   })
 }
 
-/** Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. */
-export async function listTags(options: TodoOptions = {}): Promise<string[]> {
+/**
+ * Every Tag in use in `todos.json`, once each, sorted: open, done and Dropped Todos and their Sub-todos. Each has its
+ * colour from `tags.yml`, or the one its name hashes to.
+ */
+export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
-  const tags = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
-  return [...tags].toSorted()
+  const settings = await readTagsFile(options)
+  const names = new Set(todos.flatMap((todo) => [todo, ...todo.subTodos]).flatMap((todo) => todo.tags))
+  return [...names].toSorted().map((name) => ({ name, color: settings[name]?.color ?? defaultTagColor(name) }))
 }
 
 /** Open Todos in their automatic order. */

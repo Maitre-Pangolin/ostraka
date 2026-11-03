@@ -1,9 +1,11 @@
 import { execFileSync } from 'node:child_process'
 import { mkdtemp, rm, writeFile } from 'node:fs/promises'
+import { request } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { addTodo } from '@ostraka/core'
 import { startServer } from '../src/index.ts'
 import { fakeKeychain } from './fake-keychain.ts'
 
@@ -20,6 +22,8 @@ afterEach(async () => {
 const start = () =>
   startServer({ port: 0, webDist: '/nonexistent', keychain: fakeKeychain({}).keychain, env: { OSTRAKA_HOME: contentRoot } })
 const git = (...args: string[]) => execFileSync('git', ['-C', contentRoot, ...args], { encoding: 'utf8' }).trim()
+const commits = () => Number(git('rev-list', '--count', '--all'))
+const waitForCommits = (count: number) => vi.waitUntil(() => commits() === count, { timeout: 10_000, interval: 200 })
 
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
 describe('startServer', { timeout: 30_000 }, () => {
@@ -40,5 +44,39 @@ describe('startServer', { timeout: 30_000 }, () => {
     await stop()
 
     expect(git('log', '--format=%s')).toBe('Automatic snapshot')
+  })
+
+  it('stops while a browser holds the live-updates stream open', async () => {
+    const { server, stop } = await start()
+    const { port } = server.address() as AddressInfo
+    const status = await new Promise<number | undefined>((resolve, reject) => {
+      const req = request({ host: '127.0.0.1', port, path: '/api/events', headers: { host: '127.0.0.1:4747' } }, (res) =>
+        resolve(res.statusCode),
+      )
+      req.on('error', reject)
+      req.end()
+    })
+    expect(status).toBe(200)
+    await stop()
+  })
+
+  it('snapshots a change made outside the app (CLI or agent) once it settles', async () => {
+    await writeFile(join(contentRoot, 'people.json'), '[]\n')
+    const { stop } = await startServer({
+      port: 0,
+      webDist: '/nonexistent',
+      keychain: fakeKeychain({}).keychain,
+      env: { OSTRAKA_HOME: contentRoot },
+      snapshots: { quietMs: 100 },
+    })
+    try {
+      // The Snapshot taken at start, of what was already there.
+      await waitForCommits(1)
+      await addTodo({ title: 'Added by an agent' }, { env: { OSTRAKA_HOME: contentRoot } })
+      await waitForCommits(2)
+      expect(git('status', '--porcelain')).toBe('')
+    } finally {
+      await stop()
+    }
   })
 })

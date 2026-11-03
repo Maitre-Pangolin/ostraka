@@ -60,6 +60,15 @@ describe('startServer', () => {
   })
 })
 
+/** The body; for the live-updates stream, which never ends, its first event. */
+async function bodyText(res: Response): Promise<string> {
+  if (!res.headers.get('content-type')?.startsWith('text/event-stream')) return res.text()
+  const reader = res.body!.getReader()
+  const { value } = await reader.read()
+  await reader.cancel()
+  return new TextDecoder().decode(value)
+}
+
 describe('no route returns a token', () => {
   it('leaves every token out of every response', async () => {
     await mkdir(join(home, '.config', 'ostraka'), { recursive: true })
@@ -71,7 +80,7 @@ describe('no route returns a token', () => {
     for (const path of paths) {
       for (const method of ['GET', 'POST']) {
         const res = await app.request(path, { method, headers: { host: '127.0.0.1:4747' } })
-        const text = `${[...res.headers].join('\n')}\n${await res.text()}`
+        const text = `${[...res.headers].join('\n')}\n${await bodyText(res)}`
         for (const token of Object.values(TOKENS)) expect(text, `${method} ${path}`).not.toContain(token)
       }
     }

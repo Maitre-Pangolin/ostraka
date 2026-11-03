@@ -32,6 +32,7 @@ describe('ostraka path', () => {
     ['devlogs', 'devlogs'],
     ['sketches', 'sketches'],
     ['people', 'people.json'],
+    ['tags', 'tags.yml'],
   ])('prints where %s live', async (kind, location) => {
     expect(await ostraka('path', kind)).toEqual({ code: 0, stdout: `${join(contentRoot, location)}\n`, stderr: '' })
   })
@@ -46,7 +47,7 @@ describe('ostraka path', () => {
     const { code, stdout, stderr } = await ostraka('path', 'ideas')
     expect(code).toBe(1)
     expect(stdout).toBe('')
-    expect(stderr).toMatch(/todos\|notes\|devlogs\|sketches\|people/)
+    expect(stderr).toMatch(/todos\|notes\|devlogs\|sketches\|people\|tags/)
   })
 
   it('rejects a missing kind', async () => {

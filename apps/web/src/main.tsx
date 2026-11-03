@@ -4,6 +4,7 @@ import { StrictMode } from 'react'
 import { createRoot } from 'react-dom/client'
 import './index.css'
 import { retryUnanswered } from './lib/api'
+import { LiveUpdates } from './lib/live-updates'
 import { router } from './router'
 import { AppearanceProvider } from './shell/appearance'
 import { applyAppearance, loadAppearance } from './shell/appearance-store'
@@ -18,6 +19,7 @@ createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <AppearanceProvider>
       <QueryClientProvider client={queryClient}>
+        <LiveUpdates />
         <RouterProvider router={router} />
       </QueryClientProvider>
     </AppearanceProvider>
