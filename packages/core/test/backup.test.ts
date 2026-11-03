@@ -3,7 +3,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { backup, backupState, checkBackup, snapshot, type ContentRootOptions } from '../src/index.ts'
+import { backup, backupState, checkBackup, cloneContent, snapshot, type ContentRootOptions } from '../src/index.ts'
 import { startHttpRemote } from './http-remote.ts'
 
 let dir: string
@@ -276,5 +276,42 @@ describe('checkBackup', { timeout: 60_000 }, () => {
     await write('todos.json', '{"todos":[]}\n')
     await snapshot('first', options)
     expect(await checkBackup(options)).toEqual({ status: 'no-remote' })
+  })
+})
+
+describe('cloneContent', { timeout: 60_000 }, () => {
+  it('clones the backup into the content folder, with the remote as origin', async () => {
+    await contentWithRemote()
+    await backup(options)
+    const restored = join(dir, 'new-machine', 'ostraka-content')
+
+    const result = await cloneContent(remote, { env: { OSTRAKA_HOME: restored } })
+
+    expect(result).toEqual({ status: 'cloned', path: restored, commit: head() })
+    expect(git(restored, 'remote', 'get-url', 'origin')).toBe(remote)
+    expect(await readFile(join(restored, 'todos.json'), 'utf8')).toBe('{"todos":[]}\n')
+  })
+
+  it('clones over HTTP with the push token', async () => {
+    const token = `test-push-token-${'y'.repeat(12)}`
+    const server = await startHttpRemote(dir, token)
+    try {
+      await contentWithRemote()
+      await backup(options)
+      const restored = join(dir, 'restored')
+
+      expect(await cloneContent(`${server.url}/remote.git`, { env: { OSTRAKA_HOME: restored }, token })).toMatchObject({ status: 'cloned' })
+      expect(await cloneContent(`${server.url}/remote.git`, { env: { OSTRAKA_HOME: join(dir, 'other') } })).toEqual({
+        status: 'failed',
+        reason: expect.stringMatching(/Authentication failed|could not read Username/),
+      })
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('refuses a content folder that already has files', async () => {
+    await contentWithRemote()
+    await expect(cloneContent(remote, options)).rejects.toThrow(/already exists/)
   })
 })

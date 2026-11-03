@@ -1,9 +1,12 @@
 // Backup: a plain `git push` of the content repo to its `origin` (a private project on the work gitlab.com).
 // Never a force-push, never a merge: a rejected push is reported and left to the user.
+import { mkdir, readdir } from 'node:fs/promises'
+import { dirname } from 'node:path'
 import type { BackupCheck, BackupResult, BackupState, SecretFile } from './backup-types.ts'
 import { resolveContentRoot, type ContentRootOptions } from './content-root.ts'
 import { git, runGit, type GitRunOptions } from './git.ts'
 import { findSecrets } from './secret-scan.ts'
+import { ensureContentRepo } from './snapshots.ts'
 
 export const BACKUP_REMOTE = 'origin'
 
@@ -144,6 +147,23 @@ export async function checkBackup({ token, ...options }: BackupOptions = {}): Pr
   const onRemote = await isOnRemote(root, commit, token)
   if (typeof onRemote !== 'boolean') return onRemote
   return onRemote ? { status: 'backed-up', commit, pushed: false } : { status: 'not-backed-up' }
+}
+
+export type CloneResult = { status: 'cloned'; path: string; commit: string | undefined } | Failed
+
+/**
+ * Restore on a new machine: clones the backup into the content folder (which must be missing or empty), with the
+ * remote as `origin`, so backups carry on from there.
+ */
+export async function cloneContent(url: string, { token, ...options }: BackupOptions = {}): Promise<CloneResult> {
+  const root = await resolveContentRoot(options)
+  const existing = await readdir(root).catch(() => [])
+  if (existing.length > 0) throw new Error(`${root} already exists and is not empty: restore only sets up a new machine.`)
+  await mkdir(dirname(root), { recursive: true })
+  const cloned = await runGit(dirname(root), ['clone', '--quiet', '--origin', BACKUP_REMOTE, '--', url, root], remoteEnv(token))
+  if (cloned.code !== 0) return { status: 'failed', reason: gitReason(cloned.stderr) }
+  await ensureContentRepo(options)
+  return { status: 'cloned', path: root, commit: await headCommit(root) }
 }
 
 export const STALE_AFTER_MS = 24 * 60 * 60_000

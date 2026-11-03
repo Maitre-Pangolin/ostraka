@@ -60,5 +60,15 @@ export {
 export { ensureContentRepo, snapshot, type Snapshot } from './snapshots.ts'
 export { AUTO_SNAPSHOT_MESSAGE, startAutoSnapshots, type AutoSnapshotOptions, type AutoSnapshots } from './auto-snapshots.ts'
 export { findSecrets } from './secret-scan.ts'
-export { BACKUP_REMOTE, backup, backupState, checkBackup, LARGE_FILE_BYTES, STALE_AFTER_MS, type BackupOptions } from './backup.ts'
+export {
+  BACKUP_REMOTE,
+  backup,
+  backupState,
+  checkBackup,
+  cloneContent,
+  LARGE_FILE_BYTES,
+  STALE_AFTER_MS,
+  type BackupOptions,
+  type CloneResult,
+} from './backup.ts'
 export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
