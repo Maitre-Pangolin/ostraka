@@ -31,12 +31,14 @@ const afterOwnChanges = (version: string) => {
   return version
 }
 
-type Send = { version?: string }
+/** `keepalive` lets the request finish while the page closes (a save on leaving). */
+type Send = { version?: string; keepalive?: boolean }
 
-async function send<T>(method: string, path: string, body?: unknown, { version }: Send = {}): Promise<T> {
+async function send<T>(method: string, path: string, body?: unknown, { version, keepalive }: Send = {}): Promise<T> {
   const from = version === undefined ? undefined : afterOwnChanges(version)
   const answer = await request<T>(path, {
     method,
+    ...(keepalive && { keepalive }),
     headers: {
       ...(body !== undefined && { 'content-type': 'application/json' }),
       ...(from !== undefined && ifMatch(from)),

@@ -6,8 +6,11 @@ import { remarkStringifyOptionsCtx } from '@milkdown/kit/core'
 
 export type NoteEditor = Crepe
 
-/** Shows a code block's rendered preview: `apply` takes the preview, `null` for none (plain code). */
-export type RenderPreview = (language: string, code: string, apply: (preview: HTMLElement | string | null) => void) => void
+/**
+ * A code block's rendered preview: return `null` for none (plain code), or return nothing and pass the preview to
+ * `apply` once it is ready.
+ */
+export type RenderPreview = (language: string, code: string, apply: (preview: HTMLElement | string | null) => void) => null | undefined
 
 export type NoteEditorOptions = {
   root: HTMLElement
@@ -26,7 +29,11 @@ export function createNoteEditor({ root, markdown, renderPreview }: NoteEditorOp
       [Crepe.Feature.Latex]: false,
       [Crepe.Feature.ImageBlock]: false,
     },
-    featureConfigs: renderPreview ? { [Crepe.Feature.CodeMirror]: { renderPreview } } : {},
+    featureConfigs: {
+      [Crepe.Feature.Placeholder]: { text: 'Write, or type / for headings, lists, code and diagrams', mode: 'doc' },
+      // A diagram shows drawn, with its source one toggle away.
+      ...(renderPreview && { [Crepe.Feature.CodeMirror]: { renderPreview, previewOnlyByDefault: true } }),
+    },
   })
   crepe.editor.config((ctx) => ctx.update(remarkStringifyOptionsCtx, (options) => ({ ...options, ...HOUSE_STYLE })))
   return crepe

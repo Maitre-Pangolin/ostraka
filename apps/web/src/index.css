@@ -139,6 +139,70 @@
   }
 }
 
+/* The Notes editor (Milkdown Crepe) on the app's tokens, in both themes. Crepe's own themes are not loaded. */
+.ostraka-md .milkdown {
+  --crepe-color-background: var(--background);
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--card);
+  --crepe-color-surface-low: var(--muted);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--primary);
+  --crepe-color-secondary: var(--accent);
+  --crepe-color-on-secondary: var(--accent-foreground);
+  --crepe-color-inverse: var(--foreground);
+  --crepe-color-on-inverse: var(--background);
+  --crepe-color-inline-code: var(--primary);
+  --crepe-color-error: var(--destructive);
+  --crepe-color-hover: var(--muted);
+  --crepe-color-selected: var(--accent);
+  --crepe-color-inline-area: var(--muted);
+  --crepe-font-default: var(--font-sans);
+  --crepe-font-title: var(--font-sans);
+  --crepe-font-code: ui-monospace, 'SF Mono', Menlo, monospace;
+  --crepe-base-font-size: 15px;
+  --crepe-shadow-1: 0 1px 3px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+  --crepe-shadow-2: 0 4px 12px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+}
+.ostraka-md .milkdown .ProseMirror {
+  padding: calc(var(--spacing) * 4) calc(var(--spacing) * 5) calc(var(--spacing) * 12) calc(var(--spacing) * 12);
+}
+.ostraka-md .milkdown .ProseMirror h1 {
+  font-size: 1.75em;
+  line-height: 1.2;
+  margin-top: 0.4em;
+}
+.ostraka-md .milkdown .ProseMirror h2 {
+  font-size: 1.3em;
+  line-height: 1.3;
+  margin-top: 0.8em;
+}
+.ostraka-md .milkdown .ProseMirror h3 {
+  font-size: 1.1em;
+}
+/* List bullets and numbers: Crepe uses the outline colour, too pale on paper. */
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper svg {
+  fill: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+/* Code blocks: CodeMirror's light theme recoloured from the tokens, so dark mode reads too. */
+.ostraka-md .milkdown .milkdown-code-block .cm-editor {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.ostraka-md .milkdown .milkdown-code-block .cm-gutters {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+.ostraka-md .milkdown .milkdown-code-block .preview svg {
+  max-width: 100%;
+  height: auto;
+}
+
 @media (prefers-reduced-motion: reduce) {
   *,
   ::before,
