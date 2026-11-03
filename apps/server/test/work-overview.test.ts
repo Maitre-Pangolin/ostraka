@@ -1,8 +1,9 @@
+import { request } from 'node:http'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { createApp, readCredentials, workOverview, type ContentEvents } from '../src/index.ts'
+import { createApp, readCredentials, startServer, workOverview, type ContentEvents } from '../src/index.ts'
 import { fakeClock, fakeFetch, type FakeResponse } from './fake-clock.ts'
 import { fakeKeychain, TOKENS } from './fake-keychain.ts'
 
@@ -165,8 +166,15 @@ describe('work overview: GitLab', () => {
     })
   })
 
-  describe('refresh rates', () => {
+  it('tells open windows over the live-updates stream when GitLab data changes', async () => {
+    const { time, openWindow } = await setup(answer)
+    const window = await openWindow('tab-1')
+    await time.advance(0)
+    const { value } = await window.reader.read()
+    expect(new TextDecoder().decode(value)).toBe(`data: ${JSON.stringify({ kind: 'activity', id: 'gitlab' })}\n\n`)
+  })
 
+  describe('refresh rates', () => {
     it('polls MRs every 10 min while no window shows the app', async () => {
       const { time, calls } = await setup(answer)
       await time.advance(10 * MINUTE - SECOND)
@@ -225,20 +233,6 @@ describe('work overview: GitLab', () => {
   })
 
   describe('running pipelines', () => {
-    /** One authored MR whose pipeline runs until `pipelineStatus` says otherwise. */
-    function runningPipeline() {
-      const pipeline = { status: 'running' }
-      const respond = (url: URL): FakeResponse => {
-        if (url.pathname === '/api/graphql') {
-          return currentUser({ authored: [{ iid: 809, title: 'Retry webhooks', projectId: 7, pipeline: { id: 501, status: 'RUNNING' } }] })
-        }
-        if (url.pathname === '/api/v4/projects/7/pipelines/501') return { body: { id: 501, status: pipeline.status, web_url: 'x' } }
-        return { status: 404 }
-      }
-      return { pipeline, respond }
-    }
-    const pipelineCalls = (calls: { url: URL }[]) => calls.filter((call) => call.url.pathname.includes('/pipelines/')).length
-
     it('follows a running pipeline over REST every 15 s while visible, until it finishes', async () => {
       const { pipeline, respond } = runningPipeline()
       const { time, calls, openWindow, gitlabStatus } = await setup(respond)
@@ -282,4 +276,177 @@ describe('work overview: GitLab', () => {
       expect(pipelineCalls(calls)).toBe(0)
     })
   })
+
+  describe('a failing source', () => {
+    it('keeps the last data, marks it stale and gives the reason; recovers on the next good answer', async () => {
+      let status = 200
+      const { time, gitlabStatus } = await setup((url) =>
+        status === 200 ? answer(url) : { status, body: { message: '401 Unauthorized' } },
+      )
+      await time.advance(0)
+      status = 401
+      await time.advance(10 * MINUTE)
+
+      const failing = await gitlabStatus()
+      expect(failing).toMatchObject({ state: 'failing', stale: true, updatedAt: '2026-11-02T09:00:00.000Z' })
+      expect(failing.reason).toMatch(/refused the token \(401\)/)
+      expect(failing.data.counts.opened).toBe(1)
+
+      status = 200
+      await time.advance(10 * MINUTE)
+      expect(await gitlabStatus()).toMatchObject({ state: 'ok', stale: false, updatedAt: '2026-11-02T09:20:00.000Z' })
+    })
+
+    it('says why when GitLab cannot be reached, without ever showing the token', async () => {
+      const { time, gitlabStatus, app } = await setup(
+        () => new TypeError('fetch failed', { cause: new Error('getaddrinfo ENOTFOUND gitlab.example.test') }),
+      )
+      await time.advance(0)
+      expect(await gitlabStatus()).toMatchObject({
+        state: 'failing',
+        stale: false,
+        reason: expect.stringMatching(/Could not reach gitlab\.example\.test: getaddrinfo ENOTFOUND/),
+      })
+      const text = await (await app.request('/api/activity', { headers: { host: '127.0.0.1:4747' } })).text()
+      for (const token of Object.values(TOKENS)) expect(text).not.toContain(token)
+    })
+
+    it('reports a GraphQL error as the reason', async () => {
+      const { time, gitlabStatus } = await setup(() => ({
+        body: { errors: [{ message: 'Query has complexity of 301, which exceeds max complexity of 250' }] },
+      }))
+      await time.advance(0)
+      expect((await gitlabStatus()).reason).toMatch(/exceeds max complexity/)
+    })
+  })
+
+  describe('Retry-After', () => {
+    it('waits as long as GitLab asks before calling again, even while visible', async () => {
+      let limited = true
+      const { time, calls, openWindow, gitlabStatus } = await setup((url) =>
+        limited ? { status: 429, headers: { 'retry-after': '300' } } : answer(url),
+      )
+      await (await openWindow('tab-1')).show()
+      await time.advance(0)
+      expect(calls).toHaveLength(1)
+      expect(await gitlabStatus()).toMatchObject({ state: 'failing', reason: expect.stringMatching(/rate limiting/) })
+
+      limited = false
+      await time.advance(5 * MINUTE - SECOND)
+      expect(calls).toHaveLength(1)
+      await time.advance(SECOND)
+      expect(calls).toHaveLength(2)
+      expect(await gitlabStatus()).toMatchObject({ state: 'ok' })
+    })
+
+    it('takes an HTTP date too, and holds back the pipeline calls of the same source', async () => {
+      let limited = false
+      const { time, calls, openWindow } = await setup((url) => {
+        if (limited) return { status: 503, headers: { 'retry-after': new Date(Date.parse('2026-11-02T09:10:00Z')).toUTCString() } }
+        if (url.pathname === '/api/graphql')
+          return currentUser({ authored: [{ iid: 1, title: 'A', pipeline: { id: 9, status: 'RUNNING' } }] })
+        return { body: { id: 9, status: 'running' } }
+      })
+      await (await openWindow('tab-1')).show()
+      await time.advance(0)
+      limited = true
+      await time.advance(15 * SECOND)
+      expect(calls).toHaveLength(2)
+      limited = false
+      await time.advance(10 * MINUTE - 15 * SECOND - SECOND)
+      expect(calls).toHaveLength(2)
+      await time.advance(SECOND)
+      expect(calls.length).toBeGreaterThan(2)
+    })
+  })
+
+  describe('wake', () => {
+    it('refreshes once when the machine wakes from sleep', async () => {
+      const { time, calls } = await setup(answer)
+      await time.advance(MINUTE)
+      expect(graphqlCalls(calls)).toBe(1)
+      time.sleep(3 * 60 * MINUTE)
+      await time.advance(MINUTE)
+      expect(graphqlCalls(calls)).toBe(2)
+      // Then the usual schedule: hidden, the next poll is 10 min after the wake refresh.
+      await time.advance(8 * MINUTE)
+      expect(graphqlCalls(calls)).toBe(2)
+      await time.advance(2 * MINUTE)
+      expect(graphqlCalls(calls)).toBe(3)
+    })
+  })
+
+  describe('not set up', () => {
+    it('is off, and calls nothing, without a token in the Keychain', async () => {
+      const { time, calls, gitlabStatus } = await setup(answer, { items: {} })
+      await time.advance(30 * MINUTE)
+      expect(calls).toEqual([])
+      expect(await gitlabStatus()).toMatchObject({ state: 'off', reason: expect.stringMatching(/ostraka-gitlab/) })
+    })
+  })
+})
+
+describe('work overview: GitLab not configured', () => {
+  it('is off without gitlab.base_url, and starts once config.yml gains one', async () => {
+    const { time, calls, gitlabStatus } = await setup(answer)
+    await time.advance(0)
+    expect(calls).toEqual([])
+    expect(await gitlabStatus()).toMatchObject({ state: 'off', reason: expect.stringMatching(/gitlab\.base_url/) })
+
+    await writeConfig(`gitlab:\n  base_url: ${BASE_URL}\n`)
+    await time.advance(10 * MINUTE)
+    expect(calls).toHaveLength(1)
+    expect(await gitlabStatus()).toMatchObject({ state: 'ok' })
+  })
+})
+
+/** One authored MR whose pipeline runs until `pipelineStatus` says otherwise. */
+function runningPipeline() {
+  const pipeline = { status: 'running' }
+  const respond = (url: URL): FakeResponse => {
+    if (url.pathname === '/api/graphql') {
+      return currentUser({ authored: [{ iid: 809, title: 'Retry webhooks', projectId: 7, pipeline: { id: 501, status: 'RUNNING' } }] })
+    }
+    if (url.pathname === '/api/v4/projects/7/pipelines/501') return { body: { id: 501, status: pipeline.status, web_url: 'x' } }
+    return { status: 404 }
+  }
+  return { pipeline, respond }
+}
+const pipelineCalls = (calls: { url: URL }[]) => calls.filter((call) => call.url.pathname.includes('/pipelines/')).length
+
+/** A plain HTTP GET with the app's own Host, as the browser sends it. */
+function httpGet(port: number, path: string): Promise<string> {
+  return new Promise((resolve, reject) => {
+    const req = request({ host: '127.0.0.1', port, path, headers: { host: '127.0.0.1:4747' } }, (res) => {
+      let body = ''
+      res.setEncoding('utf8')
+      res.on('data', (chunk: string) => (body += chunk))
+      res.on('end', () => resolve(body))
+    })
+    req.on('error', reject)
+    req.end()
+  })
+}
+
+describe('startServer', () => {
+  it('polls GitLab from startup, with the token read from the Keychain', async () => {
+    await writeConfig(`gitlab:\n  base_url: ${BASE_URL}\n`)
+    const gitlab = fakeFetch(answer)
+    const { server, stop } = await startServer({
+      port: 0,
+      webDist: '/nonexistent',
+      keychain: fakeKeychain(TOKENS).keychain,
+      fetch: gitlab.fetch,
+      env: { OSTRAKA_HOME: join(home, 'content') },
+      homeDir: home,
+    })
+    try {
+      const { port } = server.address() as { port: number }
+      await expect.poll(() => gitlab.calls.length).toBe(1)
+      const { sources } = JSON.parse(await httpGet(port, '/api/activity')) as { sources: { source: string; state: string }[] }
+      expect(sources).toEqual([expect.objectContaining({ source: 'gitlab', state: 'ok' })])
+    } finally {
+      await stop()
+    }
+  }, 30_000)
 })

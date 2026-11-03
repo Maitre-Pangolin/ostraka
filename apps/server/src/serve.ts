@@ -1,6 +1,9 @@
 import { fileURLToPath } from 'node:url'
 import { serve, type ServerType } from '@hono/node-server'
 import { startAutoSnapshots, type AutoSnapshotOptions } from '@ostraka/core'
+import { systemClock } from './activity/clock.ts'
+import type { Fetch } from './activity/http.ts'
+import { workOverview } from './activity/work-overview.ts'
 import { createApp, HOSTNAME, PORT } from './app.ts'
 import { contentEvents } from './content-events.ts'
 import { readCredentials, type Keychain } from './keychain.ts'
@@ -16,6 +19,8 @@ export type StartOptions = {
   homeDir?: string
   /** Where a Keychain item that could not be read is reported. */
   warn?: (message: string) => void
+  /** Calls to GitLab and Jira; tests pass a fake so nothing reaches a real instance. */
+  fetch?: Fetch
   /** When automatic Snapshots commit; tests shorten the wait. */
   snapshots?: Pick<AutoSnapshotOptions, 'quietMs' | 'maxWaitMs'>
 }
@@ -38,6 +43,7 @@ export async function startServer({
   homeDir,
   warn,
   snapshots: snapshotTiming,
+  fetch = globalThis.fetch,
 }: StartOptions): Promise<RunningServer> {
   const credentials = await readCredentials(keychain, warn)
   const content = { env, homeDir }
@@ -45,7 +51,10 @@ export async function startServer({
   // Every change on disk, the CLI's and agents' included, is snapshotted; the same watcher feeds live updates.
   const events = contentEvents(content)
   const unwatch = await events.subscribe(() => snapshots.changed())
-  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events })
+  // The work overview polls from startup, at its hidden rates until a window reports that it is visible.
+  const activity = workOverview({ fetch, credentials, content: { homeDir }, clock: systemClock })
+  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events, activity })
+  activity.start()
   try {
     const server = await new Promise<ServerType>((resolve, reject) => {
       const listening = serve({ fetch: app.fetch, hostname: HOSTNAME, port }, () => resolve(listening))
@@ -58,11 +67,13 @@ export async function startServer({
         // Open live-update streams never end on their own; a browser reconnects once the server is back.
         if ('closeAllConnections' in server) server.closeAllConnections()
         await closed
+        activity.stop()
         unwatch()
         await snapshots.stop()
       },
     }
   } catch (error) {
+    activity.stop()
     unwatch()
     await snapshots.stop()
     throw error
