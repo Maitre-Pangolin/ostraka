@@ -13,7 +13,8 @@ import { historyRoutes } from './history.ts'
 import { noteRoutes } from './notes.ts'
 import { noReferenceLookup, referenceRoutes, type ReferenceLookup } from './references.ts'
 import { sketchRoutes } from './sketches.ts'
-import { tagRoutes, todoRoutes } from './todos.ts'
+import { tagRoutes } from './tags.ts'
+import { todoRoutes } from './todos.ts'
 
 export const HOSTNAME = '127.0.0.1'
 export const PORT = 4747
