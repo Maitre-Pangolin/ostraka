@@ -7,4 +7,10 @@ describe('parseNotesView', () => {
     expect(parseNotesView({ ideas: false, note: '' })).toEqual({})
     expect(parseNotesView({ note: 42, ideas: 'yes', other: 1 })).toEqual({})
   })
+
+  it('keeps the search text as typed, leaving out a blank one', () => {
+    expect(parseNotesView({ note: 'k3f9x', q: 'kafka ' })).toEqual({ note: 'k3f9x', q: 'kafka ' })
+    expect(parseNotesView({ q: ' ' })).toEqual({})
+    expect(parseNotesView({ q: 3 })).toEqual({})
+  })
 })

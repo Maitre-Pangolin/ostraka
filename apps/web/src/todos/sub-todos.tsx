@@ -64,7 +64,7 @@ export function SubTodos({ parent, shown, entry, tags, today, renderOpen, onReop
 function FinishedSubTodo({ sub, onReopen }: { sub: SubTodo; onReopen: () => void }) {
   const dropped = sub.status === 'dropped'
   return (
-    <li className="hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1">
+    <li data-todo={sub.id} className="hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1">
       {/* Lines the checkbox up with open Sub-todos, which have a chevron first. */}
       <span aria-hidden className="size-5 shrink-0" />
       {dropped ? (

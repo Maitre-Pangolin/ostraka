@@ -19,8 +19,10 @@ export async function ensureContentRepo(options: ContentRootOptions = {}): Promi
   return root
 }
 
-// Files of a write in progress (see locked-file.ts), never content. Kept out of the repo without adding a file to it.
-const EXCLUDE = '# ostraka: writes in progress\n*.lock\n*.tmp\n'
+// Kept out of the repo without adding a file to it, each block added once (a repo made earlier gets the new ones):
+// files of a write in progress (see locked-file.ts), and the Dev log migration's working folder (devlog-migration.ts),
+// whose days reach the history only once a month is approved and moved into devlogs/.
+const EXCLUDES = ['# ostraka: writes in progress\n*.lock\n*.tmp\n', '# ostraka: Dev log migration in progress\n/.migration/\n']
 
 async function initRepo(root: string): Promise<void> {
   try {
@@ -31,9 +33,10 @@ async function initRepo(root: string): Promise<void> {
   }
   const exclude = join(root, '.git', 'info', 'exclude')
   const current = await readFile(exclude, 'utf8').catch(() => '')
-  if (!current.includes(EXCLUDE)) {
+  const missing = EXCLUDES.filter((block) => !current.includes(block))
+  if (missing.length) {
     await mkdir(dirname(exclude), { recursive: true })
-    await appendFile(exclude, `${current === '' || current.endsWith('\n') ? '' : '\n'}${EXCLUDE}`)
+    await appendFile(exclude, `${current === '' || current.endsWith('\n') ? '' : '\n'}${missing.join('')}`)
   }
 }
 

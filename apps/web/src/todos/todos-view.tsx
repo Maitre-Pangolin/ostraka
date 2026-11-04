@@ -1,7 +1,7 @@
-import { filterTodos, isFiltering, type TodoFilter } from '@ostraka/core/todo-filter'
+import { filterTodos, isFiltering, type TodoFilter, type TodosView as ViewState } from '@ostraka/core/todo-filter'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { Ban, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from 'lucide-react'
-import { useState, type ReactNode } from 'react'
+import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
 import { Checkbox } from '@/components/ui/checkbox'
@@ -13,6 +13,9 @@ import { isStale } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { ReferenceText } from '@/references/reference-chip'
+import { useSectionSearch } from '@/search/api'
+import { useFindHighlight } from '@/search/find-highlight'
+import { SectionSearch } from '@/search/section-search'
 import { EmptyState } from '@/shell/shell'
 import {
   useCompleteTodo,
@@ -34,13 +37,18 @@ import { SubTodos } from './sub-todos'
 import { DIMMED, SubTodoLines, TodoRow } from './todo-row'
 
 /**
- * The Todos view: quick entry on top, the filters, open Todos below in their automatic order, Done & Dropped
- * collapsed last. The filter narrows both lists and lives in the URL.
+ * The Todos view: quick entry on top, the search box and the filters, open Todos below in their automatic order, Done
+ * & Dropped collapsed last. The search and the filter narrow both lists and live in the URL, with the Todo opened at a
+ * search match (`todo`): it opens expanded, in Done & Dropped if it is finished.
  */
 export function TodosView() {
-  const filter = useSearch({ from: '/todos' })
+  const view = useSearch({ from: '/todos' })
   const navigate = useNavigate({ from: '/todos' })
-  const setFilter = (next: TodoFilter) => void navigate({ search: next, replace: true })
+  const { q, todo: target, ...filter } = view
+  const setView = (next: ViewState) => void navigate({ search: next, replace: true })
+  const setFilter = (next: TodoFilter) => setView({ ...next, q, todo: target })
+  const search = useSectionSearch('todo', q)
+  const lists = useFindHighlight(q)
   const [historyOpen, setHistoryOpen] = useState(false)
   if (historyOpen) {
     return (
@@ -57,15 +65,20 @@ export function TodosView() {
       <h1 className="sr-only">Todos</h1>
       <QuickEntry />
       <div className="flex items-start gap-1.5">
+        <SectionSearch value={q} onChange={(text) => setView({ ...view, q: text })} label="Search Todos" className="h-6 w-36 @md:w-48" />
         <div className="min-w-0 flex-1">
           <TodoFilters filter={filter} onChange={setFilter} />
         </div>
         <HistoryButton open={false} onClick={() => setHistoryOpen(true)} />
       </div>
-      <section aria-label="Open Todos">
-        <OpenTodos filter={filter} />
-      </section>
-      <FinishedTodos filter={filter} />
+      {search.indexing && <p className="text-muted-foreground px-1 text-xs">Indexing…</p>}
+      {search.error && <p className="text-destructive px-1 text-xs">{search.error.message}</p>}
+      <div ref={lists} className="flex flex-col gap-2">
+        <section aria-label="Open Todos">
+          <OpenTodos filter={filter} found={search.found} target={target} />
+        </section>
+        <FinishedTodos filter={filter} found={search.found} target={target} />
+      </div>
     </div>
   )
 }
@@ -101,7 +114,29 @@ const toggled = (ids: ReadonlySet<string>, id: string, on?: boolean) => {
   return next
 }
 
-function OpenTodos({ filter }: { filter: TodoFilter }) {
+/** Scrolls the row of the Todo opened at a search match into view once it shows, once for each Todo. */
+function useScrollToTodo(target: string | undefined) {
+  const done = useRef<string | undefined>(undefined)
+  useEffect(() => {
+    if (!target || done.current === target) return
+    const frame = requestAnimationFrame(() => {
+      const row = document.querySelector(`[data-todo="${CSS.escape(target)}"]`)
+      if (!row) return
+      done.current = target
+      row.scrollIntoView({ block: 'center' })
+    })
+    return () => cancelAnimationFrame(frame)
+  })
+}
+
+/** The Todo holding `id`: itself, or the parent of the Sub-todo it is. */
+const holderOf = (todos: Todo[] | undefined, id: string | undefined) =>
+  id === undefined ? undefined : todos?.find((todo) => todo.id === id || todo.subTodos.some((sub) => sub.id === id))
+
+/** Narrowed by the filter and, with `found`, by what the search box found. `target` is the Todo opened at a match. */
+type ListProps = { filter: TodoFilter; found: ReadonlySet<string> | undefined; target: string | undefined }
+
+function OpenTodos({ filter, found, target }: ListProps) {
   const { data: todos, error, isPending } = useOpenTodos()
   const tags = useTagNames()
   const complete = useCompleteTodo()
@@ -116,13 +151,28 @@ function OpenTodos({ filter }: { filter: TodoFilter }) {
   const [pending, setPending] = useState<PendingFinish | null>(null)
   const showSkeleton = useAfter(300, isPending)
   const today = useToday()
+  // The Todo opened at a search match opens expanded (its parent, for a Sub-todo), once.
+  const holder = holderOf(todos, target)
+  const [expandedFor, setExpandedFor] = useState<string>()
+  if (holder && expandedFor !== target) {
+    setExpandedFor(target)
+    setOpenIds(toggled(openIds, holder.id, true))
+  }
+  useScrollToTodo(holder && target)
 
   if (error) return <p className="text-destructive px-1 text-sm break-words">Couldn’t load Todos: {error.message}</p>
   if (isPending) return showSkeleton ? <SkeletonRows /> : null
   if (!todos.length) return <EmptyState>No open Todos. Type one above and press ↵ to add it.</EmptyState>
-  const filtering = isFiltering(filter)
-  const shown = filterTodos(todos, filter)
-  if (!shown.length) return <EmptyState>No open Todos match these filters. Remove one, or clear all.</EmptyState>
+  const filtering = isFiltering(filter) || found !== undefined
+  const shown = filterTodos(todos, filter, found)
+  if (!shown.length)
+    return (
+      <EmptyState>
+        {found
+          ? 'No open Todos match this search and these filters. Try fewer or shorter words, or clear the filters.'
+          : 'No open Todos match these filters. Remove one, or clear all.'}
+      </EmptyState>
+    )
 
   /** Done or Drop at once, with Undo. Finishing the last open Sub-todo makes its parent offer to be marked done. */
   const finishNow = (item: TodoItem, { status, reason }: Finish, parent?: Todo) => {
@@ -328,15 +378,23 @@ function DropOrDelete({ todo, onDrop, onDelete }: { todo: TodoItem; onDrop: (rea
 }
 
 /** Done and Dropped Todos, kept forever: collapsed under the open list, newest-finished first when shown. */
-function FinishedTodos({ filter }: { filter: TodoFilter }) {
+function FinishedTodos({ filter, found, target }: ListProps) {
   const [expanded, setExpanded] = useState(false)
   const { data: todos, error } = useFinishedTodos()
   const reopen = useReopenTodo()
   const today = useToday()
+  // A finished Todo opened at a search match opens Done & Dropped and shows itself opened, once.
+  const holder = holderOf(todos, target)
+  const [expandedFor, setExpandedFor] = useState<string>()
+  if (holder && expandedFor !== target) {
+    setExpandedFor(target)
+    setExpanded(true)
+  }
+  useScrollToTodo(holder && expanded ? target : undefined)
 
   if (error) return <p className="text-destructive px-1 text-sm break-words">Couldn’t load Done & Dropped: {error.message}</p>
-  const filtering = isFiltering(filter)
-  const shown = filterTodos(todos ?? [], filter)
+  const filtering = isFiltering(filter) || found !== undefined
+  const shown = filterTodos(todos ?? [], filter, found)
   if (!shown.length) return null
 
   return (
@@ -360,11 +418,15 @@ function FinishedTodos({ filter }: { filter: TodoFilter }) {
             </p>
           )}
           <ul className="flex flex-col">
-            {shown.map(({ todo, dimmed, subTodos }) => (
-              <FinishedRow key={todo.id} todo={todo} dimmed={dimmed} onReopen={() => reopen.mutate(todo)}>
-                {filtering && <SubTodoLines subTodos={subTodos} today={today} />}
-              </FinishedRow>
-            ))}
+            {shown.map(({ todo, dimmed, subTodos }) => {
+              const opened = todo.id === holder?.id
+              return (
+                <FinishedRow key={todo.id} todo={todo} dimmed={dimmed} open={opened} onReopen={() => reopen.mutate(todo)}>
+                  {/* Opened at a match: its Sub-todos show too, where the match may be. */}
+                  {(filtering || opened) && <SubTodoLines subTodos={filtering ? subTodos : todo.subTodos} today={today} />}
+                </FinishedRow>
+              )
+            })}
           </ul>
         </>
       )}
@@ -374,10 +436,23 @@ function FinishedTodos({ filter }: { filter: TodoFilter }) {
 
 const finishedDay = (iso: string) => new Date(iso).toLocaleDateString(undefined, { day: 'numeric', month: 'short' })
 
-function FinishedRow({ todo, dimmed, onReopen, children }: { todo: Todo; dimmed: boolean; onReopen: () => void; children?: ReactNode }) {
+function FinishedRow({
+  todo,
+  dimmed,
+  open,
+  onReopen,
+  children,
+}: {
+  todo: Todo
+  dimmed: boolean
+  /** Opened at a search match: its description shows under it. */
+  open?: boolean
+  onReopen: () => void
+  children?: ReactNode
+}) {
   const dropped = todo.status === 'dropped'
   return (
-    <li className="flex flex-col">
+    <li data-todo={todo.id} className="flex flex-col">
       <div className={cn('hover:bg-muted/70 flex min-h-8 items-center gap-2 rounded-md px-1.5', dimmed && DIMMED)}>
         {dropped ? (
           <button
@@ -405,6 +480,11 @@ function FinishedRow({ todo, dimmed, onReopen, children }: { todo: Todo; dimmed:
           </time>
         )}
       </div>
+      {open && todo.description && (
+        <p className="text-muted-foreground mb-1 ml-8 text-sm break-words whitespace-pre-wrap">
+          <ReferenceText text={todo.description} />
+        </p>
+      )}
       {children}
     </li>
   )

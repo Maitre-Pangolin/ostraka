@@ -11,6 +11,10 @@ import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { onFileRestore } from '@/history/api'
 import { FileHistory, HistoryButton } from '@/history/file-history'
+import { useSectionSearch, type SearchHit } from '@/search/api'
+import { useFindHighlight } from '@/search/find-highlight'
+import { SectionSearch, Snippet } from '@/search/section-search'
+import { useRememberOpened } from '@/search/recent'
 import { EmptyState } from '@/shell/shell'
 import { useTagNames } from '@/todos/api'
 import { TagDot, TagPill } from '@/todos/properties'
@@ -27,7 +31,8 @@ const SAVE_AFTER_MS = 600
 
 /**
  * The Notes view: the list (all Notes, or only the Ideas) beside the open Note, side by side from `@3xl` and one at
- * a time below. The open Note and the Ideas switch live in the URL.
+ * a time below. The open Note, the Ideas switch and the search box's text live in the URL; the search narrows the
+ * list and is highlighted in the open Note.
  */
 export function NotesView() {
   const view = useSearch({ from: '/notes' })
@@ -45,6 +50,8 @@ export function NotesView() {
           openId={view.note}
           onOpen={open}
           onIdeas={(ideas) => setView({ ...view, ideas: ideas || undefined })}
+          q={view.q}
+          onSearch={(q) => setView({ ...view, q })}
         />
       </section>
       <section className={cn('min-h-0 min-w-0 flex-1 flex-col', view.note ? 'flex' : 'hidden @3xl:flex')}>
@@ -60,7 +67,7 @@ export function NotesView() {
             >
               <ArrowLeft className="size-3.5" /> All {view.ideas ? 'Ideas' : 'Notes'}
             </button>
-            <NoteDetail key={view.note} id={view.note} />
+            <NoteDetail key={view.note} id={view.note} find={view.q} />
           </>
         ) : (
           <EmptyState>Pick a Note on the left, or start one.</EmptyState>
@@ -75,13 +82,21 @@ function NotesList({
   openId,
   onOpen,
   onIdeas,
+  q,
+  onSearch,
 }: {
   ideas: boolean
   openId: string | undefined
   onOpen: (id: string) => void
   onIdeas: (ideas: boolean) => void
+  q: string | undefined
+  onSearch: (q: string | undefined) => void
 }) {
   const notes = useNotes({ ideas })
+  const search = useSectionSearch('note', q)
+  const list = useFindHighlight(q)
+  // A search keeps the list's own order; a broken file is never found.
+  const shown = search.found ? notes.data?.filter((note) => search.found!.has(note.id)) : notes.data
   const create = useCreateNote()
   const slow = useAfter(300, notes.isPending)
   const start = () => create.mutate({ title: 'Untitled', tags: ideas ? [IDEA_TAG] : [] }, { onSuccess: (note) => onOpen(note.id) })
@@ -110,6 +125,11 @@ function NotesList({
           <Plus /> {ideas ? 'New Idea' : 'New Note'}
         </Button>
       </div>
+      <div className="border-b px-2 py-1.5">
+        <SectionSearch value={q} onChange={onSearch} label={ideas ? 'Search Ideas' : 'Search Notes'} />
+      </div>
+      {search.indexing && <p className="text-muted-foreground px-3 py-2 text-xs">Indexing…</p>}
+      {search.error && <p className="text-destructive px-3 py-2 text-xs">{search.error.message}</p>}
       {create.error && <p className="text-destructive px-3 py-1.5 text-xs">{create.error.message}</p>}
       {notes.error && <p className="text-destructive px-3 py-2 text-sm">{notes.error.message}</p>}
       {slow && <SkeletonRows />}
@@ -118,10 +138,13 @@ function NotesList({
           {ideas ? 'No Ideas yet. Start one, or tag a Note #idea.' : 'No Notes yet. Start one to keep your thoughts.'}
         </EmptyState>
       )}
-      <ul className="flex flex-col">
-        {notes.data?.map((note) => (
+      {notes.data && notes.data.length > 0 && shown && !shown.length && (
+        <EmptyState>{ideas ? 'No Ideas match this search.' : 'No Notes match this search.'} Try fewer or shorter words.</EmptyState>
+      )}
+      <ul ref={list} className="flex flex-col">
+        {shown?.map((note) => (
           <li key={note.id}>
-            <NoteRow note={note} active={note.id === openId} onOpen={() => onOpen(note.id)} />
+            <NoteRow note={note} hit={search.hits?.get(note.id)} active={note.id === openId} onOpen={() => onOpen(note.id)} />
           </li>
         ))}
       </ul>
@@ -131,7 +154,7 @@ function NotesList({
 
 const changedOn = (iso: string) => new Date(iso).toLocaleDateString('en-GB', { day: 'numeric', month: 'short' })
 
-function NoteRow({ note, active, onOpen }: { note: NoteListing; active: boolean; onOpen: () => void }) {
+function NoteRow({ note, hit, active, onOpen }: { note: NoteListing; hit?: SearchHit; active: boolean; onOpen: () => void }) {
   return (
     <button
       type="button"
@@ -154,6 +177,7 @@ function NoteRow({ note, active, onOpen }: { note: NoteListing; active: boolean;
       ) : (
         <>
           <span className="truncate text-sm font-medium">{note.title}</span>
+          {hit && <Snippet pieces={hit.snippet} />}
           <span className="text-muted-foreground flex min-w-0 items-center gap-1 overflow-hidden text-[11px]">
             <span className="shrink-0">{changedOn(note.modifiedAt)}</span>
             {note.tags.map((tag) => (
@@ -176,8 +200,9 @@ export type SaveState = 'saved' | 'editing' | 'saving'
  * file changed elsewhere since, and the newer content is shown instead. A change made elsewhere while nothing is
  * waiting to be saved is shown straight away. Nothing is saved until the user edits.
  */
-function NoteDetail({ id }: { id: string }) {
+function NoteDetail({ id, find }: { id: string; find?: string }) {
   const query = useNote(id)
+  useRememberOpened('note', id, query.data?.title)
   const update = useUpdateNote(id)
   // What the editor shows: the body it was loaded with, from which version; a new `loaded` remounts it.
   const [loaded, setLoaded] = useState<{ body: string; version: string; count: number }>()
@@ -187,6 +212,8 @@ function NoteDetail({ id }: { id: string }) {
   const pending = useRef<string | undefined>(undefined)
   const editor = useRef<NoteEditorHandle | null>(null)
   const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
+  // The search's matches highlighted in the text, the first scrolled to on opening.
+  const matches = useFindHighlight(find, id)
   // Versions this view wrote: the refetch after its own save is not a change made elsewhere.
   const own = useRef(new Set<string>())
   // A restore of this Note started: its result reloads the editor even at a version seen before.
@@ -328,7 +355,7 @@ function NoteDetail({ id }: { id: string }) {
       )}
       {error && !historyOpen && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
       {/* Hidden, not unmounted, behind the history: the editor keeps what it shows. */}
-      <div className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
+      <div ref={matches} className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
         <Suspense>
           <NoteEditor key={loaded.count} markdown={loaded.body} onEdit={onEdit} handle={editor} />
         </Suspense>

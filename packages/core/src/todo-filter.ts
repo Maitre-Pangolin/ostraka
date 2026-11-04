@@ -69,11 +69,31 @@ export function parseTodoFilter(search: Record<string, unknown>): TodoFilter {
   }
 }
 
-/** The Todos the filter keeps, in the order given: those that match, and parents of Sub-todos that match. */
-export function filterTodos<T extends Todo>(todos: T[], filter: TodoFilter): FilteredTodo<T>[] {
+/** A search box's text from URL search params, as typed (a trailing space is still being typed); undefined when blank. */
+export const parseSearchText = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : undefined)
+
+/** The Todos view's state in the URL: the filter, the search box's text, and the Todo opened at a search match. */
+export type TodosView = TodoFilter & { q?: string; todo?: string }
+
+/** Router search params → the Todos view's state, leaving out empty and default values. */
+export function parseTodosView(search: Record<string, unknown>): TodosView {
+  const q = parseSearchText(search.q)
+  return {
+    ...parseTodoFilter(search),
+    ...(q !== undefined && { q }),
+    ...(typeof search.todo === 'string' && search.todo !== '' && { todo: search.todo }),
+  }
+}
+
+/**
+ * The Todos the filter keeps, in the order given: those that match, and parents of Sub-todos that match. With `found`
+ * (the ids a search found), only those match.
+ */
+export function filterTodos<T extends Todo>(todos: T[], filter: TodoFilter, found?: ReadonlySet<string>): FilteredTodo<T>[] {
+  const keeps = (todo: SubTodo) => matches(todo, filter) && (!found || found.has(todo.id))
   return todos.flatMap((todo) => {
-    const subTodos = todo.subTodos.filter((subTodo) => matches(subTodo, filter))
-    const dimmed = !matches(todo, filter)
+    const subTodos = todo.subTodos.filter(keeps)
+    const dimmed = !keeps(todo)
     return dimmed && !subTodos.length ? [] : [{ todo, dimmed, subTodos }]
   })
 }

@@ -7,10 +7,12 @@ import {
   devlogRangePresets,
   devlogSectionProblems,
   filterDevlogDays,
+  searchDevlogList,
   type DevlogDay,
   type DevlogsView as ViewState,
 } from '@ostraka/core/devlog-days'
 import { isBrokenDevlog, type DevlogSummary } from '@ostraka/core/devlog-schema'
+import type { SnippetPiece } from '@ostraka/core/search-types'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import {
   ArrowLeft,
@@ -37,6 +39,10 @@ import { useAfter } from '@/lib/use-after'
 import { PeoplePicker, PersonFilterChips } from '@/people/people-filter'
 import { cn } from '@/lib/utils'
 import { ReferenceText } from '@/references/reference-chip'
+import { useSectionSearch } from '@/search/api'
+import { useFindHighlight } from '@/search/find-highlight'
+import { SectionSearch, Snippet } from '@/search/section-search'
+import { useRememberOpened } from '@/search/recent'
 import { EmptyState } from '@/shell/shell'
 import { dayToDate, localDay, useToday } from '@/todos/due'
 import { ActiveChip, FilterPicker, MatchToggle } from '@/todos/filters'
@@ -63,7 +69,8 @@ const rangeLabel = (from: string, to: string) =>
 export function DevlogsView() {
   const view = useSearch({ from: '/devlogs' })
   const navigate = useNavigate({ from: '/devlogs' })
-  const setView = (next: ViewState) => void navigate({ search: next, replace: true })
+  // The search box's text stays while days and ranges are opened, until it is changed itself.
+  const setView = (next: ViewState) => void navigate({ search: 'q' in next ? next : { ...next, q: view.q }, replace: true })
   const range = view.from && view.to ? { from: view.from, to: view.to } : undefined
   const open = view.log !== undefined || range !== undefined
   return (
@@ -88,7 +95,7 @@ export function DevlogsView() {
           </button>
         )}
         {view.log ? (
-          <DevlogDetail key={view.log} id={view.log} />
+          <DevlogDetail key={view.log} id={view.log} find={view.q} />
         ) : range ? (
           <RangeView view={{ ...view, ...range }} onView={setView} />
         ) : (
@@ -103,7 +110,12 @@ function DevlogsList({ view, onView }: { view: ViewState; onView: (view: ViewSta
   const logs = useDevlogs()
   const today = useToday()
   const slow = useAfter(300, logs.isPending)
-  const months = logs.data ? devlogList(logs.data, today) : []
+  const search = useSectionSearch('devlog', view.q)
+  const list = useFindHighlight(view.q)
+  const all = logs.data ? devlogList(logs.data, today) : []
+  // A search keeps the list's order, without the gaps.
+  const months = search.found ? searchDevlogList(all, search.found) : all
+  const snippetOf = (id: string) => search.hits?.get(id)?.snippet
   const isWeek = (start: string) => view.from === start && view.to === addDays(start, 6)
   const openWeek = (start: string) => onView({ from: start, to: addDays(start, 6) })
   return (
@@ -111,52 +123,82 @@ function DevlogsList({ view, onView }: { view: ViewState; onView: (view: ViewSta
       <div className="bg-background sticky top-0 z-10 flex h-10 shrink-0 items-center gap-1.5 border-b px-2">
         <RangePicker view={view} today={today} onView={onView} />
       </div>
+      <div className="border-b px-2 py-1.5">
+        <SectionSearch value={view.q} onChange={(q) => onView({ ...view, q })} label="Search Dev logs" />
+      </div>
+      {search.indexing && <p className="text-muted-foreground px-3 py-2 text-xs">Indexing…</p>}
+      {search.error && <p className="text-destructive px-3 py-2 text-xs">{search.error.message}</p>}
       {logs.error && <p className="text-destructive px-3 py-2 text-sm">{logs.error.message}</p>}
       {slow && <SkeletonRows />}
-      {logs.data && !months.length && <EmptyState>No Dev logs yet. Run the Dev log skill to write today's.</EmptyState>}
-      {months.map((month) => (
-        <div key={month.month} role="group" aria-label={monthLabel(month.month)}>
-          <h2 className="text-foreground bg-background border-b px-3 py-1.5 text-xs font-semibold">{monthLabel(month.month)}</h2>
-          {month.summary && (
-            <SummaryRow summary={month.summary} active={view.log === month.month} onOpen={() => onView({ log: month.month })} />
-          )}
-          {month.weeks.map((week) => (
-            <div key={week.start}>
-              <button
-                type="button"
-                onClick={() => openWeek(week.start)}
-                aria-current={isWeek(week.start) || undefined}
-                className={cn(
-                  'bg-muted/40 text-muted-foreground hover:text-foreground flex w-full items-center gap-1 px-3 py-1 text-left text-[11px] font-semibold tracking-wide uppercase',
-                  focusRing,
-                  isWeek(week.start) && 'bg-accent text-foreground',
-                )}
-              >
-                Week of {dayLabel(week.start, { day: 'numeric', month: 'short' })}
-              </button>
-              <ul className="flex flex-col">
-                {week.days.map((day) => (
-                  <li key={day.date}>
-                    <DayRow day={day} today={today} active={view.log === day.date} onOpen={() => onView({ log: day.date })} />
-                  </li>
-                ))}
-              </ul>
-            </div>
-          ))}
-        </div>
-      ))}
+      {logs.data && !all.length && <EmptyState>No Dev logs yet. Run the Dev log skill to write today's.</EmptyState>}
+      {all.length > 0 && !months.length && <EmptyState>No Dev log matches this search. Try fewer or shorter words.</EmptyState>}
+      <div ref={list}>
+        {months.map((month) => (
+          <div key={month.month} role="group" aria-label={monthLabel(month.month)}>
+            <h2 className="text-foreground bg-background border-b px-3 py-1.5 text-xs font-semibold">{monthLabel(month.month)}</h2>
+            {month.summary && (
+              <SummaryRow
+                summary={month.summary}
+                snippet={snippetOf(month.month)}
+                active={view.log === month.month}
+                onOpen={() => onView({ log: month.month })}
+              />
+            )}
+            {month.weeks.map((week) => (
+              <div key={week.start}>
+                <button
+                  type="button"
+                  onClick={() => openWeek(week.start)}
+                  aria-current={isWeek(week.start) || undefined}
+                  className={cn(
+                    'bg-muted/40 text-muted-foreground hover:text-foreground flex w-full items-center gap-1 px-3 py-1 text-left text-[11px] font-semibold tracking-wide uppercase',
+                    focusRing,
+                    isWeek(week.start) && 'bg-accent text-foreground',
+                  )}
+                >
+                  Week of {dayLabel(week.start, { day: 'numeric', month: 'short' })}
+                </button>
+                <ul className="flex flex-col">
+                  {week.days.map((day) => (
+                    <li key={day.date}>
+                      <DayRow
+                        day={day}
+                        today={today}
+                        snippet={snippetOf(day.date)}
+                        active={view.log === day.date}
+                        onOpen={() => onView({ log: day.date })}
+                      />
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
     </>
   )
 }
 
-function SummaryRow({ summary, active, onOpen }: { summary: DevlogListing; active: boolean; onOpen: () => void }) {
+function SummaryRow({
+  summary,
+  snippet,
+  active,
+  onOpen,
+}: {
+  summary: DevlogListing
+  /** Where a search matched it. */
+  snippet?: SnippetPiece[]
+  active: boolean
+  onOpen: () => void
+}) {
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-current={active || undefined}
       className={cn(
-        'hover:bg-muted/60 flex w-full min-w-0 items-center gap-1.5 border-b px-3 py-2 text-left text-sm',
+        'hover:bg-muted/60 flex w-full min-w-0 flex-col gap-0.5 border-b px-3 py-2 text-left text-sm',
         focusRing,
         active && 'bg-accent',
       )}
@@ -164,11 +206,12 @@ function SummaryRow({ summary, active, onOpen }: { summary: DevlogListing; activ
       {isBrokenDevlog(summary) ? (
         <BrokenLine log={summary} />
       ) : (
-        <>
+        <span className="flex min-w-0 items-center gap-1.5">
           <Sparkles aria-hidden className="text-primary size-3.5 shrink-0" />
           <span className="truncate font-medium">Monthly summary</span>
-        </>
+        </span>
       )}
+      {snippet && <Snippet pieces={snippet} />}
     </button>
   )
 }
@@ -186,7 +229,20 @@ function BrokenLine({ log }: { log: BrokenDevlog }) {
 }
 
 /** A day in the list: its Dev log's Tags, its off-day label, or the hint to write it. */
-function DayRow({ day, today, active, onOpen }: { day: DevlogDay; today: string; active: boolean; onOpen: () => void }) {
+function DayRow({
+  day,
+  today,
+  snippet,
+  active,
+  onOpen,
+}: {
+  day: DevlogDay
+  today: string
+  /** Where a search matched it. */
+  snippet?: SnippetPiece[]
+  active: boolean
+  onOpen: () => void
+}) {
   const { log } = day
   if (!log) return <MissingDay date={day.date} today={today} className="border-b px-3 py-2" />
   return (
@@ -195,32 +251,35 @@ function DayRow({ day, today, active, onOpen }: { day: DevlogDay; today: string;
       onClick={onOpen}
       aria-current={active || undefined}
       className={cn(
-        'hover:bg-muted/60 flex w-full min-w-0 items-center gap-2 border-b px-3 py-2 text-left',
+        'hover:bg-muted/60 flex w-full min-w-0 flex-col gap-0.5 border-b px-3 py-2 text-left',
         focusRing,
         active && 'bg-accent',
       )}
     >
-      {isBrokenDevlog(log) ? (
-        <BrokenLine log={log} />
-      ) : (
-        <>
-          <span className={cn('w-24 shrink-0 text-sm font-medium whitespace-nowrap', log.off && 'text-muted-foreground')}>
-            {dayLabel(day.date)}
-          </span>
-          {log.off ? (
-            <OffLabel log={log} />
-          ) : (
-            <span className="flex min-w-0 items-center gap-1 overflow-hidden">
-              {log.tags.map((tag) => (
-                <span key={tag} className="contents">
-                  <TagPill tag={tag} className="hidden h-4 text-[10px] @md:inline-flex" />
-                  <TagDot tag={tag} className="@md:hidden" />
-                </span>
-              ))}
+      <span className="flex w-full min-w-0 items-center gap-2">
+        {isBrokenDevlog(log) ? (
+          <BrokenLine log={log} />
+        ) : (
+          <>
+            <span className={cn('w-24 shrink-0 text-sm font-medium whitespace-nowrap', log.off && 'text-muted-foreground')}>
+              {dayLabel(day.date)}
             </span>
-          )}
-        </>
-      )}
+            {log.off ? (
+              <OffLabel log={log} />
+            ) : (
+              <span className="flex min-w-0 items-center gap-1 overflow-hidden">
+                {log.tags.map((tag) => (
+                  <span key={tag} className="contents">
+                    <TagPill tag={tag} className="hidden h-4 text-[10px] @md:inline-flex" />
+                    <TagDot tag={tag} className="@md:hidden" />
+                  </span>
+                ))}
+              </span>
+            )}
+          </>
+        )}
+      </span>
+      {snippet && <Snippet pieces={snippet} />}
     </button>
   )
 }
@@ -346,8 +405,11 @@ function useTodoLink(): TodoLinkRenderer {
 }
 
 /** One day or monthly summary: rendered read-only, with Edit switching to the editor. */
-function DevlogDetail({ id }: { id: string }) {
+function DevlogDetail({ id, find }: { id: string; find?: string }) {
   const query = useDevlog(id)
+  useRememberOpened('devlog', id, query.data ? id : undefined)
+  // The search's matches highlighted in the text, the first scrolled to on opening.
+  const body = useFindHighlight(find, id)
   const today = useToday()
   const todoLink = useTodoLink()
   const [editing, setEditing] = useState(false)
@@ -410,7 +472,7 @@ function DevlogDetail({ id }: { id: string }) {
       )}
       {error && !historyOpen && <p className="text-destructive border-b px-3 py-1.5 text-xs">{error}</p>}
       {/* Hidden, not unmounted, behind the history: the editor keeps what it shows. */}
-      <div className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
+      <div ref={body} className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
         {editing ? (
           <div className="ostraka-md min-h-full">
             <DevlogEditor id={id} onState={setState} onError={setError} handle={editor} />
@@ -445,8 +507,10 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
   const today = useToday()
   const todoLink = useTodoLink()
   const slow = useAfter(300, query.isPending)
+  const search = useSectionSearch('devlog', view.q)
+  const stack = useFindHighlight(view.q)
   const days = query.data ? devlogDays(view, query.data, today) : []
-  const shown = filterDevlogDays(days, view)
+  const shown = filterDevlogDays(days, view, search.found)
   const tagOptions = [
     ...new Set([...days.flatMap(({ log }) => (log && !isBrokenDevlog(log) ? log.tags : [])), ...(view.tag ?? [])]),
   ].toSorted()
@@ -454,6 +518,7 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
     onView({
       from: view.from,
       to: view.to,
+      q: view.q,
       ...(next.tag?.length && { tag: next.tag }),
       ...(next.match && { match: next.match }),
       ...(next.person?.length && { person: next.person }),
@@ -492,12 +557,12 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
           </ActiveChip>
         ))}
       </div>
-      <div className="min-h-0 flex-1 overflow-y-auto">
+      <div ref={stack} className="min-h-0 flex-1 overflow-y-auto">
         {query.error && <p className="text-destructive px-3 py-2 text-sm">{query.error.message}</p>}
         {slow && <SkeletonRows />}
         {query.data && !shown.length && (
           <EmptyState>
-            {view.tag || view.person
+            {view.tag || view.person || view.q
               ? 'No Dev log on these days matches these filters. Remove one or choose other dates.'
               : 'Nothing on these days. Choose other dates.'}
           </EmptyState>

@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { SubTodo, Todo } from '../src/todo-schema.ts'
-import { filterTodos, isFiltering, parseTodoFilter } from '../src/todo-filter.ts'
+import { filterTodos, isFiltering, parseTodoFilter, parseTodosView } from '../src/todo-filter.ts'
 
 let created = 0
 const sub = (title: string, props: Partial<SubTodo> = {}): SubTodo => ({
@@ -75,6 +75,17 @@ describe('filterTodos', () => {
     expect(filterTodos([parent], { person: ['bram'] })).toEqual([{ todo: parent, dimmed: true, subTodos: [parent.subTodos[0]] }])
   })
 
+  it('keeps only what a search found, in the order given, a parent dimmed when only its Sub-todos were found', () => {
+    const parent = todo('Release', { subTodos: [sub('Kafka lag'), sub('Tag build')] })
+    const todos = [todo('Kafka consumer'), todo('Other'), parent]
+    const found = new Set([todos[0]!.id, parent.subTodos[0]!.id])
+    expect(filterTodos(todos, {}, found)).toEqual([
+      { todo: todos[0], dimmed: false, subTodos: [] },
+      { todo: parent, dimmed: true, subTodos: [parent.subTodos[0]] },
+    ])
+    expect(filterTodos(todos, { tag: ['api'] }, found)).toEqual([])
+  })
+
   it('keeps everything when nothing is chosen', () => {
     expect(titles(tagged, { priority: [], tag: [] })).toEqual(['Both', 'Api', 'Auth', 'None'])
   })
@@ -116,5 +127,17 @@ describe('parseTodoFilter', () => {
 
   it('takes a single value typed by hand, and each value once', () => {
     expect(parseTodoFilter({ priority: 'low', tag: ['api', 'api'] })).toEqual({ priority: ['low'], tag: ['api'] })
+  })
+})
+
+// The Todos view's URL: the filter, the section's search box and the Todo opened at a match.
+describe('parseTodosView', () => {
+  it('reads the filter, the search text and the open Todo', () => {
+    expect(parseTodosView({ tag: 'api', q: 'kafka lag', todo: 'k3f9x' })).toEqual({ tag: ['api'], q: 'kafka lag', todo: 'k3f9x' })
+  })
+
+  it('leaves out an empty search and anything that is not text', () => {
+    expect(parseTodosView({ q: '  ', todo: '' })).toEqual({})
+    expect(parseTodosView({ q: 3, todo: ['a'] })).toEqual({})
   })
 })

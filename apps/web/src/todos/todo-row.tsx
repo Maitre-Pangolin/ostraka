@@ -71,7 +71,7 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
     onChange(change)
   }
   return (
-    <li className="flex flex-col">
+    <li data-todo={todo.id} className="flex flex-col">
       <div className={cn('group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1', dimmed && DIMMED)}>
         <button
           type="button"
@@ -152,7 +152,7 @@ export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; t
       {subTodos.map((subTodo) => {
         const finished = subTodo.status !== 'open'
         return (
-          <li key={subTodo.id} className="flex min-h-7 items-center gap-1.5 px-1">
+          <li key={subTodo.id} data-todo={subTodo.id} className="flex min-h-7 items-center gap-1.5 px-1">
             {subTodo.status === 'done' ? (
               <Check aria-label="Done" className="text-muted-foreground size-3.5 shrink-0" />
             ) : subTodo.status === 'dropped' ? (
