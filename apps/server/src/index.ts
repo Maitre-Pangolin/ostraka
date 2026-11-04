@@ -25,3 +25,4 @@ export {
   type ReferenceLookup,
   type ReferenceLookupOptions,
 } from './references.ts'
+export { CONTENT_ROOT_HEADER, startSearch, type Search, type SearchOptions } from './search.ts'

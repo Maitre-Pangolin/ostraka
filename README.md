@@ -53,12 +53,16 @@ The content folder is its own git repo (created when missing, no remote). While 
 
 History in a Note's or a Sketch's header (and on the Todos view, for `todos.json`) lists the file's Snapshots and shows any of them. Restore writes that version as the current file and commits it as a new Snapshot, `restore: <path> as of <date>`, after committing any changes not yet in a Snapshot; nothing rewrites history, so a restore is undone by restoring the Snapshot before it (the Undo on its toast). The API is `GET /api/history?path=<file>`, `GET /api/history/<commit>?path=<file>` and `POST /api/history/restore {path, commit}`, for any content file.
 
+Search covers Notes, Dev logs and Todos (every state, Sub-todos too) in full text, and Sketches by title and Tags. ⌘K opens it from anywhere in the app; `pnpm ostraka search "<words>" [--tag <tag>]… [--kind todo|note|devlog|sketch]… [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]` searches from the terminal, and skills use it instead of `rg` on the content folder. Case and accents are ignored, each word matches as a prefix, `"a phrase"` matches exactly, nothing is stemmed, and a Reference (`PAY-1432`) or Mention (`@jane-doe`) is found only as that whole token. Results rank by relevance (bm25), newer first on a tie. The index is a throwaway SQLite FTS5 file, `~/Library/Caches/ostraka/search.db`, outside the content folder so it is never snapshotted or backed up: the server rebuilds it from the files when it starts (the app shows "indexing…" meanwhile) and keeps it current as files change, whoever changes them. `ostraka search` asks the running server, or builds a throwaway index in memory when the server is down.
+
 `tags.yml` in the content folder holds Tag colours only; Tags themselves come from use. A Tag it doesn't list keeps a colour picked from its name. Colours are `orange`, `yellow`, `green`, `teal`, `blue`, `violet`, `pink` and `red`:
 
 ```yaml
 code-review:
   color: blue
 ```
+
+The app's Tags view (the tag icon at the bottom of the rail) lists every Tag in use with its colour and how many Todos, Notes, Dev logs and Sketches use it. From there a Tag can be coloured (saved to `tags.yml`), renamed, merged into another or deleted. A rename, merge or delete rewrites every Todo and Sub-todo and the `tags:` line of every Note, Dev log and Sketch using the Tag, in one request and after a confirmation; files with a broken header are left alone. The next Snapshot holds the whole change, so History undoes it file by file. The API is `GET /api/tags/usage`, `POST /api/tags/<name>/rename {to}`, `POST /api/tags/<name>/merge {into}`, `DELETE /api/tags/<name>` and `PUT /api/tags/<name>/color {color}` (`null` for the default).
 
 ## Install it
 

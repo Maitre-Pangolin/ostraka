@@ -1,5 +1,5 @@
 import { Link } from '@tanstack/react-router'
-import { BookText, CheckSquare, Lightbulb, Moon, Rows3, Rows4, Settings, Shapes, Sun, type LucideIcon } from 'lucide-react'
+import { BookText, CheckSquare, Lightbulb, Moon, Rows3, Rows4, Settings, Shapes, Sun, Tags, type LucideIcon } from 'lucide-react'
 import type { ReactElement } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppearance } from './appearance'
@@ -25,7 +25,7 @@ function RailItem({ label, icon: Icon, render }: { label: string; icon: LucideIc
   )
 }
 
-/** The left rail: sections on top; density, theme and Settings at the bottom. */
+/** The left rail: sections on top; density, theme, Tags and Settings at the bottom. */
 export function Rail() {
   const { theme, setTheme, density, setDensity } = useAppearance()
   return (
@@ -50,6 +50,7 @@ export function Rail() {
         icon={theme === 'dark' ? Moon : Sun}
         render={<button type="button" onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')} />}
       />
+      <RailItem label="Tags" icon={Tags} render={<Link to="/tags" />} />
       <RailItem label="Settings" icon={Settings} render={<Link to="/settings" />} />
     </nav>
   )
