@@ -7,7 +7,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 ## Stack
 
 - Vite, React 19, TanStack Router (`src/router.tsx`), shadcn/ui on Base UI, Tailwind v4, lucide-react.
-- View state worth a reload or a link (filters, a date range, the open item) lives in typed router search params: the route's `validateSearch` checks them with a parser from core, which leaves out empty and default values so a plain view has a clean URL (`parseTodoFilter` on `/todos`). Changing them navigates with `replace: true`.
+- View state worth a reload or a link (filters, a date range, the open item, a search box's text) lives in typed router search params: the route's `validateSearch` checks them with a parser from core, which leaves out empty and default values so a plain view has a clean URL (`parseTodosView` on `/todos`). Changing them navigates with `replace: true`.
 - Add components with the shadcn CLI (`pnpm exec shadcn add <name>` from `apps/web`), then edit the copy in `src/components/ui/`. Base UI composes through the `render` prop (see `src/shell/rail.tsx`).
 - Server state comes from the API under `/api`. In development Vite proxies `/api` to `ostraka serve` on 127.0.0.1:4747, so run both. In production the server serves `dist/` from the same origin.
 - Server state lives only in TanStack Query, with no second client store. Each section keeps its queries and mutations as hooks in one `api.ts` (see `src/todos/api.ts`), calling the server through `src/lib/api.ts`. The server's answer (order included) is shown as is. An immediate change updates the cache in `onMutate`, rolls back on error, and invalidates on settle.
@@ -120,8 +120,13 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 ## Search
 
 - ⌘K (Ctrl+K) opens `SearchDialog` (`src/search/search-dialog.tsx`), mounted once in the shell, from anywhere: the shortcut is caught before editors see it. Each opening starts empty. It is shadcn's `command` (cmdk) in a Dialog, with `shouldFilter={false}`: the server finds and ranks (`GET /api/search`, `useSearch` in `src/search/api.ts`), the dialog only lays the hits out and moves the selection.
-- Hits are grouped by kind, kinds in the order of their best hit (`groupHits`), the server's order kept within each. A row is the kind's rail icon, the title (a Dev log's day or a monthly summary's month, written out), the date at the end; under it the snippet with matches in `<mark>` (`bg-primary/15`) and the Tags as pills. A finished Todo is muted and struck through, a Dropped one says so. ↵ opens the item's view.
-- One muted line stands in for the hits while there is no text, while the server is still indexing ("Indexing…", asked again every 500 ms) and when nothing matches; an error is that line in `text-destructive`. Live updates refetch `['search']` on any content change.
+- A `#tag` or `@person` followed by a space leaves the text and becomes a removable chip under the input (a `TagPill`, or the Person's name in `primary`); Backspace in the empty field removes the last one. Several Tags match all of them, with an All of / Any of toggle before them. A Kind menu and a Date menu (Any date, Last 7 days, Last 30 days, This year, Custom… over a range Calendar) end that row, tinted `primary` once they narrow. Reading the typed text, chips and menus into a query is core's (`@ostraka/core/search-input`): a Person is searched as their whole Mention.
+- Hits are grouped by kind, kinds in the order of their best hit (`groupHits`), the server's order kept within each. A row is the kind's rail icon, the title (a Dev log's day or a monthly summary's month, written out), the date at the end; under it the snippet with matches in `<mark>` (`bg-primary/15`) and the Tags as pills. A finished Todo is muted and struck through, a Dropped one says so. ↵ opens the item's view at the match (below).
+- With nothing typed or chosen, the dialog lists the 8 items opened last ("Recently opened"), kept per browser in `localStorage` by `src/search/recent.ts`, which works without storage (a private window lists nothing). Opening an item from ⌘K or in its view (`useRememberOpened` in Notes, Dev logs and Sketches) puts it first.
+- One muted line stands in for the hits when there is nothing to list, while the server is still indexing ("Indexing…", asked again every 500 ms) and when nothing matches; an error is that line in `text-destructive`. Live updates refetch `['search']` on any content change.
+- A section with a list (Notes, Dev logs, Todos) has a search box (`SectionSearch` in `src/search/section-search.tsx`, its text in the URL as `q`): the server finds that kind (`useSectionSearch`), and the list keeps only what it found, in its own order (`filterTodos`, `searchDevlogList` and `filterDevlogDays` take the found ids); a Note or Dev log row shows the snippet under it (`Snippet`). Esc leaves the box and keeps the text; × clears it.
+- Matches are highlighted where they show, never by changing the DOM: `useFindHighlight` (`src/search/find-highlight.ts`) paints ranges with the CSS Custom Highlight API (`::highlight(ostraka-search)` in `src/index.css`), found by core's `findMatches` (`@ostraka/core/search-match`) and found again as the view redraws, so it works over the Notes editor too. Text inside the server's own `<mark>` is left to it.
+- Opening at the match: ⌘K passes the searched text as the view's `q`. A Note or Dev log opens scrolled to its first match, highlighted (`useFindHighlight` with the item's id as its scroll key). A Todo opens with `?todo=<id>`: it, or its parent for a Sub-todo, is expanded and scrolled to (rows carry `data-todo`); a finished one opens Done & Dropped and shows its description and Sub-todos under it.
 
 ## Keyboard
 
@@ -129,7 +134,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - ⇧↵ adds a new line; in a title it opens the description.
 - Esc closes the open popup first; pressed again, it leaves the field and keeps the text.
 - Tab or ↵ accepts a suggestion.
-- ⌘K opens search, from anywhere. It is search only, no commands.
+- ⌘K opens search, from anywhere. It is search only, no commands. Backspace in its empty field removes the last chip.
 - Everything is reachable by keyboard and shows a visible focus ring (`focus-visible:ring-3 focus-visible:ring-ring/50`, as in `src/shell/rail.tsx`).
 
 ## States
