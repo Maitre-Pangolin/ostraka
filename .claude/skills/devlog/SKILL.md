@@ -1,6 +1,6 @@
 ---
 name: devlog
-description: Writes Dev logs from the user's finished Todos, GitLab, Jira and Slack activity, for today, a past day or a Backfill of missing days, adding only what is missing to a day already written. Also reformats old days (`reformat <date|range>`) and writes a month's summary. Use when the user asks to write, fill, catch up on or reformat Dev logs (`/devlog`), asks for a monthly summary, or the Briefing offers to fill Dev log gaps.
+description: Writes Dev logs from the user's finished Todos, GitLab, Jira and Slack activity, for today, a past day or a Backfill of missing days, adding only what is missing to a day already written. Also reformats old days (`reformat <date|range>`), writes a month's summary, and migrates the old monthly Dev log files a month at a time (`migrate`). Use when the user asks to write, fill, catch up on, reformat or migrate Dev logs (`/devlog`), asks for a monthly summary, or the Briefing offers to fill Dev log gaps.
 ---
 
 # Dev log
@@ -20,8 +20,10 @@ Today is the local date, `date +%F`. Read [format.md](format.md), in this folder
 | A Backfill: catch up, fill the gaps, a week or a range (`/devlog backfill [<from> [<to>]]`) | Follow [backfill.md](backfill.md)                                         |
 | `reformat <date\|range>`                                                                    | Follow [reformat.md](reformat.md)                                         |
 | A monthly summary (`/devlog summary [<YYYY-MM>]`)                                           | Follow [monthly-summary.md](monthly-summary.md)                           |
+| Migrating the old monthly Dev log files (`/devlog migrate [<YYYY-MM>]`)                     | Follow [migrate.md](migrate.md)                                           |
+| Staging one month of that migration, as its headless session                                | Follow [migrate-month.md](migrate-month.md)                               |
 
-`reformat` and the monthly summary run only when the user asks for them by name; the other branches never restructure a day or touch a summary.
+`reformat`, the monthly summary and the migration run only when the user asks for them by name; the other branches never restructure a day or touch a summary.
 
 ## The day flow
 
