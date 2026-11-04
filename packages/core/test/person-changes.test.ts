@@ -50,6 +50,8 @@ async function mentionEverywhere() {
   return { note }
 }
 
+const counts = (uses: { count: number }[]) => uses.map((use) => use.count)
+
 describe('listStubPeople', () => {
   it('lists the Persons with no email who are not ignored', async () => {
     await addPerson({ id: 'milena-s', name: 'Milena S' }, options)
@@ -93,6 +95,18 @@ describe('renamePerson', () => {
     })
     expect(await readFile(join(contentRoot, 'devlogs', '2026-11-02.md'), 'utf8')).toBe(DEVLOG.replaceAll('@milena-s ', '@milena-senechal '))
     expect(await personMentions('milena-s', options)).toEqual([])
+  })
+
+  it('with dryRun, checks and counts but writes nothing', async () => {
+    await addPerson({ id: 'milena-s', name: 'Milena S' }, options)
+    await addPerson({ name: 'Bram Okonkwo' }, options)
+    await mentionEverywhere()
+    const before = await readFile(join(contentRoot, 'todos.json'), 'utf8')
+    expect(counts(await renamePerson('milena-s', { id: 'milena-senechal' }, { ...options, dryRun: true }))).toEqual([3, 2, 2])
+    expect(counts(await mergePerson('milena-s', 'bram-okonkwo', { ...options, dryRun: true }))).toEqual([3, 2, 2])
+    await expect(renamePerson('milena-s', { id: 'bram-okonkwo' }, { ...options, dryRun: true })).rejects.toThrow(PersonExistsError)
+    expect(await readFile(join(contentRoot, 'todos.json'), 'utf8')).toBe(before)
+    expect((await listPeople(options)).map((person) => person.id)).toEqual(['bram-okonkwo', 'milena-s'])
   })
 
   it('keeps the name when none is given', async () => {

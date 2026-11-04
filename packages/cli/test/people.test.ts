@@ -96,6 +96,53 @@ describe('ostraka people', () => {
     expect(JSON.parse((await ostraka('people', 'show', 'bram', '--json')).stdout)).toEqual(added)
   })
 
+  it('lists everyone, or only the Stub Persons with --stubs', async () => {
+    expect(await ostraka('people', 'list', '--stubs')).toEqual({ code: 0, stdout: 'No Stub Persons.\n', stderr: '' })
+    await ostraka('people', 'add', 'Milena S', '--id', 'milena-s')
+    await ostraka('people', 'add', 'Bram Okonkwo', '--email', 'bram@corp.example')
+    await ostraka('people', 'add', 'Quentin Dupre', '--ignored')
+    expect(await ostraka('people', 'list', '--stubs')).toEqual({ code: 0, stdout: 'milena-s  Milena S\n', stderr: '' })
+    expect((await ostraka('people', 'list')).stdout).toBe(
+      'bram-okonkwo  Bram Okonkwo  bram@corp.example\nmilena-s  Milena S\nquentin-dupre  Quentin Dupre  (ignored)\n',
+    )
+    expect(JSON.parse((await ostraka('people', 'list', '--stubs', '--json')).stdout)).toEqual([
+      { id: 'milena-s', name: 'Milena S', aliases: [] },
+    ])
+  })
+
+  it('renames a Person and merges one into another, rewriting Mentions, with counts shown first by --dry-run', async () => {
+    await ostraka('people', 'add', 'Milena S', '--id', 'milena-s')
+    await ostraka('people', 'add', 'Bram Okonkwo', '--email', 'bram@corp.example')
+    await ostraka('todo', 'add', 'Ask @milena-s and @milena-s again')
+
+    expect(await ostraka('people', 'rename', 'milena-s', 'milena-senechal', '--name', 'Milena Sénéchal', '--dry-run')).toEqual({
+      code: 0,
+      stdout: 'Would rename @milena-s → @milena-senechal in 2 places: todos.json 2\n',
+      stderr: '',
+    })
+    expect((await ostraka('people', 'list', '--stubs')).stdout).toBe('milena-s  Milena S\n')
+
+    expect(await ostraka('people', 'rename', 'milena-s', 'milena-senechal', '--name', 'Milena Sénéchal')).toEqual({
+      code: 0,
+      stdout: 'Renamed @milena-s → @milena-senechal in 2 places: todos.json 2\n',
+      stderr: '',
+    })
+    expect(JSON.parse((await ostraka('people', 'show', 'milena-senechal', '--json')).stdout)).toEqual({
+      id: 'milena-senechal',
+      name: 'Milena Sénéchal',
+      aliases: ['Milena S'],
+    })
+
+    expect((await ostraka('people', 'merge', 'milena-senechal', 'bram-okonkwo', '--dry-run')).stdout).toBe(
+      'Would merge @milena-senechal → @bram-okonkwo in 2 places: todos.json 2\n',
+    )
+    const merged = JSON.parse((await ostraka('people', 'merge', 'milena-senechal', 'bram-okonkwo', '--json')).stdout)
+    expect(merged).toEqual({ from: 'milena-senechal', to: 'bram-okonkwo', mentions: [{ file: 'todos.json', count: 2 }] })
+    expect((await ostraka('todo', 'list')).stdout).toContain('Ask @bram-okonkwo and @bram-okonkwo again')
+    expect((await ostraka('people', 'list')).stdout).toBe('bram-okonkwo  Bram Okonkwo  bram@corp.example\n')
+    expect((await ostraka('people', 'merge', 'nobody', 'bram-okonkwo')).code).toBe(1)
+  })
+
   it('fails on an unknown id, a taken id and missing arguments', async () => {
     expect(await ostraka('people', 'show', 'nobody')).toMatchObject({ code: 1, stderr: 'No Person nobody in the People directory.\n' })
     await ostraka('people', 'add', 'Bram Okonkwo')

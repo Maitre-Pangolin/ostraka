@@ -205,7 +205,14 @@ export {
   refreshPerson,
   type PeopleOptions,
 } from './people.ts'
-export { mergePerson, PersonChangeError, personMentions, renamePerson, type MentionUse } from './person-changes.ts'
+export {
+  mergePerson,
+  PersonChangeError,
+  personMentions,
+  renamePerson,
+  type MentionUse,
+  type PersonChangeOptions,
+} from './person-changes.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,

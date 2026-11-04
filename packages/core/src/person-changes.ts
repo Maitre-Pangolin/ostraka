@@ -12,6 +12,9 @@ import { allTodoItems, rewriteTodoTexts } from './todos.ts'
 /** A change to a Person that can't be made, such as merging them into themselves or an id that isn't one. */
 export class PersonChangeError extends Error {}
 
+/** With `dryRun`, a rename or merge is checked and its Mentions counted, for the confirmation, but nothing is written. */
+export type PersonChangeOptions = PeopleOptions & { dryRun?: boolean }
+
 /** How many Mentions of a Person one content file holds, by its path in the content folder (`notes/<id>.md`). */
 export type MentionUse = { file: string; count: number }
 
@@ -70,15 +73,21 @@ const withAlias = (aliases: string[], name: string, ...more: string[]) =>
 
 /**
  * Gives a Person a new id, and a new name if one is given (the old name stays as an alias), then rewrites every
- * Mention of them. Refused before anything is written when the new id isn't one or another Person has it.
+ * Mention of them. Refused before anything is written when the new id isn't one or another Person has it (that is a
+ * merge).
  * Says how many Mentions each file held.
  */
-export async function renamePerson(id: string, to: { id: string; name?: string }, options: PeopleOptions = {}): Promise<MentionUse[]> {
+export async function renamePerson(
+  id: string,
+  to: { id: string; name?: string },
+  options: PersonChangeOptions = {},
+): Promise<MentionUse[]> {
   if (!PERSON_ID.test(to.id)) throw new PersonChangeError(`${to.id} isn’t a Person id: use lowercase words joined by hyphens`)
   const people = await personById(id, options)
   if (to.id !== id && people.some((person) => person.id === to.id)) {
     throw new PersonExistsError(`${to.id} is already in the People directory: merge ${id} into them instead.`)
   }
+  if (options.dryRun) return to.id === id ? [] : personMentions(id, options)
   const uses = to.id === id ? [] : await rewriteMentions(id, to.id, options)
   await updatePeople(options, (file) => {
     const person = file.people.find((candidate) => candidate.id === id)
@@ -93,10 +102,11 @@ export async function renamePerson(id: string, to: { id: string; name?: string }
  * Merges a Person into another: every Mention of them is rewritten, their name and aliases become the other's
  * aliases, identities the other lacks are kept, and they leave the directory. Says how many Mentions each file held.
  */
-export async function mergePerson(id: string, intoId: string, options: PeopleOptions = {}): Promise<MentionUse[]> {
+export async function mergePerson(id: string, intoId: string, options: PersonChangeOptions = {}): Promise<MentionUse[]> {
   if (id === intoId) throw new PersonChangeError(`A Person can’t be merged into themselves.`)
   await personById(id, options)
   await personById(intoId, options)
+  if (options.dryRun) return personMentions(id, options)
   const uses = await rewriteMentions(id, intoId, options)
   await updatePeople(options, (file) => {
     const merged = file.people.find((person) => person.id === id)
