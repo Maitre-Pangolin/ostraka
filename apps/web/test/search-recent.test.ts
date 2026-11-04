@@ -17,6 +17,11 @@ function memoryStorage(): Storage {
   }
 }
 
+/** Storage a private window or a blocked site refuses. */
+const missing = (): never => {
+  throw new DOMException('The operation is insecure.', 'SecurityError')
+}
+
 const item = (id: string, kind: RecentItem['kind'] = 'note'): RecentItem => ({ kind, id, title: `Title ${id}` })
 
 describe('recently opened items', () => {
@@ -40,9 +45,6 @@ describe('recently opened items', () => {
   })
 
   it('works without storage: nothing is listed and nothing throws', () => {
-    const missing = () => {
-      throw new DOMException('The operation is insecure.', 'SecurityError')
-    }
     expect(() => rememberOpened(item('a'), missing)).not.toThrow()
     expect(recentItems(missing)).toEqual([])
     const full = { ...memoryStorage(), setItem: missing }

@@ -2,6 +2,7 @@
 // private window), full or hold anything, so reading falls back to nothing and writing never throws.
 import { SEARCH_KINDS, type SearchKind } from '@ostraka/core/search-types'
 import type { TodoStatus } from '@ostraka/core/todo-schema'
+import { useEffect } from 'react'
 
 /** An item as it was when opened: enough to show it and open it again. */
 export type RecentItem = { kind: SearchKind; id: string; title: string; status?: TodoStatus; parentId?: string }
@@ -43,4 +44,11 @@ export function rememberOpened(item: RecentItem, storage: GetStorage = browserSt
   } catch {
     // Storage unavailable or full: the list stays as it was.
   }
+}
+
+/** Remembers the item a view shows as opened, once it has loaded, and again when its title changes. */
+export function useRememberOpened(kind: SearchKind, id: string, title: string | undefined) {
+  useEffect(() => {
+    if (title !== undefined) rememberOpened({ kind, id, title })
+  }, [kind, id, title])
 }
