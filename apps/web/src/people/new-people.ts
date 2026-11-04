@@ -3,7 +3,7 @@
 // name) written, so an abandoned draft leaves no Person behind. Not server state: nothing of it is on the server yet.
 import { findMentions } from '@ostraka/core/mentions'
 import { useSyncExternalStore } from 'react'
-import { ApiError, post } from '@/lib/api'
+import { ApiError, post } from '../lib/api'
 
 export type NewPerson = { id: string; name: string }
 
