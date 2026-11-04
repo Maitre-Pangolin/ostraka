@@ -6,6 +6,7 @@ import {
   devlogRangePresets,
   devlogSectionProblems,
   filterDevlogDays,
+  missingDevlogWeeks,
   parseDevlogsView,
 } from '../src/devlog-days.ts'
 
@@ -71,6 +72,31 @@ describe('devlogDays', () => {
       ['2026-10-29', '2026-10-29'],
       ['2026-10-28', undefined],
     ])
+  })
+})
+
+describe('missingDevlogWeeks', () => {
+  it('lists the weekdays with no Dev log by week, oldest first, from the first Dev log to today', () => {
+    const logs = [day('2026-10-21'), day('2026-10-23'), day('2026-10-24'), day('2026-10-26'), day('2026-10-27')]
+    const offDay = day('2026-10-28', { off: true, label: 'Holiday' })
+    const broken = { id: '2026-10-29', version: 'v', modifiedAt: '', error: 'Broken YAML header' }
+    expect(missingDevlogWeeks([...logs, offDay, broken, summary('2026-10')], TODAY)).toEqual([
+      { start: '2026-10-19', days: ['2026-10-22'] },
+      { start: '2026-10-26', days: ['2026-10-30'] },
+      { start: '2026-11-02', days: ['2026-11-02', '2026-11-03', '2026-11-04'] },
+    ])
+  })
+
+  it('narrows to a range, which may start before the first Dev log', () => {
+    expect(missingDevlogWeeks([day('2026-10-28')], TODAY, { from: '2026-10-23', to: '2026-10-30' })).toEqual([
+      { start: '2026-10-19', days: ['2026-10-23'] },
+      { start: '2026-10-26', days: ['2026-10-26', '2026-10-27', '2026-10-29', '2026-10-30'] },
+    ])
+  })
+
+  it('never lists a day after today, and nothing without a Dev log or a start', () => {
+    expect(missingDevlogWeeks([day('2026-11-03')], TODAY, { to: '2026-11-06' })).toEqual([{ start: '2026-11-02', days: ['2026-11-04'] }])
+    expect(missingDevlogWeeks([], TODAY)).toEqual([])
   })
 })
 

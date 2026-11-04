@@ -90,6 +90,29 @@ export function devlogList(logs: DevlogListing[], today: string): DevlogMonth[] 
   return [...months.values()].toSorted((a, b) => b.month.localeCompare(a.month))
 }
 
+/** A week (its Monday) with the weekdays in it that have no Dev log, oldest first. */
+export type MissingDevlogWeek = { start: string; days: string[] }
+
+/**
+ * The weekdays with no Dev log, grouped by week, oldest first: what a Backfill catches up on. The range runs from
+ * `from` (the first Dev log by default) to `to` (today by default), never past today. A day with any file counts as
+ * written, an off day or a broken one too. Nothing is missing before there is a Dev log or a `from`.
+ */
+export function missingDevlogWeeks(logs: DevlogListing[], today: string, range: { from?: string; to?: string } = {}): MissingDevlogWeek[] {
+  const dayLogs = logs.filter((log) => DAY.test(log.id))
+  const from = range.from ?? dayLogs.map((log) => log.id).toSorted()[0]
+  if (from === undefined) return []
+  const to = [range.to ?? today, today].toSorted()[0]!
+  const weeks: MissingDevlogWeek[] = []
+  for (const { date, log } of daysBetween(from, to, dayLogs, today).toReversed()) {
+    if (log) continue
+    const start = weekStart(date)
+    if (weeks.at(-1)?.start !== start) weeks.push({ start, days: [] })
+    weeks.at(-1)!.days.push(date)
+  }
+  return weeks
+}
+
 /**
  * What the stacked days are narrowed to: all of these Tags, or any of them with `match: 'any'`, and all of these
  * Persons mentioned (by id).

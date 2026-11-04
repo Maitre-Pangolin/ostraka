@@ -168,6 +168,7 @@ export {
   devlogRangePresets,
   devlogSectionProblems,
   filterDevlogDays,
+  missingDevlogWeeks,
   parseDevlogsView,
   type DevlogDay,
   type DevlogFilter,
@@ -175,7 +176,9 @@ export {
   type DevlogRange,
   type DevlogsView,
   type DevlogWeek,
+  type MissingDevlogWeek,
 } from './devlog-days.ts'
+export { localDay } from './todo-order.ts'
 export {
   formatPeopleFile,
   NewPersonSchema,
