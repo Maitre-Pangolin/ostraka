@@ -1,19 +1,21 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { backupState, configPath, loadConfig, locateContentRoot, type ContentOptions } from '@ostraka/core'
+import { backupState, type ContentOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { activityPoller, type Activity } from './activity/poller.ts'
-import type { Backups } from './backups.ts'
+import { activityRoutes } from './activity/routes.ts'
+import { backupRoutes, type Backups } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
-import { KEYCHAIN_ITEMS, type CredentialName, type Credentials } from './keychain.ts'
+import type { Credentials } from './keychain.ts'
 import { devlogRoutes } from './devlogs.ts'
 import { historyRoutes } from './history.ts'
 import { noteRoutes } from './notes.ts'
 import { peopleRoutes } from './people.ts'
 import { noReferenceLookup, referenceRoutes, type ReferenceLookup } from './references.ts'
 import { searchRoutes, throwawaySearch, type Search } from './search.ts'
+import { settingsRoutes } from './settings.ts'
 import { sketchRoutes } from './sketches.ts'
 import { tagRoutes } from './tags.ts'
 import { todoRoutes } from './todos.ts'
@@ -117,45 +119,9 @@ export function createApp({
     }),
   )
 
-  app.get('/api/backup', async (c) => {
-    try {
-      return c.json(await backups.status())
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
-    }
-  })
-
-  // The work overview: each Activity source's latest data, or why it is failing or off.
-  app.get('/api/activity', (c) => c.json({ sources: activity.statuses() }))
-  // A window shows or hides the app: the server owns the schedule, the window only says whether it is seen.
-  app.post('/api/activity/visibility', async (c) => {
-    const body = (await c.req.json().catch(() => undefined)) as { client?: unknown; visible?: unknown } | undefined
-    if (typeof body?.client !== 'string' || typeof body.visible !== 'boolean') {
-      return c.json({ error: 'Expected { client: string, visible: boolean }' }, 400)
-    }
-    activity.setVisibility(body.client, body.visible)
-    return c.body(null, 204)
-  })
-
-  // Read on each request, so the Settings view shows edits to config.yml without a restart.
-  app.get('/api/settings', async (c) => {
-    try {
-      const config = await loadConfig({ homeDir: content.homeDir })
-      return c.json({
-        configFile: configPath(content.homeDir),
-        content: await locateContentRoot(content),
-        gitlab: config.gitlab ?? {},
-        jira: config.jira ?? {},
-        keychain: (Object.entries(KEYCHAIN_ITEMS) as [CredentialName, string][]).map(([name, item]) => ({
-          name,
-          item,
-          found: credentials[name] !== undefined,
-        })),
-      })
-    } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
-    }
-  })
+  app.route('/api/backup', backupRoutes(backups))
+  app.route('/api/activity', activityRoutes(activity))
+  app.route('/api/settings', settingsRoutes(content, credentials))
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))
 
   // The built web app, same origin as the API. Unknown paths are client routes, so they get index.html.

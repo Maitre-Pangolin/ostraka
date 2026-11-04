@@ -1,5 +1,6 @@
 // Backup scheduling: push after a Snapshot, at most once every 15 minutes; check the remote at start.
 import { backup, backupState, checkBackup, type BackupResult, type BackupStatus, type ContentOptions } from '@ostraka/core'
+import { Hono } from 'hono'
 
 export const BACKUP_INTERVAL_MS = 15 * 60_000
 
@@ -91,4 +92,17 @@ export function startBackups({
       timer = undefined
     },
   }
+}
+
+/** `GET /api/backup`: the backup status the top bar's warning shows. */
+export function backupRoutes(backups: Pick<Backups, 'status'>) {
+  const routes = new Hono()
+  routes.get('/', async (c) => {
+    try {
+      return c.json(await backups.status())
+    } catch (error) {
+      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
+    }
+  })
+  return routes
 }

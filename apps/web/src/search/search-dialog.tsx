@@ -18,11 +18,14 @@ import { useSearch, type SearchHit, type SearchKind } from './api'
 import { groupHits } from './groups'
 import { recentItems, rememberOpened, type RecentItem } from './recent'
 
-const KINDS: Record<SearchKind, { label: string; icon: LucideIcon }> = {
-  todo: { label: 'Todos', icon: CheckSquare },
-  note: { label: 'Notes', icon: Lightbulb },
-  devlog: { label: 'Dev logs', icon: BookText },
-  sketch: { label: 'Sketches', icon: Shapes },
+type Navigate = ReturnType<typeof useNavigate>
+
+/** Each kind's label and rail icon, and how to open one of its items at the text searched (`q`). */
+const KINDS: Record<SearchKind, { label: string; icon: LucideIcon; open: (navigate: Navigate, id: string, q?: string) => void }> = {
+  todo: { label: 'Todos', icon: CheckSquare, open: (navigate, todo, q) => void navigate({ to: '/todos', search: { todo, q } }) },
+  note: { label: 'Notes', icon: Lightbulb, open: (navigate, note, q) => void navigate({ to: '/notes', search: { note, q } }) },
+  devlog: { label: 'Dev logs', icon: BookText, open: (navigate, log, q) => void navigate({ to: '/devlogs', search: { log, q } }) },
+  sketch: { label: 'Sketches', icon: Shapes, open: (navigate, sketch) => void navigate({ to: '/sketches', search: { sketch } }) },
 }
 
 const DATE_PRESETS: { value: Exclude<SearchDates, object>; label: string }[] = [
@@ -96,11 +99,7 @@ export function SearchDialog() {
   const openItem = (item: RecentItem) => {
     setOpen(false)
     rememberOpened(item)
-    const q = query?.text || undefined
-    if (item.kind === 'note') void navigate({ to: '/notes', search: { note: item.id, q } })
-    else if (item.kind === 'devlog') void navigate({ to: '/devlogs', search: { log: item.id, q } })
-    else if (item.kind === 'sketch') void navigate({ to: '/sketches', search: { sketch: item.id } })
-    else void navigate({ to: '/todos', search: { todo: item.id, q } })
+    KINDS[item.kind].open(navigate, item.id, query?.text || undefined)
   }
 
   return (
