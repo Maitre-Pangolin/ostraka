@@ -1,6 +1,6 @@
 ---
 name: people
-description: Looks a colleague up in the ostraka People directory before Slack, Jira, GitLab or M365, and caches their IDs there. Use whenever a task needs a colleague's email, Slack ID or handle, GitLab username, Jira account ID or Mention id, before any MCP user lookup, when a skill offers to add the people it wrote about, or when the user asks to refresh someone's IDs.
+description: Looks a colleague up in the ostraka People directory before Slack, Jira, GitLab or M365, and caches their IDs there. Use whenever a task needs a colleague's email, Slack ID or handle, GitLab username, Jira account ID or Mention id, before any MCP user lookup, when a skill offers to add the people it wrote about, when the user asks to refresh someone's IDs, or to fill Stub Persons.
 ---
 
 # People
@@ -71,3 +71,42 @@ Nothing is written before the reply. Then:
 When anyone was added or ignored, run `ostraka snapshot "people: add <N>"` once, `<N>` being how many. A calling skill that snapshots right after this step makes that one Snapshot instead.
 
 Done when every candidate is added, ignored or declined, and a Snapshot is made or left to the calling skill when anything was written.
+
+## 5. Fill Stub Persons, on request
+
+A **Stub Person** is a Person with no email who isn't ignored: someone mentioned as `@<id>` from the app, holding only that id and a guessed name. Fill them when the user asks ("fill stub Persons", or after the Briefing's nudge).
+
+1. `ostraka people list --stubs --json` gives each stub's id, name and aliases. When it prints `No Stub Persons.`, say so and stop.
+2. For each stub, find up to 3 **candidates**, best first, each with name, Slack title, email, Slack handle and Slack ID:
+   - Slack: `slack_search_users` with the name, then with each alias; `slack_read_user_profile` gives a match's title and email.
+   - When Slack finds nobody: Jira user search by the name (`lookupJiraAccountId`), for the name, email and account ID.
+3. For each candidate, work out what picking it writes, without writing anything:
+   - `ostraka people find <email>` finds a Person who already has the email: picking it is a **merge**, `ostraka people merge <stub id> <their id> --dry-run`.
+   - Otherwise it is a **rename** to the slug of the real name (lowercase words joined by hyphens): `ostraka people rename <stub id> <new id> --name "<Slack name>" --dry-run`. When that id is taken, add a word from the email to make it distinct and run it again.
+
+   Each dry run prints the Mention line the confirmation shows, such as `Would rename @milena-s → @milena-senechal in 3 places: todos.json 1, notes/k2x9a.md 2`.
+
+4. Ask once, every stub numbered, its candidates lettered:
+
+   ```text
+   Fill 2 Stub Persons? Nothing is written before your reply.
+   1. @milena-s (Milena S)
+      a. Milena Sénéchal  Staff engineer, Payments  milena.senechal@acme.com  @milena
+         @milena-s → @milena-senechal in 3 places: todos.json 1, notes/k2x9a.md 2
+      b. Milena Santos  Designer  milena.santos@acme.com  @msantos
+         merge into @milena-santos, already in the directory, 3 places
+   2. @zoe-p (Zoe P)
+      No candidate found.
+   Reply in one line, one answer per stub: `1a`, `2 skip`, `2 ignore`, or `2 zoe.p@acme.com` / `2 @zoe` to look that stub up again from it.
+   ```
+
+   Every stub needs its own answer. An email or Slack handle reruns steps 2 and 3 for that stub from it (Slack by email or handle); ask again, in the same form, for the stubs still without a pick. Write only once every stub has one.
+
+5. Write each answer:
+   - **Rename**: `ostraka people rename <stub id> <new id> --name "<Slack name>"`; the guessed name stays as an alias. Then look the confirmed email up in GitLab and Jira as in step 2.2, and record everything with `ostraka people refresh <new id> --email <email> --slack-id <id> --slack-handle <handle> [--gitlab <username>] [--jira <account id>]`.
+   - **Merge**: `ostraka people merge <stub id> <their id>`; the stub's name becomes their alias.
+   - **Ignore**: `ostraka people ignore <stub id>`, so no skill offers them again.
+   - **Skip**: write nothing; they are offered again next time.
+6. When any stub was renamed, merged or ignored, run `ostraka snapshot "people: fill <N> stubs"` once, `<N>` being how many.
+
+Done when every stub has its answer written as above, `ostraka people list --stubs` lists only the skipped ones, and the one Snapshot is made.

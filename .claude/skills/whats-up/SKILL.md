@@ -104,7 +104,7 @@ Slack: unavailable (signed out). Fix: run `/mcp` and sign in to `slack`.
 - **Sprint**: each unfinished ticket with its status and summary, then `blocked` and `no MR` when flagged.
 - **Dev log gaps**: each missing day with its weekday, newest first, then the offer to fill them (step 4 handles the answer).
 - **Suggested Todos**: one numbered line per Needs you item (Slack aside) and per sprint ticket flagged `no MR`, written as the `ostraka todo add` title it would become. Leave out an item whose reference is in the `--references` list: an open Todo already covers it. Reviews and replies get `^today`; add a `#tag` only when one from `ostraka tag list` clearly matches the project or ticket.
-- **Closing lines**, last: one per skipped source, `<Source>: unavailable (<reason>). Fix: <how>`, for example signing in again with `/mcp`, or registering the server under its key at user level as the README says. Then run `ostraka people list --stubs`: when it lists Persons, add one line naming how many still need details and pointing at the `people` skill. When that command doesn't exist yet (a usage error), leave the line out.
+- **Closing lines**, last: one per skipped source, `<Source>: unavailable (<reason>). Fix: <how>`, for example signing in again with `/mcp`, or registering the server under its key at user level as the README says. Then run `ostraka people list --stubs`: when it lists Persons (one `<id>  <name>` line each, rather than `No Stub Persons.`), add one line naming how many still need details and offering to fill them with the `people` skill.
 
 Done when the Briefing is shown, with every non-empty section, the suggestions and the closing lines.
 

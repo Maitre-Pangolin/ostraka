@@ -66,7 +66,7 @@ The machine-wide list of Persons and their identities in each Activity source.
 _Avoid_: Address book, contacts, roster
 
 **Stub Person**:
-A Person created from a new Mention that has no email yet; the `people` skill fills in their identities.
+A Person with no email who isn't ignored, usually added by picking "Add Person" for a new Mention; the `people` skill fills in their identities.
 _Avoid_: Placeholder, draft person
 
 **Mention**:
