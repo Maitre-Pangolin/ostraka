@@ -7,6 +7,7 @@ import {
   devlogSectionProblems,
   filterDevlogDays,
   parseDevlogsView,
+  searchDevlogList,
 } from '../src/devlog-days.ts'
 
 const day = (date: string, extra: Partial<DevlogSummary> = {}): DevlogSummary => ({
@@ -59,6 +60,18 @@ describe('devlogList', () => {
   })
 })
 
+describe('searchDevlogList', () => {
+  it('keeps only the days and summaries a search found, in their order, without gaps or empty weeks and months', () => {
+    const logs: DevlogListing[] = [day('2026-11-03'), day('2026-10-30'), day('2026-10-29'), summary('2026-10'), summary('2026-09')]
+    const months = searchDevlogList(devlogList(logs, TODAY), new Set(['2026-10-29', '2026-11-03', '2026-09']))
+    expect(months.map((month) => [month.month, month.summary?.id, month.weeks.map((week) => [week.start, dates(week.days)])])).toEqual([
+      ['2026-11', undefined, [['2026-11-02', ['2026-11-03']]]],
+      ['2026-10', undefined, [['2026-10-26', ['2026-10-29']]]],
+      ['2026-09', '2026-09', []],
+    ])
+  })
+})
+
 describe('devlogDays', () => {
   it('stacks every day of a range newest first: Dev logs, missing weekdays up to today, weekends only with a Dev log', () => {
     const logs = [day('2026-10-31'), day('2026-10-29')]
@@ -104,6 +117,11 @@ describe('filterDevlogDays', () => {
     expect(dates(filterDevlogDays(withBodies, { person: ['bram', 'ilse-vantongeren'] }))).toEqual(['2026-10-30'])
     expect(dates(filterDevlogDays(withBodies, { person: ['bram'], tag: ['billing'] }))).toEqual(['2026-10-30'])
   })
+
+  it('keeps only the Dev logs a search found, with the other filters', () => {
+    expect(dates(filterDevlogDays(entries, {}, new Set(['2026-10-29', '2026-10-27'])))).toEqual(['2026-10-29', '2026-10-27'])
+    expect(dates(filterDevlogDays(entries, { tag: ['auth'] }, new Set(['2026-10-29', '2026-10-27'])))).toEqual(['2026-10-27'])
+  })
 })
 
 describe('devlogRangePresets', () => {
@@ -136,6 +154,11 @@ describe('parseDevlogsView', () => {
     })
     expect(parseDevlogsView({ from: '2026-10-01' })).toEqual({})
     expect(parseDevlogsView({ from: '2026-10-31', to: '2026-10-01' })).toEqual({ from: '2026-10-01', to: '2026-10-31' })
+  })
+
+  it('keeps the search text as typed, leaving out a blank one', () => {
+    expect(parseDevlogsView({ log: '2026-10-29', q: 'rollout ' })).toEqual({ log: '2026-10-29', q: 'rollout ' })
+    expect(parseDevlogsView({ q: ' ' })).toEqual({})
   })
 })
 

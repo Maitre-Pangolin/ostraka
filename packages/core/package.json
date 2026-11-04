@@ -19,6 +19,8 @@
     "./history-schema": "./src/history-schema.ts",
     "./sketch-schema": "./src/sketch-schema.ts",
     "./search-types": "./src/search-types.ts",
+    "./search-input": "./src/search-input.ts",
+    "./search-match": "./src/search-match.ts",
     "./sub-todos": "./src/sub-todos.ts",
     "./todo-filter": "./src/todo-filter.ts",
     "./tag-color": "./src/tag-color.ts",

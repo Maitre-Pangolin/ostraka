@@ -1,6 +1,7 @@
 // The Note format: `notes/<id>.md`, a YAML header then a Markdown body. Imports only zod, so the web app can share
 // these types. An Idea is a Note tagged `idea`, not a kind of its own.
 import { z } from 'zod'
+import { parseSearchText } from './todo-filter.ts'
 
 /** Flat, lowercase and hyphenated, as on Todos. */
 const tag = z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Tags are lowercase and hyphenated')
@@ -51,14 +52,18 @@ export type BrokenNote = { id: string; version: string; modifiedAt: string; erro
 
 export type NoteListing = NoteSummary | BrokenNote
 
-/** The Notes view's state in the URL: the open Note, and whether only the Ideas are listed. */
-export type NotesView = { note?: string; ideas?: true }
+/**
+ * The Notes view's state in the URL: the open Note, whether only the Ideas are listed, and the search box's text (which
+ * narrows the list and is highlighted in the open Note).
+ */
+export type NotesView = { note?: string; ideas?: true; q?: string }
 
 /** Router search params → the Notes view's state, leaving out empty and default values. */
 export function parseNotesView(search: Record<string, unknown>): NotesView {
   return {
     ...(typeof search.note === 'string' && search.note !== '' && { note: search.note }),
     ...(search.ideas === true && { ideas: true }),
+    ...(parseSearchText(search.q) !== undefined && { q: parseSearchText(search.q) }),
   }
 }
 
