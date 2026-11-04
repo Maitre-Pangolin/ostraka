@@ -81,6 +81,53 @@ Run it again after moving the repo or changing Node versions. To remove it: `lau
 
 Then open http://127.0.0.1:4747 and install it as an app, so it gets its own window and Dock icon: in Chrome, ⋮ › Cast, save and share › Install page as app; in Safari, File › Add to Dock.
 
+### Colleagues in every project
+
+The `people` skill, linked by `install`, is what both editors pick on their own when an agent looks a colleague up. It runs `ostraka people find` first and calls the Slack, Jira or GitLab MCP server only for someone missing; it looks a new colleague's IDs up once by email in all three and offers to cache them, refreshing them only when you ask. At the end of a run it offers, in one question, to add the people who ended up in what it wrote, and `ignore` keeps someone from being offered again. The Dev log skill goes through it, so Dev logs name people as `@<person id>` Mentions.
+
+A global instruction makes agents check the directory even when they don't pick the skill. Add it yourself, since `install` writes neither file (it points this out until `~/.claude/CLAUDE.md` mentions `ostraka people find`):
+
+- Claude Code: append it to `~/.claude/CLAUDE.md`.
+- Cursor: paste it once into Cursor Settings › Rules › User Rules. Those are kept on your Cursor account, not on disk.
+
+```markdown
+## Colleagues
+
+Before looking up a colleague in Slack, Jira, GitLab or M365, run `ostraka people find <name, email or handle>`. The People directory caches their email, Slack ID and handle, GitLab username and Jira account ID, so use what it prints. Call the MCP server only when it prints `No Person matches`, and then follow the `people` skill.
+```
+
+Optionally, reminder hooks add one line about the People directory when an agent calls a Slack, Jira, GitLab or M365 tool that looks a user up (one whose name has `user`, `account`, `profile` or `member`). They never block or approve a call. Both run [`.claude/skills/people/hooks/people-reminder.sh`](.claude/skills/people/hooks/people-reminder.sh) through the link `install` made.
+
+- Claude Code, merged into `~/.claude/settings.json`. The matcher lists your MCP server keys:
+
+  ```json
+  {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "^mcp__(slack|atlassian|GitLab)__.*",
+          "hooks": [{ "type": "command", "command": "/bin/sh \"$HOME/.claude/skills/people/hooks/people-reminder.sh\" claude" }]
+        }
+      ]
+    }
+  }
+  ```
+
+  The reminder reaches Claude with the tool's result, so it steers the next lookup rather than the one already made.
+
+- Cursor, merged into `~/.cursor/hooks.json`, with your home folder written out:
+
+  ```json
+  {
+    "version": 1,
+    "hooks": {
+      "beforeMCPExecution": [{ "command": "/bin/sh /Users/<you>/.claude/skills/people/hooks/people-reminder.sh cursor", "timeout": 5 }]
+    }
+  }
+  ```
+
+  It runs before every MCP call and always allows it, adding the reminder as `agent_message` on a lookup. Cursor's docs don't say whether that message reaches the agent on an allowed call, so check it once.
+
 ## Configure it
 
 `~/.config/ostraka/config.yml` holds settings only, never secrets (the app refuses a file with token-like keys or values). Every key is optional; Settings in the app shows what it read.

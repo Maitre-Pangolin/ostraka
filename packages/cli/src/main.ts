@@ -393,7 +393,7 @@ async function serve(io: Io): Promise<number> {
 }
 
 async function install(io: Io): Promise<number> {
-  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand } = await installAgent(
+  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand, globalInstruction } = await installAgent(
     io.homeDir ?? homedir(),
     io.system ?? realSystem(),
   )
@@ -404,6 +404,11 @@ async function install(io: Io): Promise<number> {
     io.stdout(`Skill:       ${skill} is not a link from \`ostraka install\`, so it was left as is; move it away and run install again.\n`)
   }
   if (oldDevlogCommand) io.stdout(`${oldDevlogCommand} is the old Cursor /devlog command: the devlog skill replaces it, so delete it.\n`)
+  if (globalInstruction) {
+    io.stdout(
+      `So agents check the People directory first, add ${globalInstruction} to ~/.claude/CLAUDE.md and paste it once into Cursor › Settings › Rules › User Rules.\n`,
+    )
+  }
   if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
     io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
   }
