@@ -75,6 +75,20 @@ describe('suggestPeople', () => {
     expect(suggestPeople('@okon', more).map((suggestion) => suggestion.token)).toEqual(['@okonkwo-jr', '@bram'])
   })
 
+  it('offers to add a Person last, with a name guessed from the id, only when no Person matches', () => {
+    const offer = (fragment: string) => suggestPeople(fragment, people, { offerNew: true })
+    expect(offer('@milena-s')).toEqual([{ kind: 'new-person', token: '@milena-s', id: 'milena-s', name: 'Milena S' }])
+    expect(offer('@ilse')).toEqual([{ kind: 'mention', token: '@ilse-vantongeren', id: 'ilse-vantongeren', name: 'Ilse Vantongeren' }])
+    expect(offer('@')).toHaveLength(3)
+    expect(offer('@Milena')).toEqual([])
+    expect(offer('@milena-')).toEqual([])
+    expect(suggestPeople('@milena-s', people)).toEqual([])
+  })
+
+  it('never offers to add an id an ignored Person has', () => {
+    expect(suggestPeople('@quinn', people, { offerNew: true })).toEqual([])
+  })
+
   it('says who each suggestion is', () => {
     expect(suggestPeople('@bram', people)).toEqual([{ kind: 'mention', token: '@bram', id: 'bram', name: 'Bram Okonkwo' }])
   })

@@ -61,12 +61,28 @@ const words = (value: string) =>
     .split(/[^a-z0-9]+/)
     .filter(Boolean)
 
+/** A Person not in the directory yet, offered last when none matches: picking it mentions a new Stub Person. */
+export type NewPersonSuggestion = { kind: 'new-person'; token: string; id: string; name: string }
+
+/** `milena-s` → `Milena S`: the name guessed for a Person added from a Mention of their id. */
+export const personNameFromId = (id: string) =>
+  id
+    .split('-')
+    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
+    .join(' ')
+
+const PERSON_ID = /^[a-z0-9]+(?:-[a-z0-9]+)*$/
+
 /**
  * Completions for `fragment`, the word being typed, after `@`: Persons whose id starts with what follows, then those
  * with a word of their name or an alias starting with it (case and accents ignored), by name. Ignored Persons are
- * left out.
+ * left out. With `offerNew`, a typed id no Person matches (nor has, ignored ones included) is offered as a new Person.
  */
-export function suggestPeople(fragment: string, people: MentionCandidate[]): MentionSuggestion[] {
+export function suggestPeople(
+  fragment: string,
+  people: MentionCandidate[],
+  { offerNew = false }: { offerNew?: boolean } = {},
+): (MentionSuggestion | NewPersonSuggestion)[] {
   const typed = /^@([^\s@]*)$/.exec(fragment)?.[1]
   if (typed === undefined) return []
   const query = foldText(typed)
@@ -76,7 +92,7 @@ export function suggestPeople(fragment: string, people: MentionCandidate[]): Men
     const matches = names.some((name) => personIdFromName(name).startsWith(query) || words(name).some((word) => word.startsWith(query)))
     return matches ? 1 : undefined
   }
-  return people
+  const found = people
     .filter((person) => !person.ignored)
     .flatMap((person) => {
       const at = rank(person)
@@ -84,6 +100,8 @@ export function suggestPeople(fragment: string, people: MentionCandidate[]): Men
     })
     .toSorted((a, b) => a.at - b.at || foldText(a.person.name).localeCompare(foldText(b.person.name)))
     .map(({ person }): MentionSuggestion => ({ kind: 'mention', token: mentionToken(person.id), id: person.id, name: person.name }))
+  const isNew = offerNew && !found.length && PERSON_ID.test(typed) && !people.some((person) => person.id === typed)
+  return isNew ? [{ kind: 'new-person', token: mentionToken(typed), id: typed, name: personNameFromId(typed) }] : found
 }
 
 /** Where a Person is reached, for the contact card: a Slack DM first, then email, GitLab and Jira profiles. */
