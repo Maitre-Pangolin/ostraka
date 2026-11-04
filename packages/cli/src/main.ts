@@ -35,6 +35,7 @@ import {
 } from '@ostraka/core'
 import { CONTENT_ROOT_HEADER, HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
 import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
+import { MIGRATE_USAGE, migrateCommand } from './migrate.ts'
 import { PEOPLE_USAGE, peopleCommand } from './people.ts'
 import { install as installAgent, realSystem, type System } from './install.ts'
 
@@ -103,7 +104,7 @@ const USAGE = `Usage:
                                 and link the repo's skills into ~/.claude/skills
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${MIGRATE_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -126,6 +127,8 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await searchCommand(rest, io)
       case 'devlog':
         return await devlogCommand(rest, io)
+      case 'migrate':
+        return await migrateCommand(rest, io)
       case 'tag':
         return await tagCommand(rest, io)
       case 'people':
