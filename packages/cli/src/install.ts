@@ -1,7 +1,9 @@
 import { execFile } from 'node:child_process'
 import { access, chmod, lstat, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
-import { dirname, join } from 'node:path'
+import { homedir } from 'node:os'
+import { delimiter, dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
+import type { Io } from './main.ts'
 
 /** What `install` needs from the machine, injected so tests never touch launchd. */
 export type System = {
@@ -160,4 +162,28 @@ function xmlEscape(value: string): string {
 
 function shellQuote(value: string): string {
   return `'${value.replaceAll("'", `'\\''`)}'`
+}
+
+/** `ostraka install`: installs, then says what was set up and what is left to the user. */
+export async function installCommand(io: Io): Promise<number> {
+  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand, globalInstruction } = await install(
+    io.homeDir ?? homedir(),
+    io.system ?? realSystem(),
+  )
+  io.stdout(`LaunchAgent: ${plist} (starts at login, restarts after a crash; logs in ${logs})\n`)
+  io.stdout(`CLI shim:    ${shim}\n`)
+  for (const skill of skills) io.stdout(`Skill:       ${skill} (a link to this repo's copy)\n`)
+  for (const skill of skippedSkills) {
+    io.stdout(`Skill:       ${skill} is not a link from \`ostraka install\`, so it was left as is; move it away and run install again.\n`)
+  }
+  if (oldDevlogCommand) io.stdout(`${oldDevlogCommand} is the old Cursor /devlog command: the devlog skill replaces it, so delete it.\n`)
+  if (globalInstruction) {
+    io.stdout(
+      `So agents check the People directory first, add ${globalInstruction} to ~/.claude/CLAUDE.md and paste it once into Cursor › Settings › Rules › User Rules.\n`,
+    )
+  }
+  if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
+    io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
+  }
+  return 0
 }
