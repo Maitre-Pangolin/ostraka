@@ -40,7 +40,7 @@ export type AppOptions = {
    * The server's backup schedule, for the top bar's warning and to push a restore's Snapshot. Without one, the
    * status comes from the repo alone and nothing is pushed.
    */
-  backups?: Pick<Backups, 'status'> & Partial<Pick<Backups, 'snapshotted'>>
+  backups?: Pick<Backups, 'status'> & Partial<Pick<Backups, 'snapshotted' | 'backupNow'>>
   /** Hover details for References the work overview didn't poll (`referenceLookup()`). None by default: nothing is fetched. */
   references?: ReferenceLookup
   /** The server's search index (`startSearch()`). Without one, each search builds a throwaway index in memory. */
@@ -50,6 +50,8 @@ export type AppOptions = {
 const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
+/** API writes that change no content, so schedule no Snapshot. */
+const changesNoContent = (path: string) => path.startsWith('/api/activity/') || path === '/api/backup'
 
 export function createApp({
   webDist,
@@ -80,10 +82,10 @@ export function createApp({
   })
 
   // Every API write goes through core to the content folder, so a successful one means the content changed;
-  // except the work overview's, which only report a window's visibility.
+  // except the work overview's, which only report a window's visibility, and a backup, which only pushes.
   app.use('/api/*', async (c, next) => {
     await next()
-    if (!SAFE_METHODS.has(c.req.method) && c.res.ok && !c.req.path.startsWith('/api/activity/')) onContentChange?.()
+    if (!SAFE_METHODS.has(c.req.method) && c.res.ok && !changesNoContent(c.req.path)) onContentChange?.()
   })
 
   app.get('/api/health', (c) => c.json({ ok: true }))
@@ -119,7 +121,7 @@ export function createApp({
     }),
   )
 
-  app.route('/api/backup', backupRoutes(backups))
+  app.route('/api/backup', backupRoutes(backups, content))
   app.route('/api/activity', activityRoutes(activity))
   app.route('/api/settings', settingsRoutes(content, credentials))
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))

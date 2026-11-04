@@ -5,7 +5,7 @@ import { join } from 'node:path'
 import { backup, snapshot, type BackupStatus } from '@ostraka/core'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { startHttpRemote } from '../../../packages/core/test/http-remote.ts'
-import { createApp, startBackups, startServer, type Backups } from '../src/index.ts'
+import { CONTENT_ROOT_HEADER, createApp, readCredentials, startBackups, startServer, type Backups } from '../src/index.ts'
 import { fakeKeychain, TOKENS } from './fake-keychain.ts'
 
 const MINUTE = 60_000
@@ -178,6 +178,85 @@ describe('GET /api/backup', { timeout: 60_000 }, () => {
     const res = await app.request('/api/backup', { headers: { host: '127.0.0.1:4747' } })
 
     expect(await res.json()).toMatchObject({ remote: false, backedUp: false, stopped: false })
+  })
+})
+
+/**
+ * The server's backups, with the push token read from a fake Keychain as `startServer` reads it. Its clock stands
+ * still, so the push its check at start schedules never runs: only the request pushes.
+ */
+async function serverWithBackups(onContentChange = () => {}) {
+  const credentials = await readCredentials(fakeKeychain(TOKENS).keychain)
+  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
+  backups = startBackups({ content: options(), token: () => credentials.push?.reveal() })
+  await backups.idle()
+  return createApp({ webDist: '/nonexistent', content: options(), credentials, backups, onContentChange })
+}
+const postBackup = (app: ReturnType<typeof createApp>, headers: Record<string, string> = {}) =>
+  app.request('/api/backup', { method: 'POST', headers: { host: '127.0.0.1:4747', ...headers } })
+const getStatus = async (app: ReturnType<typeof createApp>) =>
+  (await app.request('/api/backup', { headers: { host: '127.0.0.1:4747' } })).text()
+
+const UNPUSHED: BackupStatus = { remote: true, backedUp: false, stale: false, largeFiles: [], stopped: false }
+
+describe('POST /api/backup', { timeout: 60_000 }, () => {
+  it("pushes now with the server's own push token, answering the result and never the token", async () => {
+    const remoteServer = await startHttpRemote(dir, TOKENS['ostraka-push'])
+    try {
+      await contentWithRemote({ pushed: false })
+      git(content, 'remote', 'set-url', 'origin', `${remoteServer.url}/remote.git`)
+      const changed = vi.fn<() => void>()
+      const app = await serverWithBackups(changed)
+
+      const res = await postBackup(app)
+      const text = await res.text()
+
+      expect(res.status).toBe(200)
+      expect(JSON.parse(text)).toEqual({ status: 'backed-up', commit: head(), pushed: true, largeFiles: [] })
+      expect(decodeURIComponent(res.headers.get(CONTENT_ROOT_HEADER) ?? '')).toBe(content)
+      expect(remoteHead()).toBe(head())
+      expect(remoteServer.authorizations).toContain(`Basic ${Buffer.from(`oauth2:${TOKENS['ostraka-push']}`).toString('base64')}`)
+      const status = await getStatus(app)
+      for (const token of Object.values(TOKENS)) {
+        expect(text).not.toContain(token)
+        expect(status).not.toContain(token)
+        expect([...res.headers.values()].join('\n')).not.toContain(token)
+      }
+      // A push changes no content: no Snapshot is scheduled for it.
+      expect(changed).not.toHaveBeenCalled()
+    } finally {
+      await remoteServer.close()
+    }
+  })
+
+  it('answers why nothing was pushed, and shows it in the status', async () => {
+    await contentWithRemote({ pushed: true })
+    await snapshotAnEdit(`{"todos":[{"title":"${['glpat', 'Ab12Cd34Ef56Gh78Ij90'].join('-')}"}]}\n`)
+    const app = await serverWithBackups()
+
+    const res = await postBackup(app)
+
+    expect(res.status).toBe(200)
+    expect(await res.json()).toMatchObject({ status: 'secrets', files: [{ file: 'todos.json' }] })
+    expect(remoteHead()).not.toBe(head())
+    expect(JSON.parse(await getStatus(app))).toMatchObject({ problem: { status: 'secrets' } })
+  })
+
+  it('refuses a request from a web page of another origin, pushing nothing', async () => {
+    const backupNow = vi.fn<Backups['backupNow']>()
+    const app = createApp({ webDist: '/nonexistent', content: options(), backups: { status: async () => UNPUSHED, backupNow } })
+
+    const res = await postBackup(app, { origin: 'https://evil.example' })
+
+    expect(res.status).toBe(403)
+    expect(backupNow).not.toHaveBeenCalled()
+  })
+
+  it('says so when the server runs no backups', async () => {
+    const app = createApp({ webDist: '/nonexistent', content: options() })
+    const res = await postBackup(app)
+    expect(res.status).toBe(503)
+    expect(await res.json()).toEqual({ error: expect.stringMatching(/runs no backups/) })
   })
 })
 

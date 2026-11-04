@@ -231,6 +231,7 @@ export {
   LARGE_FILE_BYTES,
   STALE_AFTER_MS,
   type BackupOptions,
+  type CloneOptions,
   type CloneResult,
 } from './backup.ts'
 export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'

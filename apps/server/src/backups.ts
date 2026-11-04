@@ -1,6 +1,17 @@
-// Backup scheduling: push after a Snapshot, at most once every 15 minutes; check the remote at start.
-import { backup, backupState, checkBackup, type BackupResult, type BackupStatus, type ContentOptions } from '@ostraka/core'
+// Backup scheduling: push after a Snapshot, at most once every 15 minutes; check the remote at start. `ostraka backup`
+// asks the running server to push now (`POST /api/backup`), so only the server reads the push token.
+import {
+  backup,
+  backupState,
+  checkBackup,
+  resolveContentRoot,
+  type BackupResult,
+  type BackupStatus,
+  type ContentOptions,
+  type ContentRootOptions,
+} from '@ostraka/core'
 import { Hono } from 'hono'
+import { CONTENT_ROOT_HEADER } from './search.ts'
 
 export const BACKUP_INTERVAL_MS = 15 * 60_000
 
@@ -17,6 +28,8 @@ export type BackupsOptions = {
 export type Backups = {
   /** A Snapshot was made: push it, now or once 15 minutes have passed since the last push. */
   snapshotted(): void
+  /** Pushes now (scan, push, remote check), after any check or push running, and says how it went. */
+  backupNow(): Promise<BackupResult>
   /** The repo's backup state plus what the last push ran into. */
   status(): Promise<BackupStatus>
   /** Resolves once no check or push is running. */
@@ -45,7 +58,10 @@ export function startBackups({
     else if (result.status === 'rejected') {
       problem = result
       stopped = true
-    } else if (result.status !== 'not-backed-up') problem = undefined
+    } else if (result.status !== 'not-backed-up') {
+      problem = undefined
+      if (result.status === 'backed-up') stopped = false
+    }
     if (result.status === 'not-backed-up') schedule()
   }
 
@@ -69,6 +85,20 @@ export function startBackups({
 
   return {
     snapshotted: schedule,
+    backupNow() {
+      return new Promise<BackupResult>((resolve, reject) =>
+        run(async () => {
+          try {
+            lastPushAt = Date.now()
+            const result = await backup({ ...options, token: token() })
+            record(result)
+            resolve(result)
+          } catch (error) {
+            reject(error)
+          }
+        }),
+      )
+    },
     async status() {
       const state = await backupState({ ...options, now: content.now })
       // Backed up by any means (`ostraka backup`, a push by hand): whatever went wrong before is over.
@@ -94,14 +124,34 @@ export function startBackups({
   }
 }
 
-/** `GET /api/backup`: the backup status the top bar's warning shows. */
-export function backupRoutes(backups: Pick<Backups, 'status'>) {
+const errorJson = (error: unknown) => ({ error: error instanceof Error ? error.message : String(error) })
+
+/**
+ * `GET /api/backup`: the backup status the top bar's warning shows. `POST /api/backup`: push now, with the server's
+ * own push token, answering the result and the files over 10 MB (never a token). Both say which content folder they
+ * serve (`CONTENT_ROOT_HEADER`), so the CLI only asks a server for its own content.
+ */
+export function backupRoutes(backups: Pick<Backups, 'status'> & Partial<Pick<Backups, 'backupNow'>>, content: ContentRootOptions) {
   const routes = new Hono()
+  routes.use(async (c, next) => {
+    await next()
+    c.header(CONTENT_ROOT_HEADER, encodeURIComponent(await resolveContentRoot(content)))
+  })
   routes.get('/', async (c) => {
     try {
       return c.json(await backups.status())
     } catch (error) {
-      return c.json({ error: error instanceof Error ? error.message : String(error) }, 500)
+      return c.json(errorJson(error), 500)
+    }
+  })
+  routes.post('/', async (c) => {
+    if (!backups.backupNow) return c.json({ error: 'This server runs no backups.' }, 503)
+    try {
+      const result = await backups.backupNow()
+      const { largeFiles } = await backupState(content)
+      return c.json({ ...result, largeFiles })
+    } catch (error) {
+      return c.json(errorJson(error), 500)
     }
   })
   return routes

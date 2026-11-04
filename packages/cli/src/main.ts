@@ -1,5 +1,5 @@
 // `ostraka`: dispatches each command to its module; each is a thin layer over core.
-import { HOSTNAME, PORT, type Keychain } from '@ostraka/server'
+import { HOSTNAME, PORT } from '@ostraka/server'
 import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
 import { DEVLOG_USAGE, devlogCommand } from './devlog.ts'
 import { installCommand, type System } from './install.ts'
@@ -20,13 +20,11 @@ export type Io = {
   homeDir?: string
   /** launchd, node and the platform, for `install`. Tests pass a fake. */
   system?: System
-  /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
-  keychain?: Keychain
   /** The current moment, for "today"; tests pass a fixed one. */
   now?: () => Date
   /** Asks the user one line, for the `init` walkthrough. */
   readLine?: (prompt: string) => Promise<string>
-  /** Calls to the running server (`ostraka search`); tests pass a fake. */
+  /** Calls to the running server (`ostraka search`, `ostraka backup`); tests pass a fake. */
   fetch?: (url: string, init?: RequestInit) => Promise<Response>
   stdout: (text: string) => void
   stderr: (text: string) => void

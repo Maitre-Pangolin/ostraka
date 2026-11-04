@@ -1,11 +1,10 @@
 #!/usr/bin/env node
 import { createInterface } from 'node:readline/promises'
-import { macKeychain } from '@ostraka/server'
 import { run } from '../src/main.ts'
 
+// No Keychain here: only the app server (`ostraka serve`) reads credentials.
 process.exitCode = await run(process.argv.slice(2), {
   env: process.env,
-  keychain: macKeychain(),
   async readLine(prompt) {
     const lines = createInterface({ input: process.stdin, output: process.stdout })
     try {

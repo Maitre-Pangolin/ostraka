@@ -13,8 +13,8 @@ import {
   type SearchKind,
   type SearchQuery,
 } from '@ostraka/core'
-import { CONTENT_ROOT_HEADER, HOSTNAME, PORT } from '@ostraka/server'
 import type { Io } from './main.ts'
+import { askServer } from './server.ts'
 
 export const SEARCH_USAGE = `  ostraka search [<query>] [--tag <tag>]... [--kind <${SEARCH_KINDS.join('|')}>]... [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
                                 Find Notes, Dev logs, Todos and Sketches: each word a prefix,
@@ -26,14 +26,14 @@ const FOLDERS: Record<SearchKind, ContentKind> = { todo: 'todos', note: 'notes',
 
 /** The hits from the running server when it serves this content folder and its index is built; else undefined. */
 async function searchServer(query: SearchQuery, root: string, io: Io): Promise<SearchHit[] | undefined> {
-  const fetch = io.fetch ?? globalThis.fetch
+  // Not running, or for another folder: the files are searched directly.
+  const answer = await askServer(`/search?${searchParams(query)}`, root, io, { timeoutMs: 5000 })
+  if (answer.kind !== 'answered' || !answer.res.ok) return undefined
   try {
-    const res = await fetch(`http://${HOSTNAME}:${PORT}/api/search?${searchParams(query)}`, { signal: AbortSignal.timeout(5000) })
-    if (!res.ok || decodeURIComponent(res.headers.get(CONTENT_ROOT_HEADER) ?? '') !== root) return undefined
-    const answer = (await res.json()) as { indexing: boolean; hits: SearchHit[] }
-    return answer.indexing ? undefined : answer.hits
+    const { indexing, hits } = (await answer.res.json()) as { indexing: boolean; hits: SearchHit[] }
+    return indexing ? undefined : hits
   } catch {
-    return undefined // Not running: the files are searched directly.
+    return undefined
   }
 }
 

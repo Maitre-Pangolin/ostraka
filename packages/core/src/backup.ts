@@ -151,16 +151,25 @@ export async function checkBackup({ token, ...options }: BackupOptions = {}): Pr
 
 export type CloneResult = { status: 'cloned'; path: string; commit: string | undefined } | Failed
 
+export type CloneOptions = BackupOptions & {
+  /**
+   * A person runs it at a terminal (`ostraka init`): without a token, git authenticates as it would for them, with
+   * their own credential helper or SSH key, or by asking them, with no time limit.
+   */
+  interactive?: boolean
+}
+
 /**
  * Restore on a new machine: clones the backup into the content folder (which must be missing or empty), with the
  * remote as `origin`, so backups carry on from there.
  */
-export async function cloneContent(url: string, { token, ...options }: BackupOptions = {}): Promise<CloneResult> {
+export async function cloneContent(url: string, { token, interactive, ...options }: CloneOptions = {}): Promise<CloneResult> {
   const root = await resolveContentRoot(options)
   const existing = await readdir(root).catch(() => [])
   if (existing.length > 0) throw new Error(`${root} already exists and is not empty: restore only sets up a new machine.`)
   await mkdir(dirname(root), { recursive: true })
-  const cloned = await runGit(dirname(root), ['clone', '--quiet', '--origin', BACKUP_REMOTE, '--', url, root], remoteEnv(token))
+  const auth = interactive && token === undefined ? {} : remoteEnv(token)
+  const cloned = await runGit(dirname(root), ['clone', '--quiet', '--origin', BACKUP_REMOTE, '--', url, root], auth)
   if (cloned.code !== 0) return { status: 'failed', reason: gitReason(cloned.stderr) }
   await ensureContentRepo(options)
   return { status: 'cloned', path: root, commit: await headCommit(root) }

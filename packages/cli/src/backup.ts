@@ -1,50 +1,56 @@
 // `ostraka backup` and `ostraka init --from <remote-url>`: back up now, and set up a new machine from the backup.
+// Neither reads the Keychain: only the app server holds the push token, so `backup` asks the running server to push,
+// and `init` lets git authenticate the clone as it would for the user.
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { parseArgs } from 'node:util'
-import { backup, backupState, cloneContent, configPath, loadConfig, resolveContentRoot, type LargeFile } from '@ostraka/core'
-import { KEYCHAIN_ITEMS, type CredentialName, type Keychain } from '@ostraka/server'
+import { cloneContent, configPath, loadConfig, resolveContentRoot, type BackupResult, type LargeFile } from '@ostraka/core'
+import { HOSTNAME, KEYCHAIN_ITEMS, PORT, type CredentialName } from '@ostraka/server'
+import type { Io } from './main.ts'
+import { askServer } from './server.ts'
 
-export type BackupIo = {
-  env: Record<string, string | undefined>
-  homeDir?: string
-  /** Where the push token comes from: `macKeychain()` from the `ostraka` binary, a fake in tests. */
-  keychain?: Keychain
-  /** Asks the user one line (the init walkthrough); without one, init prints the steps and does not wait. */
-  readLine?: (prompt: string) => Promise<string>
-  stdout: (text: string) => void
-  stderr: (text: string) => void
-}
-
-export const BACKUP_USAGE = `  ostraka backup [--json]       Push the content folder to its remote now
+export const BACKUP_USAGE = `  ostraka backup [--json]       Ask the running app server to push the content folder to its remote now
   ostraka init --from <remote-url>
                                 Set up a new machine: Keychain items, content, config.yml
 `
 
-function requireKeychain(io: BackupIo): Keychain {
-  if (!io.keychain) throw new Error('No Keychain to read the push token from.')
-  return io.keychain
-}
+/** A push scans, pushes and checks the remote, each git step allowed 2 minutes. */
+const PUSH_TIMEOUT_MS = 6 * 60_000
 
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
-const warnLarge = (io: BackupIo, files: LargeFile[]) =>
+const warnLarge = (io: Io, files: LargeFile[]) =>
   files.forEach(({ file, bytes }) => io.stderr(`Warning: ${file} is ${megabytes(bytes)}; keep content files under 10 MB.\n`))
 
-export async function backupCommand(args: string[], io: BackupIo): Promise<number> {
+export async function backupCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { json: { type: 'boolean' } } })
   if (positionals.length > 0) {
     io.stderr(`Usage:\n${BACKUP_USAGE}`)
     return 1
   }
-  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
-  // macOS prompts here: the item is created with `-T ""` so every read asks.
-  const token = await requireKeychain(io).read(KEYCHAIN_ITEMS.push)
-  const result = await backup({ ...options, token })
-  const { largeFiles } = await backupState(options)
+  const root = await resolveContentRoot({ env: io.env, homeDir: io.homeDir ?? homedir() })
+  const answer = await askServer('/backup', root, io, { method: 'POST', timeoutMs: PUSH_TIMEOUT_MS })
+  if (answer.kind === 'down') {
+    io.stderr(
+      `No Ostraka server is running on http://${HOSTNAME}:${PORT}, and only the server pushes (it holds the push token).\nStart it with ostraka serve, or check its LaunchAgent: launchctl print gui/$(id -u)/com.ostraka.server\n`,
+    )
+    return 1
+  }
+  if (answer.kind === 'elsewhere') {
+    io.stderr(
+      `The server on http://${HOSTNAME}:${PORT} serves ${answer.root ?? 'another content folder'}, not ${root}: it was not asked to push.\n`,
+    )
+    return 1
+  }
+  const body = (await answer.res.json()) as (BackupResult & { largeFiles: LargeFile[] }) | { error: string }
+  if ('error' in body) {
+    io.stderr(`Backup failed: ${body.error}\n`)
+    return 1
+  }
+  const { largeFiles, ...result } = body
   const ok = result.status === 'backed-up' || result.status === 'empty'
   if (values.json) {
-    io.stdout(`${JSON.stringify({ ...result, largeFiles }, null, 2)}\n`)
+    io.stdout(`${JSON.stringify(body, null, 2)}\n`)
     return ok ? 0 : 1
   }
   switch (result.status) {
@@ -58,7 +64,7 @@ export async function backupCommand(args: string[], io: BackupIo): Promise<numbe
       break
     case 'no-remote':
       io.stderr(
-        `The content folder has no remote. Create a private project on the work gitlab.com, then:\n  git -C ${await resolveContentRoot(options)} remote add origin <url>\n`,
+        `The content folder has no remote. Create a private project on the work gitlab.com, then:\n  git -C ${root} remote add origin <url>\n`,
       )
       break
     case 'secrets':
@@ -73,7 +79,7 @@ export async function backupCommand(args: string[], io: BackupIo): Promise<numbe
       break
     case 'failed':
       io.stderr(
-        `Backup failed: ${result.reason}${token === undefined ? `\n(No Keychain item ${KEYCHAIN_ITEMS.push}: see README, Credentials.)` : ''}\n`,
+        `Backup failed: ${result.reason}\n(The server pushes with Keychain item ${KEYCHAIN_ITEMS.push}: see README, Credentials.)\n`,
       )
       break
   }
@@ -81,9 +87,9 @@ export async function backupCommand(args: string[], io: BackupIo): Promise<numbe
   return ok ? 0 : 1
 }
 
-/** What each Keychain item holds, in the order the walkthrough asks for them: the push token first, to clone. */
+/** What each Keychain item holds, in the order the walkthrough asks for them. */
 const ITEM_PURPOSES: [CredentialName, string][] = [
-  ['push', 'backup push and restore, a GitLab token with write_repository on the content project'],
+  ['push', 'backup push, a GitLab token with write_repository on the content project'],
   ['gitlab', 'GitLab, a fine-grained personal access token with read_api'],
   ['jira', 'Jira, a scoped API token with read:jira-work'],
 ]
@@ -91,7 +97,7 @@ const ITEM_PURPOSES: [CredentialName, string][] = [
 const addItemCommand = (item: string) =>
   `read -rs TOKEN && security add-generic-password -U -a "$USER" -s ${item} -T "" -w "$TOKEN"; unset TOKEN`
 
-export async function initCommand(args: string[], io: BackupIo): Promise<number> {
+export async function initCommand(args: string[], io: Io): Promise<number> {
   const { values, positionals } = parseArgs({ args, allowPositionals: true, options: { from: { type: 'string' } } })
   if (values.from === undefined || positionals.length > 0) {
     io.stderr(`Usage:\n${BACKUP_USAGE}`)
@@ -99,32 +105,26 @@ export async function initCommand(args: string[], io: BackupIo): Promise<number>
   }
   const homeDir = io.homeDir ?? homedir()
   const options = { env: io.env, homeDir }
-  const keychain = requireKeychain(io)
   const root = await resolveContentRoot(options)
   // Checked before the walkthrough too, so a machine already set up is told so straight away.
   if ((await readdir(root).catch(() => [])).length > 0)
     throw new Error(`${root} already exists and is not empty: init --from only sets up a new machine.`)
 
+  // The items are created by the user and read only by the server, so nothing here checks them.
   io.stdout(
-    `1. Keychain items. Tokens live only in the Keychain, created with -T "" so every read prompts.\n   Run each command in another terminal tab and paste the token at its silent prompt.\n`,
+    `1. Keychain items, read only by the app server. Tokens live only in the Keychain, created with -T "" so every read\n   prompts. Run each command in another terminal tab and paste the token at its silent prompt; -U replaces one\n   already there.\n`,
   )
   for (const [name, purpose] of ITEM_PURPOSES) {
     const item = KEYCHAIN_ITEMS[name]
-    if (await keychain.has(item)) {
-      io.stdout(`   ${item}: found\n`)
-      continue
-    }
     io.stdout(`   ${item}: ${purpose}\n     ${addItemCommand(item)}\n`)
-    while (io.readLine && !(await keychain.has(item))) {
-      const answer = await io.readLine(`   Press Enter once ${item} is created (or type skip): `)
-      if (answer.trim().toLowerCase() === 'skip') break
-    }
-    if (io.readLine) io.stdout(`   ${item}: ${(await keychain.has(item)) ? 'found' : 'skipped'}\n`)
+    if (!io.readLine) continue
+    const answer = await io.readLine(`   Press Enter once ${item} is created (or type skip): `)
+    io.stdout(`   ${item}: ${answer.trim().toLowerCase() === 'skip' ? 'skipped' : 'created'}\n`)
   }
 
+  // git authenticates as it would for the user (their SSH key or credential helper, or by asking): no token here.
   io.stdout(`2. Content: cloning ${values.from} into ${root}\n`)
-  const token = (await keychain.has(KEYCHAIN_ITEMS.push)) ? await keychain.read(KEYCHAIN_ITEMS.push) : undefined
-  const cloned = await cloneContent(values.from, { ...options, token })
+  const cloned = await cloneContent(values.from, { ...options, interactive: true })
   if (cloned.status === 'failed') {
     io.stderr(`Could not clone ${values.from}: ${cloned.reason}\n`)
     return 1
