@@ -29,7 +29,7 @@ Read each Activity source for `<date>`. Each one is read-only: you look, you nev
 - **Slack** (`slack`), from the `slack` MCP server. Find the user's Slack id with `slack_read_user_profile`, then `slack_search_public_and_private` with `from:<@USERID> on:<date>`. Open the threads that look substantial with `slack_read_thread`. Group messages by conversation, not one line per message: a discussion worth keeping goes in Meetings & discussions, a decision or blocker in Notes. Small talk and quick acknowledgements are left out.
 - **Outlook**: there is no Outlook source yet. Leave `outlook` out of `sources`, and ask about meetings in step 3.
 
-People named in a line are Mentions, `@<person id>`. Look each one up with `ostraka people find <name or email>`: it prints one `<person id>  <name>  <email>` line per match (`--json` for the records), and `No Person matches …` when it finds nobody. A Person marked `(ignored)` stays a plain name and is not offered in step 4. When it finds nobody, or fails, write their name as plain text and remember them for step 4.
+People named in a line are written as Mentions, `@<person id>`. Find each one with the `people` skill: `ostraka people find <name, email or Slack ID>` first (a Slack message carries the Slack ID, so search by it), MCP only for someone it doesn't find. A Person marked `(ignored)` is written as their plain name. Someone not in the People directory is written as their plain name for now and kept as a `people` candidate for step 4.
 
 Done when every source above was read or noted as skipped.
 
@@ -53,6 +53,6 @@ Done when the user's latest reply approves the file exactly as last shown.
 1. Write the approved file to `<devlogs>/<date>.md`, where `<devlogs>` is the output of `ostraka path devlogs`.
 2. Run `ostraka devlog list --from <date> --to <date>`. A `broken:` line means the header failed the app's validation: fix the file to match format.md and run it again until `<date>` lists without `broken:`.
 3. Run `ostraka snapshot "devlog: <date>"`.
-4. Tell the user the file's path. If any person was written as a plain name, name them in one line and offer to add them with the `people` skill.
+4. Tell the user the file's path. Then offer to add the `people` candidates, as the `people` skill's last step says: each one added becomes `@<person id>` in the file, and that skill's snapshot records the change.
 
 Done when the file lists without `broken:` and the snapshot is made.
