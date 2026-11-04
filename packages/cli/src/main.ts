@@ -16,7 +16,11 @@ import {
   listTags,
   isContentKind,
   listFinishedTodos,
+  localDay,
+  missingDevlogWeeks,
   listTodos,
+  mentionedReferences,
+  todaysTodos,
   parseSearchParams,
   resolveContentRoot,
   SEARCH_KINDS,
@@ -45,6 +49,8 @@ export type Io = {
   system?: System
   /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
   keychain?: Keychain
+  /** The current moment, for "today"; tests pass a fixed one. */
+  now?: () => Date
   /** Asks the user one line, for the `init` walkthrough. */
   readLine?: (prompt: string) => Promise<string>
   /** Calls to the running server (`ostraka search`); tests pass a fake. */
@@ -66,6 +72,11 @@ const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
   ostraka todo list [--json]    List open Todos, most urgent first, their Sub-todos under them
   ostraka todo list --finished-on <YYYY-MM-DD> [--json]
                                 List the Todos done or Dropped that day, newest first
+  ostraka todo list --today [--json]
+                                List today's Todos for the Briefing: overdue, due today, then the top 3
+                                high-priority ones without a due date (a Sub-todo as Parent › Sub-todo)
+  ostraka todo list --references [--json]
+                                List the MR and Jira References open Todos and Sub-todos mention
 `
 
 const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently changed first (a broken one with its error)
@@ -75,6 +86,9 @@ const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently ch
 
 const DEVLOG_USAGE = `  ostraka devlog list [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
                                 List Dev logs and monthly summaries, newest first (a broken one with its error)
+  ostraka devlog missing [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
+                                List the weekdays with no Dev log, by week, oldest first: from the first
+                                Dev log (or --from) to today (or --to)
 `
 
 const TAG_USAGE = `  ostraka tag list [--json]     List the Tags in use on Todos, Notes, Dev logs and Sketches
@@ -159,7 +173,7 @@ async function path(args: string[], io: Io): Promise<number> {
 const PRIORITY_TOKENS = { high: '*high', medium: '*med', low: '*low', none: undefined }
 
 /** `id  title  #tag *prio ^date`: the properties written back as the tokens that set them. */
-function todoLine(todo: SubTodo): string {
+function todoLine(todo: Pick<SubTodo, 'id' | 'title' | 'tags' | 'priority' | 'due'>): string {
   const tokens = [...todo.tags.map((tag) => `#${tag}`), PRIORITY_TOKENS[todo.priority], todo.due && `^${todo.due}`].filter(Boolean)
   return [`${todo.id}  ${todo.title}`, ...(tokens.length ? [tokens.join(' ')] : [])].join('  ')
 }
@@ -179,6 +193,8 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
       json: { type: 'boolean' },
       reason: { type: 'string' },
       'finished-on': { type: 'string' },
+      today: { type: 'boolean' },
+      references: { type: 'boolean' },
       parent: { type: 'string' },
     },
   })
@@ -186,6 +202,15 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   const finishedOn = values['finished-on']
   const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
   const print = (value: unknown, text: string) => io.stdout(values.json ? `${JSON.stringify(value, null, 2)}\n` : `${text}\n`)
+  // `--today` and `--references` are each a listing of their own, so they take no other option.
+  const briefing = [values.today, values.references].filter(Boolean).length
+  if (
+    briefing &&
+    (action !== 'list' || briefing > 1 || finishedOn !== undefined || values.reason !== undefined || values.parent !== undefined)
+  ) {
+    io.stderr(`Usage:\n${TODO_USAGE}`)
+    return 1
+  }
 
   if (action === 'add' && words.length > 0 && values.parent !== undefined) {
     const added = await addSubTodo(values.parent, { title: words.join(' ') }, options)
@@ -219,6 +244,19 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
   if (values.reason !== undefined || finishedOn !== undefined) {
     io.stderr(`Usage:\n${TODO_USAGE}`)
     return 1
+  }
+  if (action === 'list' && words.length === 0 && values.today) {
+    const todos = todaysTodos(await listTodos(options), localDay((io.now ?? (() => new Date()))()))
+    print(
+      todos,
+      todos.length ? todos.map((todo) => `${todoLine(todo)}  (${todo.why})`).join('\n') : 'Nothing overdue, due today or high priority.',
+    )
+    return 0
+  }
+  if (action === 'list' && words.length === 0 && values.references) {
+    const references = mentionedReferences(await listTodos(options))
+    print(references, references.length ? references.join('\n') : 'No References in open Todos.')
+    return 0
   }
   if (action === 'list' && words.length === 0) {
     const todos = await listTodos(options)
@@ -346,12 +384,24 @@ async function devlogCommand(args: string[], io: Io): Promise<number> {
     options: { json: { type: 'boolean' }, from: { type: 'string' }, to: { type: 'string' } },
   })
   const { from, to } = values
+  const [subcommand] = positionals
   const dates = [from, to].filter((date) => date !== undefined)
-  if (positionals.length !== 1 || positionals[0] !== 'list' || !dates.every((date) => DAY.test(date))) {
+  if (positionals.length !== 1 || (subcommand !== 'list' && subcommand !== 'missing') || !dates.every((date) => DAY.test(date))) {
     io.stderr(`Usage:\n${DEVLOG_USAGE}`)
     return 1
   }
-  const logs = (await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })).filter((log) => inRange(log.id, from, to))
+  const all = await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (subcommand === 'missing') {
+    if (from === undefined && !all.some((log) => DAY.test(log.id))) {
+      io.stderr('No Dev log yet, so no first day to start from: pass --from <YYYY-MM-DD>.\n')
+      return 1
+    }
+    const weeks = missingDevlogWeeks(all, localDay((io.now ?? (() => new Date()))()), { from, to })
+    const lines = weeks.map((week) => `week of ${week.start}: ${week.days.join(' ')}`)
+    io.stdout(values.json ? `${JSON.stringify(weeks, null, 2)}\n` : lines.length ? `${lines.join('\n')}\n` : 'No missing days.\n')
+    return 0
+  }
+  const logs = all.filter((log) => inRange(log.id, from, to))
   io.stdout(values.json ? `${JSON.stringify(logs, null, 2)}\n` : logs.length ? `${logs.map(devlogLine).join('\n')}\n` : 'No Dev logs.\n')
   return 0
 }
@@ -393,7 +443,7 @@ async function serve(io: Io): Promise<number> {
 }
 
 async function install(io: Io): Promise<number> {
-  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand } = await installAgent(
+  const { plist, shim, logs, skills, skippedSkills, oldDevlogCommand, globalInstruction } = await installAgent(
     io.homeDir ?? homedir(),
     io.system ?? realSystem(),
   )
@@ -404,6 +454,11 @@ async function install(io: Io): Promise<number> {
     io.stdout(`Skill:       ${skill} is not a link from \`ostraka install\`, so it was left as is; move it away and run install again.\n`)
   }
   if (oldDevlogCommand) io.stdout(`${oldDevlogCommand} is the old Cursor /devlog command: the devlog skill replaces it, so delete it.\n`)
+  if (globalInstruction) {
+    io.stdout(
+      `So agents check the People directory first, add ${globalInstruction} to ~/.claude/CLAUDE.md and paste it once into Cursor › Settings › Rules › User Rules.\n`,
+    )
+  }
   if (!(io.env.PATH ?? '').split(delimiter).includes(dirname(shim))) {
     io.stdout(`${dirname(shim)} is not on your PATH. Add it in ~/.zshrc: export PATH="$HOME/.local/bin:$PATH"\n`)
   }

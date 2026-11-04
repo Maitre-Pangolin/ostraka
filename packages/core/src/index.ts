@@ -34,6 +34,7 @@ export {
 export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { dueAfterParent } from './sub-todos.ts'
+export { mentionedReferences, todaysTodos, type BriefingTodo } from './briefing.ts'
 export {
   defaultTagColor,
   TAG_COLORS,
@@ -168,6 +169,7 @@ export {
   devlogRangePresets,
   devlogSectionProblems,
   filterDevlogDays,
+  missingDevlogWeeks,
   parseDevlogsView,
   type DevlogDay,
   type DevlogFilter,
@@ -175,7 +177,9 @@ export {
   type DevlogRange,
   type DevlogsView,
   type DevlogWeek,
+  type MissingDevlogWeek,
 } from './devlog-days.ts'
+export { localDay } from './todo-order.ts'
 export {
   formatPeopleFile,
   NewPersonSchema,

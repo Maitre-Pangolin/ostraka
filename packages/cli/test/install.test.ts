@@ -145,6 +145,28 @@ describe('ostraka install', () => {
     expect(await readFile(command, 'utf8')).toBe('old')
   })
 
+  it('points to the global People instruction for ~/.claude/CLAUDE.md and Cursor User Rules, writing neither', async () => {
+    const instruction = `${REPO}/.claude/skills/people/global-instruction.md`
+    const { stdout } = await ostraka(['install'])
+    expect(stdout).toMatch(new RegExp(`${instruction}.*~/\\.claude/CLAUDE\\.md.*Cursor.*User Rules`))
+    await expect(stat(join(home, '.claude', 'CLAUDE.md'))).rejects.toThrow(/ENOENT/)
+    expect(await readFile(instruction, 'utf8')).toContain('ostraka people find')
+  })
+
+  it('shows the global People instruction in the README exactly as the file holds it', async () => {
+    const instruction = await readFile(`${REPO}/.claude/skills/people/global-instruction.md`, 'utf8')
+    expect(await readFile(`${REPO}/README.md`, 'utf8')).toContain(`\`\`\`markdown\n${instruction}\`\`\``)
+  })
+
+  it('stays quiet about the global People instruction once ~/.claude/CLAUDE.md has it', async () => {
+    await mkdir(join(home, '.claude'), { recursive: true })
+    await writeFile(
+      join(home, '.claude', 'CLAUDE.md'),
+      '# Mine\n\nBefore looking up a colleague, run `ostraka people find <name or email>`.\n',
+    )
+    expect((await ostraka(['install'])).stdout).not.toContain('global-instruction.md')
+  })
+
   it('reports a LaunchAgent that would not load', async () => {
     const system = fakeSystem({ launchctl: async (args) => ({ code: args[0] === 'bootstrap' ? 5 : 0, stderr: 'Input/output error' }) })
     const { code, stderr } = await ostraka(['install'], { system })

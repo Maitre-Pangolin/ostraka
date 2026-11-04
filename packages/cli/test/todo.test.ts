@@ -171,3 +171,52 @@ describe('ostraka todo', () => {
     },
   )
 })
+
+// Wednesday 4 November 2026, mid-morning local time.
+const now = () => new Date(2026, 10, 4, 9, 30)
+
+/** `ostraka` on that day. */
+async function at(...argv: string[]) {
+  let stdout = ''
+  const code = await run(argv, { env: { OSTRAKA_HOME: contentRoot }, now, stdout: (text) => (stdout += text), stderr: () => {} })
+  return { code, stdout }
+}
+
+describe('ostraka todo list for the Briefing', () => {
+  it('lists today’s Todos with --today: overdue, due today, then the top high-priority undated ones', async () => {
+    const release = idOf((await ostraka('todo', 'add', 'Release 2.0 ^2026-11-20')).stdout)
+    const notes = idOf((await ostraka('todo', 'add', 'Write notes ^2026-11-03', '--parent', release)).stdout)
+    const login = idOf((await ostraka('todo', 'add', 'Fix login #auth *high')).stdout)
+    const review = idOf((await ostraka('todo', 'add', 'Review acme/web!7 ^2026-11-04')).stdout)
+    await ostraka('todo', 'add', 'Plan Q1 *med')
+
+    expect(await at('todo', 'list', '--today')).toEqual({
+      code: 0,
+      stdout: [
+        `${notes}  Release 2.0 › Write notes  ^2026-11-03  (overdue)`,
+        `${review}  Review acme/web!7  ^2026-11-04  (due today)`,
+        `${login}  Fix login  #auth *high  (high priority)`,
+        '',
+      ].join('\n'),
+    })
+    const json = JSON.parse((await at('todo', 'list', '--today', '--json')).stdout)
+    expect(json.map((todo: { id: string; why: string }) => [todo.id, todo.why])).toEqual([
+      [notes, 'overdue'],
+      [review, 'due today'],
+      [login, 'high priority'],
+    ])
+    expect(await at('todo', 'list', '--today', '--finished-on', '2026-11-04')).toMatchObject({ code: 1 })
+  })
+
+  it('says when nothing is due', async () => {
+    expect(await at('todo', 'list', '--today')).toEqual({ code: 0, stdout: 'Nothing overdue, due today or high priority.\n' })
+  })
+
+  it('lists the References open Todos mention with --references', async () => {
+    const parent = idOf((await ostraka('todo', 'add', 'Review acme/billing/api!412 for BILL-231')).stdout)
+    await ostraka('todo', 'add', 'Reply on OPS-9', '--parent', parent)
+
+    expect(await at('todo', 'list', '--references')).toEqual({ code: 0, stdout: 'acme/billing/api!412\nBILL-231\nOPS-9\n' })
+    expect(JSON.parse((await at('todo', 'list', '--references', '--json')).stdout)).toEqual(['acme/billing/api!412', 'BILL-231', 'OPS-9'])
+  })
+})

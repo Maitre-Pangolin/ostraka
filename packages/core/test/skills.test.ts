@@ -10,8 +10,8 @@ const skills = (await readdir(skillsDir, { withFileTypes: true })).filter((entry
 const SHARED_KEYS = ['name', 'description', 'disable-model-invocation', 'paths', 'metadata']
 
 describe('the repo’s skills', () => {
-  it('include the Dev log skill', () => {
-    expect(skills).toContain('devlog')
+  it('include the Dev log skill and the Briefing', () => {
+    expect(skills).toEqual(expect.arrayContaining(['devlog', 'whats-up']))
   })
 
   it.each(skills)('%s is an Agent Skill named after its folder, with shared frontmatter only', async (skill) => {

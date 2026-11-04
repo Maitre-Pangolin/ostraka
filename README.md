@@ -16,7 +16,7 @@ For UI work, run `pnpm ostraka serve` and `pnpm dev` side by side: Vite on http:
 
 `pnpm ostraka path <todos|notes|devlogs|sketches|people|tags>` prints where that content lives (`OSTRAKA_HOME`, else `contentDir` in `~/.config/ostraka/config.yml`, else `~/ostraka-content`).
 
-`pnpm ostraka todo add "…" [--parent <id>]`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos and their Sub-todos (`--parent` adds a Sub-todo under that Todo; finishing a Todo finishes its open Sub-todos too); `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day (add `--json` for agents). In a title, `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` set the Todo's Tags, priority and due date, as in the app: `ostraka todo add "Fix login #auth *high ^fri"`. MRs and Jira tickets are written as their own tokens, `group/project!<iid>` and `<KEY>-<number>`, and stay in the text as is: `ostraka todo add "Rebase pay/api!809 for PAY-1432"`. The app shows them as chips with their status, from the work overview or fetched on hover. `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file. The open app refreshes on its own when content changes on disk, and refuses a change made from a copy that is no longer current instead of overwriting it.
+`pnpm ostraka todo add "…" [--parent <id>]`, `todo done <id>`, `todo drop <id> [--reason "…"]` and `todo list` change and show Todos and their Sub-todos (`--parent` adds a Sub-todo under that Todo; finishing a Todo finishes its open Sub-todos too); `todo list --finished-on <YYYY-MM-DD>` shows what was done or Dropped that day, `todo list --today` today's Todos for the Briefing (overdue, due today, then the top 3 high-priority ones without a due date) and `todo list --references` the MR and Jira tokens open Todos mention (add `--json` for agents). In a title, `#tag`, `*high|*med|*low` and `^today|^tomorrow|^fri|^2026-11-05` set the Todo's Tags, priority and due date, as in the app: `ostraka todo add "Fix login #auth *high ^fri"`. MRs and Jira tickets are written as their own tokens, `group/project!<iid>` and `<KEY>-<number>`, and stay in the text as is: `ostraka todo add "Rebase pay/api!809 for PAY-1432"`. The app shows them as chips with their status, from the work overview or fetched on hover. `todos.json` is written only through core (lock, validation, atomic rename), so agents change Todos with the CLI rather than editing the file. The open app refreshes on its own when content changes on disk, and refuses a change made from a copy that is no longer current instead of overwriting it.
 
 The People directory is `people.json`: one Person per colleague, with an id slug, name, aliases, one company email, Slack ID and handle, GitLab username and Jira account ID (and `ignored: true` for someone skills must not offer to add again). Like `todos.json`, it is written only through core, so agents use the CLI: `pnpm ostraka people find <name|id|alias|email|handle>` before looking a colleague up in Slack, Jira, GitLab or M365; `people add "<name>" [--id <id>] [--email …] [--alias …] [--slack-id …] [--slack-handle …] [--gitlab …] [--jira …] [--ignored]`; `people show <id>`; and `people refresh <id> [--email …] [--slack-id …] [--slack-handle …] [--gitlab …] [--jira …]` to record identities looked up again by email (the others stay cached). Each takes `--json`. A Person is mentioned as `@<person id>` in Todos, Notes and Dev logs: `ostraka todo add "Pair with @ilse-vantongeren on PAY-1432"`. The app shows the Person's current name with a contact card, and an id not in the directory as plain text with an offer to add them.
 
@@ -33,7 +33,9 @@ title: Release plan # optional; otherwise the first `# ` heading names the Note
 
 Bodies are written in one house style (`-` bullets and rules, `*emphasis*`, `**strong**`, fenced code, `#` headings), which the app's editor writes too, so opening and saving an unchanged Note leaves it byte-identical and the header is never touched. After writing a Note by hand, run `pnpm ostraka note format [<id>…]` to put it in house style; `note list [--json]` lists Notes with any broken header. MR and Jira tokens in a Note or Dev log stay plain text too: the app highlights them in the editor with their status dot and card (as chips in a rendered Dev log), and suggests them while you type `!` or a Jira key like `PAY-`.
 
-Dev logs are `devlogs/<YYYY-MM-DD>.md`, one per day, plus a monthly summary `devlogs/<YYYY-MM>.md`. The Dev log skill writes them: `/devlog` in Claude Code or Cursor gathers today's finished Todos and your GitLab, Jira and Slack activity (through the `GitLab`, `atlassian` and `slack` MCP servers, registered under those names at user level in both editors), shows a draft, and writes and snapshots the day once you confirm it. `pnpm ostraka devlog list [--from <date>] [--to <date>]` lists Dev logs with any broken header, and `pnpm ostraka tag list` the Tags in use (both take `--json`); the app lists them by week under each month's summary, shows any date range stacked by day, and edits a day's body (never its header). Their format, which agents follow, is in [`.claude/skills/devlog/format.md`](.claude/skills/devlog/format.md), next to the skill: a header with `date`, at most 3 `tags`, the `sources` used and `off: true` plus a `label` on an off day, then the sections Done, Meetings & discussions and Notes.
+Dev logs are `devlogs/<YYYY-MM-DD>.md`, one per day, plus a monthly summary `devlogs/<YYYY-MM>.md`. The Dev log skill writes them: `/devlog` in Claude Code or Cursor gathers today's finished Todos and your GitLab, Jira and Slack activity (through the `GitLab`, `atlassian` and `slack` MCP servers, registered under those names at user level in both editors), shows a draft, and writes and snapshots the day once you confirm it; on a day already written it proposes only what is missing and keeps your text. `/devlog backfill` catches up one week at a time, oldest missing week first (or any range you name), confirming each day; `/devlog reformat <date|range>` restructures old days with a before/after per day; `/devlog summary <YYYY-MM>` writes the month's summary from its days. `pnpm ostraka devlog list [--from <date>] [--to <date>]` lists Dev logs with any broken header, `pnpm ostraka devlog missing [--from <date>] [--to <date>]` the weekdays with none, by week, and `pnpm ostraka tag list` the Tags in use (all take `--json`); the app lists them by week under each month's summary, shows any date range stacked by day, and edits a day's body (never its header). Their format, which agents follow, is in [`.claude/skills/devlog/format.md`](.claude/skills/devlog/format.md), next to the skill: a header with `date`, at most 3 `tags`, the `sources` used and `off: true` plus a `label` on an off day, then the sections Done, Meetings & discussions and Notes.
+
+The Briefing is the start-of-day summary, in chat only: `/whats-up` in Claude Code or Cursor reads your Todos and, through the same MCP servers, GitLab, Jira and Slack, then shows what needs you (reviews, failing pipelines, unresolved comments, a few Slack lines), today's Todos, your unfinished sprint tickets and the Dev log gaps of the past 7 weekdays, with an offer to fill them through `/devlog backfill`. It ends with numbered suggested Todos you pick in one line (`1 3 2 ^fri *high`), added through `ostraka todo add`; it never writes Dev logs, finishes Todos or posts to Slack. A source that fails is skipped, with its reason and fix at the end.
 
 Sketches are `sketches/<id>.md`: a YAML header with a `title` and `tags`, then a body holding one `mermaid` fenced code block, which is what the app's editor changes (anything else in the body is kept). A Sketch without a title or a Mermaid block still shows in the app's list, with the reason. Edit the Mermaid text in place; the open app shows the change live.
 
@@ -80,6 +82,53 @@ This writes:
 Run it again after moving the repo or changing Node versions. To remove it: `launchctl bootout gui/$(id -u)/com.ostraka.server`, then delete the files and the skill links.
 
 Then open http://127.0.0.1:4747 and install it as an app, so it gets its own window and Dock icon: in Chrome, ⋮ › Cast, save and share › Install page as app; in Safari, File › Add to Dock.
+
+### Colleagues in every project
+
+The `people` skill, linked by `install`, is what both editors pick on their own when an agent looks a colleague up. It runs `ostraka people find` first and calls the Slack, Jira or GitLab MCP server only for someone missing; it looks a new colleague's IDs up once by email in all three and offers to cache them, refreshing them only when you ask. At the end of a run it offers, in one question, to add the people who ended up in what it wrote, and `ignore` keeps someone from being offered again. The Dev log skill goes through it, so Dev logs name people as `@<person id>` Mentions.
+
+A global instruction makes agents check the directory even when they don't pick the skill. Add it yourself, since `install` writes neither file (it points this out until `~/.claude/CLAUDE.md` mentions `ostraka people find`):
+
+- Claude Code: append it to `~/.claude/CLAUDE.md`.
+- Cursor: paste it once into Cursor Settings › Rules › User Rules. Those are kept on your Cursor account, not on disk.
+
+```markdown
+## Colleagues
+
+Before looking up a colleague in Slack, Jira, GitLab or M365, run `ostraka people find <name, email or handle>`. The People directory caches their email, Slack ID and handle, GitLab username and Jira account ID, so use what it prints. Call the MCP server only when it prints `No Person matches`, and then follow the `people` skill.
+```
+
+Optionally, reminder hooks add one line about the People directory when an agent calls a Slack, Jira, GitLab or M365 tool that looks a user up (one whose name has `user`, `account`, `profile` or `member`). They never block or approve a call. Both run [`.claude/skills/people/hooks/people-reminder.sh`](.claude/skills/people/hooks/people-reminder.sh) through the link `install` made.
+
+- Claude Code, merged into `~/.claude/settings.json`. The matcher lists your MCP server keys:
+
+  ```json
+  {
+    "hooks": {
+      "PreToolUse": [
+        {
+          "matcher": "^mcp__(slack|atlassian|GitLab)__.*",
+          "hooks": [{ "type": "command", "command": "/bin/sh \"$HOME/.claude/skills/people/hooks/people-reminder.sh\" claude" }]
+        }
+      ]
+    }
+  }
+  ```
+
+  The reminder reaches Claude with the tool's result, so it steers the next lookup rather than the one already made.
+
+- Cursor, merged into `~/.cursor/hooks.json`, with your home folder written out:
+
+  ```json
+  {
+    "version": 1,
+    "hooks": {
+      "beforeMCPExecution": [{ "command": "/bin/sh /Users/<you>/.claude/skills/people/hooks/people-reminder.sh cursor", "timeout": 5 }]
+    }
+  }
+  ```
+
+  It runs before every MCP call and always allows it, adding the reminder as `agent_message` on a lookup. Cursor's docs don't say whether that message reaches the agent on an allowed call, so check it once.
 
 ## Configure it
 
