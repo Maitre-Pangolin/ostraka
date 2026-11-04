@@ -229,3 +229,15 @@ export {
   type SearchQuery,
   type SnippetPiece,
 } from './search.ts'
+export {
+  MIGRATION_FOLDER,
+  reviewMigratedMonth,
+  splitMonthlyDevlog,
+  type MigrationUsage,
+  type MonthFolders,
+  type MonthReview,
+  type MonthSplit,
+  type SplitAnomaly,
+  type SplitAnomalyKind,
+  type SplitOptions,
+} from './devlog-migration.ts'

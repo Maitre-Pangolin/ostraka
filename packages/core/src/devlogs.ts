@@ -6,6 +6,7 @@ import {
   isBrokenFile,
   markdownFiles,
   MarkdownFileError,
+  parseMarkdownFile,
   type BrokenMarkdownFile,
   type MarkdownChangeOptions,
   type MarkdownFile,
@@ -29,7 +30,8 @@ export type DevlogOptions = MarkdownFileOptions
 /** For a change made from a loaded copy: the `version` of that copy. */
 export type DevlogChangeOptions = MarkdownChangeOptions
 
-const files = markdownFiles('devlogs', z.looseObject({}))
+const ANY_HEADER = z.looseObject({})
+const files = markdownFiles('devlogs', ANY_HEADER)
 
 const invalid = (error: z.ZodError) => `Invalid header: ${z.prettifyError(error).replaceAll('\n', ' ')}`
 
@@ -68,6 +70,14 @@ const newestFirst = (a: { id: string }, b: { id: string }) => b.id.localeCompare
 /** Every file in `devlogs/`: days and monthly summaries, newest first, and broken ones with their error. No bodies. */
 export async function listDevlogs(options: DevlogOptions = {}): Promise<DevlogListing[]> {
   return (await files.list(options)).map(toDevlog).map(withoutBody).toSorted(newestFirst)
+}
+
+/**
+ * A day's or monthly summary's text read as `devlogs/<id>.md` would be, without writing it: for a file written
+ * elsewhere first (the Dev log migration stages days before moving them in).
+ */
+export function readDevlogText(id: string, text: string): Devlog | MonthlySummary | BrokenDevlog {
+  return toDevlog(parseMarkdownFile(id, text, new Date(), ANY_HEADER))
 }
 
 /** One day or monthly summary with its body, or why it can't be read. */

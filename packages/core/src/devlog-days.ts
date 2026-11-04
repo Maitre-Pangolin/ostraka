@@ -30,7 +30,7 @@ export function addDays(day: string, days: number): string {
   return toDay(date)
 }
 
-const weekday = (day: string) => (toDate(day).getUTCDay() + 6) % 7 // Monday 0 … Sunday 6
+export const weekday = (day: string) => (toDate(day).getUTCDay() + 6) % 7 // Monday 0 … Sunday 6
 
 /** The Monday of a day's week. */
 export const weekStart = (day: string) => addDays(day, -weekday(day))
@@ -38,7 +38,7 @@ export const weekStart = (day: string) => addDays(day, -weekday(day))
 export const isWeekend = (day: string) => weekday(day) >= 5
 
 /** The last day of a `YYYY-MM` month. */
-const monthEnd = (month: string) => {
+export const monthEnd = (month: string) => {
   const date = toDate(`${month}-01`)
   date.setUTCMonth(date.getUTCMonth() + 1, 0)
   return toDay(date)

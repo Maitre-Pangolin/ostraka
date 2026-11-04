@@ -76,6 +76,19 @@ function readHeader<H>(yaml: string | undefined, schema: z.ZodType<H>): { header
   return { header: result.data }
 }
 
+/** A file's text read as the file `id` against a header schema, or why its header can't be read. Reads no disk. */
+export function parseMarkdownFile<H>(
+  id: string,
+  text: string,
+  modifiedAt: Date,
+  schema: z.ZodType<H>,
+): MarkdownFile<H> | BrokenMarkdownFile {
+  const { yaml, body } = parts(text)
+  const meta = { id, version: contentVersion(text), modifiedAt: modifiedAt.toISOString() }
+  const header = readHeader(yaml, schema)
+  return 'error' in header ? { ...meta, error: header.error } : { ...meta, header: header.header, body }
+}
+
 /** The files of one Markdown kind, read and written through its header schema. */
 export function markdownFiles<H>(kind: MarkdownKind, schema: z.ZodType<H>) {
   const folder = (options: MarkdownFileOptions) => contentPath(kind, options)
@@ -85,12 +98,7 @@ export function markdownFiles<H>(kind: MarkdownKind, schema: z.ZodType<H>) {
     return join(await folder(options), `${id}.md`)
   }
 
-  function parse(id: string, text: string, modifiedAt: Date): MarkdownFile<H> | BrokenMarkdownFile {
-    const { yaml, body } = parts(text)
-    const meta = { id, version: contentVersion(text), modifiedAt: modifiedAt.toISOString() }
-    const header = readHeader(yaml, schema)
-    return 'error' in header ? { ...meta, error: header.error } : { ...meta, header: header.header, body }
-  }
+  const parse = (id: string, text: string, modifiedAt: Date) => parseMarkdownFile(id, text, modifiedAt, schema)
 
   async function readText(file: string, id: string): Promise<{ text: string; modifiedAt: Date }> {
     try {
