@@ -1,6 +1,7 @@
 // Dev logs laid out over the calendar: the list by month and week, a date range stacked by day, the gaps (a weekday
 // with no Dev log), presets for the range and the Tag filter. Pure and free of Node and zod, so the web app shares it.
 import type { BrokenDevlog, DevlogListing, DevlogSummary, MonthlySummaryListing } from './devlog-schema.ts'
+import { mentionsAll, parsePeople } from './todo-filter.ts'
 import { normalizeTag } from './todo-tokens.ts'
 
 /** A day in a list or range: its Dev log (maybe broken), or none when it is a weekday nobody wrote up yet. */
@@ -64,21 +65,6 @@ export function devlogDays<L extends { id: string }>(range: { from: string; to: 
 }
 
 /**
- * Dev log gaps for the Briefing: the weekdays among the `weekdays` before today that have no Dev log (a broken file
- * counts as one), newest first. Today is left out, since its Dev log is written at the end of the day.
- */
-export function devlogGaps(logs: { id: string }[], today: string, weekdays = 7): string[] {
-  const written = new Set(logs.map((log) => log.id))
-  const gaps: string[] = []
-  for (let date = addDays(today, -1), seen = 0; seen < weekdays; date = addDays(date, -1)) {
-    if (isWeekend(date)) continue
-    seen++
-    if (!written.has(date)) gaps.push(date)
-  }
-  return gaps
-}
-
-/**
  * The Dev logs list: months newest first, each with its summary on top when there is one, then its weeks newest
  * first. It runs from the first Dev log to today, so every weekday since without one shows as missing.
  */
@@ -104,16 +90,47 @@ export function devlogList(logs: DevlogListing[], today: string): DevlogMonth[] 
   return [...months.values()].toSorted((a, b) => b.month.localeCompare(a.month))
 }
 
-/** What the stacked days are narrowed to: all of these Tags, or any of them with `match: 'any'`. */
-export type DevlogFilter = { tag?: string[]; match?: 'any' }
+/** A week (its Monday) with the weekdays in it that have no Dev log, oldest first. */
+export type MissingDevlogWeek = { start: string; days: string[] }
 
-/** The days the filter keeps, in order. Choosing a Tag keeps only Dev logs that have it: gaps and broken files go. */
-export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match }: DevlogFilter): DevlogDay<L>[] {
-  if (!tag.length) return days
+/**
+ * The weekdays with no Dev log, grouped by week, oldest first: what a Backfill catches up on. The range runs from
+ * `from` (the first Dev log by default) to `to` (today by default), never past today. A day with any file counts as
+ * written, an off day or a broken one too. Nothing is missing before there is a Dev log or a `from`.
+ */
+export function missingDevlogWeeks(logs: DevlogListing[], today: string, range: { from?: string; to?: string } = {}): MissingDevlogWeek[] {
+  const dayLogs = logs.filter((log) => DAY.test(log.id))
+  const from = range.from ?? dayLogs.map((log) => log.id).toSorted()[0]
+  if (from === undefined) return []
+  const to = [range.to ?? today, today].toSorted()[0]!
+  const weeks: MissingDevlogWeek[] = []
+  for (const { date, log } of daysBetween(from, to, dayLogs, today).toReversed()) {
+    if (log) continue
+    const start = weekStart(date)
+    if (weeks.at(-1)?.start !== start) weeks.push({ start, days: [] })
+    weeks.at(-1)!.days.push(date)
+  }
+  return weeks
+}
+
+/**
+ * What the stacked days are narrowed to: all of these Tags, or any of them with `match: 'any'`, and all of these
+ * Persons mentioned (by id).
+ */
+export type DevlogFilter = { tag?: string[]; match?: 'any'; person?: string[] }
+
+/**
+ * The days the filter keeps, in order. Choosing a Tag or a Person keeps only Dev logs that have it (a Person is looked
+ * for in the body): gaps and broken files go.
+ */
+export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match, person = [] }: DevlogFilter): DevlogDay<L>[] {
+  if (!tag.length && !person.length) return days
   return days.filter(({ log }) => {
-    const tags = log && 'tags' in log ? (log.tags as string[]) : undefined
-    if (!tags) return false
-    return match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name))
+    if (!log || !('tags' in log)) return false
+    const tags = log.tags as string[]
+    const tagged = !tag.length || (match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name)))
+    const body = 'body' in log && typeof log.body === 'string' ? log.body : ''
+    return tagged && (!person.length || mentionsAll(body, person))
   })
 }
 
@@ -149,11 +166,13 @@ export function parseDevlogsView(search: Record<string, unknown>): DevlogsView {
   const tag = [
     ...new Set(raw.map((value) => (typeof value === 'string' ? normalizeTag(value) : undefined)).filter((value) => value !== undefined)),
   ]
+  const person = parsePeople(search.person)
   return {
     ...(log && { log }),
     ...(range && { from: range[0], to: range[1] }),
     ...(tag.length > 0 && { tag }),
     ...(search.match === 'any' && { match: 'any' }),
+    ...(person.length > 0 && { person }),
   }
 }
 

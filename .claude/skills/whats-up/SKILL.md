@@ -14,11 +14,12 @@ The Briefing **only reads**, with one exception: step 4 adds the Todos the user 
 
 ## 1. Set the window
 
-`<since>` is 00:00 on the previous weekday, so a Monday catches Friday. By `date +%u`: on 1 (Monday) it is `date -v-3d +%F`, on 7 (Sunday) `date -v-2d +%F`, otherwise `date -v-1d +%F`.
+1. `<since>` is 00:00 on the previous weekday, so a Monday catches Friday. By `date +%u`: on 1 (Monday) it is `date -v-3d +%F`, on 7 (Sunday) `date -v-2d +%F`, otherwise `date -v-1d +%F`.
+2. The Dev log gaps cover the 7 weekdays before today: `<gaps-from>` is `date -v-11d +%F` on 1 or 2 (Monday, Tuesday), `date -v-10d +%F` on 7 (Sunday), otherwise `date -v-9d +%F`; `<yesterday>` is `date -v-1d +%F`.
 
 `<since>` decides only what is **new**: a thread reply or comment that arrived since then. Anything still **waiting** on the user (a review, a failing pipeline, an unresolved comment, an unreplied DM or mention, an unfinished ticket) shows however old it is.
 
-Done when you have `<since>` as a date.
+Done when you have `<since>`, `<gaps-from>` and `<yesterday>` as dates.
 
 ## 2. Gather
 
@@ -28,7 +29,7 @@ Read each source below. You look, and only look: no posting, commenting, approvi
 
 - `ostraka todo list --today --json`: today's Todos, already selected and ordered (overdue, due today, then the top 3 high-priority ones without a due date). A Sub-todo's title is already `Parent › Sub-todo`; `why` says which of the three it is.
 - `ostraka todo list --references --json`: the MR and Jira tokens open Todos already mention. Keep it for step 3's suggestions.
-- `ostraka devlog gaps --json`: the weekdays without a Dev log among the 7 before today.
+- `ostraka devlog missing --from <gaps-from> --to <yesterday> --json`: the weekdays without a Dev log in that range, by week, oldest first.
 - `ostraka tag list --json`: the Tags in use, for step 3's suggestions.
 
 **GitLab**, from the `GitLab` MCP server. Find the user with `get_user`, then their open merge requests with `list_merge_requests`:
@@ -82,7 +83,7 @@ Write it in chat, in this shape. Leave out any section with nothing in it. A sec
 - Mon 2026-11-02
 - Thu 2026-10-29
 
-Fill these through the Dev log skill (`/devlog`)?
+Fill these through the Dev log skill's Backfill (`/devlog backfill`)?
 
 **Suggested Todos**
 
@@ -101,7 +102,7 @@ Slack: unavailable (signed out). Fix: run `/mcp` and sign in to `slack`.
 - **Needs you**, in order: reviews, failing pipelines, MRs with unresolved comments (new ones first), then the Slack lines.
 - **Today's Todos**: `ostraka todo list --today` in its order, each title with its `why`.
 - **Sprint**: each unfinished ticket with its status and summary, then `blocked` and `no MR` when flagged.
-- **Dev log gaps**: each day with its weekday, then the offer to fill them (step 4 handles the answer).
+- **Dev log gaps**: each missing day with its weekday, newest first, then the offer to fill them (step 4 handles the answer).
 - **Suggested Todos**: one numbered line per Needs you item (Slack aside) and per sprint ticket flagged `no MR`, written as the `ostraka todo add` title it would become. Leave out an item whose reference is in the `--references` list: an open Todo already covers it. Reviews and replies get `^today`; add a `#tag` only when one from `ostraka tag list` clearly matches the project or ticket.
 - **Closing lines**, last: one per skipped source, `<Source>: unavailable (<reason>). Fix: <how>`, for example signing in again with `/mcp`, or registering the server under its key at user level as the README says. Then run `ostraka people list --stubs`: when it lists Persons, add one line naming how many still need details and pointing at the `people` skill. When that command doesn't exist yet (a usage error), leave the line out.
 
@@ -114,6 +115,6 @@ The user answers with numbers, each optionally followed by tokens that change th
 1. For each pick, run `ostraka todo add "<title with its tokens>"`.
 2. A Slack item becomes a Todo only when the user asks for it by name or number: write a short title with its permalink in it, and add it the same way.
 3. Show each `Added …` line the CLI prints. If any Todo was added, run `ostraka snapshot "whats-up: add N Todos"`.
-4. If the user said yes to filling the Dev log gaps, the Briefing ends here: run the Dev log skill (`/devlog`) for those days and follow it from its first step. It drafts each day and writes nothing until the user confirms.
+4. If the user said yes to filling the Dev log gaps, the Briefing ends here: run the Dev log skill's Backfill for those days, `/devlog backfill <gaps-from> <yesterday>`, and follow it from its first step. It drafts each past day and writes nothing until the user confirms it.
 
 Done when every pick is added (or the user picked none), the snapshot is made, and a yes to the gaps has handed over to the Dev log skill.

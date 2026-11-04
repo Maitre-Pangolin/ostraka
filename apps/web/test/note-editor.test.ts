@@ -11,6 +11,7 @@ import { AGENT_STYLE, HOUSE_STYLE_BODY } from '../../../packages/core/test/markd
 import { createNoteEditor, type NoteEditor } from '../src/notes/note-editor-setup.ts'
 import { tokenHighlight } from '../src/notes/token-highlight.ts'
 import { pickSuggestion, tokenSuggest, type OpenSuggestions } from '../src/notes/token-suggest.ts'
+import { mentionHighlighter } from '../src/people/highlight.ts'
 import { referenceHighlighter } from '../src/references/highlight.ts'
 
 // jsdom has no layout, so no observers; code blocks only use them to render lazily.
@@ -95,6 +96,23 @@ describe('References in the Notes editor', () => {
     expect(highlighted.map((element) => element.nextElementSibling?.className)).toEqual(
       highlighted.map((element) => expect.stringContaining(`dot-${element.textContent}`)),
     )
+  })
+})
+
+describe('Mentions in the Notes editor', () => {
+  const names = new Map([['bram', 'Bram Okonkwo']])
+  const mentions = tokenHighlight(() => [mentionHighlighter((id) => names.get(id))])
+  const markdown = 'Ask @bram and @quentin, not `@bram` or [@bram](https://x.test).\n'
+
+  it('leaves a Note with Mentions byte-identical', async () => {
+    await open(markdown, { plugins: [mentions] })
+    expect(editor!.getMarkdown()).toBe(markdown)
+  })
+
+  it('highlights Mentions of known Persons with their name, not unknown ids, code or link text', async () => {
+    const root = await open(markdown, { plugins: [mentions] })
+    const highlighted = [...root.querySelectorAll<HTMLElement>('[data-mention]')]
+    expect(highlighted.map((element) => [element.textContent, element.title])).toEqual([['@bram', 'Bram Okonkwo']])
   })
 })
 

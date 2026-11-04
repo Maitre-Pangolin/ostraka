@@ -15,15 +15,12 @@ afterEach(async () => {
   await rm(contentRoot, { recursive: true, force: true })
 })
 
-// Wednesday 4 November 2026, mid-morning local time.
-const NOW = new Date(2026, 10, 4, 9, 30)
-
 async function ostraka(...argv: string[]) {
   let stdout = ''
   let stderr = ''
   const code = await run(argv, {
     env: { OSTRAKA_HOME: contentRoot },
-    now: () => NOW,
+    now: () => new Date(2026, 10, 4, 15, 30), // Wednesday 2026-11-04, local time
     stdout: (text) => (stdout += text),
     stderr: (text) => (stderr += text),
   })
@@ -92,20 +89,42 @@ describe('ostraka devlog list', () => {
   })
 })
 
-describe('ostraka devlog gaps', () => {
-  it('lists the weekdays without a Dev log among the 7 before today, newest first', async () => {
-    await devlog('2026-11-03', '---\ndate: 2026-11-03\n---\n')
-    await devlog('2026-10-30', '---\ndate: 2026-10-30\noff: true\n---\n')
+describe('ostraka devlog missing', () => {
+  it('lists the weekdays with no Dev log since the first one, by week, oldest first, up to today', async () => {
+    await devlog('2026-10-22', '---\ndate: 2026-10-22\n---\n')
+    await devlog('2026-10-26', '---\ndate: 2026-10-26\n---\n')
+    await devlog('2026-10-27', '---\ndate: 2026-10-27\noff: true\nlabel: Holiday\n---\n')
     await devlog('2026-10-28', '---\ndate: 2026-10-28\n---\n')
+    await devlog('2026-10-29', '---\ndate: 2026-10-29\n---\n')
+    await devlog('2026-11-03', '---\ndate: 2026-11-03\n---\n')
 
-    expect(await ostraka('devlog', 'gaps')).toEqual({ code: 0, stdout: '2026-11-02\n2026-10-29\n2026-10-27\n2026-10-26\n', stderr: '' })
-    expect(JSON.parse((await ostraka('devlog', 'gaps', '--json')).stdout)).toEqual(['2026-11-02', '2026-10-29', '2026-10-27', '2026-10-26'])
+    expect(await ostraka('devlog', 'missing')).toEqual({
+      code: 0,
+      stdout: 'week of 2026-10-19: 2026-10-23\nweek of 2026-10-26: 2026-10-30\nweek of 2026-11-02: 2026-11-02 2026-11-04\n',
+      stderr: '',
+    })
   })
 
-  it('says when there are none', async () => {
-    for (const date of ['2026-11-03', '2026-11-02', '2026-10-30', '2026-10-29', '2026-10-28', '2026-10-27', '2026-10-26']) {
-      await devlog(date, `---\ndate: ${date}\n---\n`)
-    }
-    expect(await ostraka('devlog', 'gaps')).toEqual({ code: 0, stdout: 'No Dev log gaps in the 7 weekdays before today.\n', stderr: '' })
+  it('narrows to a range and gives agents JSON', async () => {
+    await devlog('2026-10-28', '---\ndate: 2026-10-28\n---\n')
+
+    const { code, stdout } = await ostraka('devlog', 'missing', '--from', '2026-10-23', '--to', '2026-11-02', '--json')
+    expect(code).toBe(0)
+    expect(JSON.parse(stdout)).toEqual([
+      { start: '2026-10-19', days: ['2026-10-23'] },
+      { start: '2026-10-26', days: ['2026-10-26', '2026-10-27', '2026-10-29', '2026-10-30'] },
+      { start: '2026-11-02', days: ['2026-11-02'] },
+    ])
+  })
+
+  it('says when nothing is missing', async () => {
+    await devlog('2026-11-04', '---\ndate: 2026-11-04\n---\n')
+    expect(await ostraka('devlog', 'missing')).toEqual({ code: 0, stdout: 'No missing days.\n', stderr: '' })
+  })
+
+  it('asks for --from before there is any Dev log', async () => {
+    const { code, stderr } = await ostraka('devlog', 'missing')
+    expect(code).toBe(1)
+    expect(stderr).toBe('No Dev log yet, so no first day to start from: pass --from <YYYY-MM-DD>.\n')
   })
 })

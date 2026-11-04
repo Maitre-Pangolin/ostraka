@@ -1,14 +1,19 @@
 // The Notes editor as a React component: Crepe (toolbar on selection, `/` menu, Markdown shortcuts) styled with
 // the app's tokens in index.css, Mermaid blocks drawn in place. References are highlighted in place with their status
-// dot and hover card, and suggested while typed (`!` for my open MRs, `KEY-` for my sprint tickets); they stay plain
-// tokens in the Markdown.
+// dot and hover card, and suggested while typed (`!` for my open MRs, `KEY-` for my sprint tickets). Mentions of known
+// Persons are highlighted with their contact card on hover, and suggested after `@`. Both stay plain tokens in the
+// Markdown.
 import '@milkdown/crepe/theme/common/style.css'
+import { suggestPeople, type MentionSuggestion } from '@ostraka/core/mentions'
 import { suggestReferences, type ReferenceSuggestion } from '@ostraka/core/references'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
 import { useEffect, useId, useLayoutEffect, useRef, useState, type RefObject } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+import { usePeopleIndex } from '@/people/api'
+import { mentionHighlighter } from '@/people/highlight'
+import { MentionHoverCard, MentionSuggestionLabel } from '@/people/mention-chip'
 import { useReferenceIndex } from '@/references/api'
 import { referenceHighlighter } from '@/references/highlight'
 import { ReferenceHoverCard, ReferenceSuggestionLabel } from '@/references/reference-chip'
@@ -20,8 +25,10 @@ import { pickSuggestion, tokenSuggest, type OpenSuggestions } from './token-sugg
 
 export type NoteEditorHandle = { flush(): void }
 
-type Offered = { open: OpenSuggestions<ReferenceSuggestion>; view: EditorView }
-type Hovered = { token: string; anchor: Element }
+type Suggestion = ReferenceSuggestion | MentionSuggestion
+type Offered = { open: OpenSuggestions<Suggestion>; view: EditorView }
+/** A highlighted token under the pointer: a Reference's token, or a Mention's Person id. */
+type Hovered = { kind: 'reference' | 'mention'; token: string; anchor: Element }
 
 /**
  * Edits `markdown` (a body without its header), which is read once: give the component a new `key` to show other
@@ -40,6 +47,7 @@ export function NoteEditor({
   const root = useRef<HTMLDivElement>(null)
   const view = useRef<EditorView | null>(null)
   const index = useReferenceIndex()
+  const people = usePeopleIndex()
   const [offered, setOffered] = useState<Offered>()
   const [selected, setSelected] = useState(0)
   const [dismissed, setDismissed] = useState<string>()
@@ -52,16 +60,16 @@ export function NoteEditor({
   const active = Math.min(selected, suggestions.length - 1)
 
   // The editor is made once per text; its plugins read the latest state through this ref.
-  const latest = useRef({ onEdit, index, shown, suggestions, active })
+  const latest = useRef({ onEdit, index, people, shown, suggestions, active })
   useLayoutEffect(() => {
-    latest.current = { onEdit, index, shown, suggestions, active }
+    latest.current = { onEdit, index, people, shown, suggestions, active }
   })
 
-  // A status that changed (the top bar polled again) redraws the dots.
-  const drawnWith = useRef(index)
+  // A status that changed (the top bar polled again) redraws the dots; a changed People directory, the Mentions.
+  const drawnWith = useRef({ index, people: people.people })
   useEffect(() => {
-    if (drawnWith.current === index) return
-    drawnWith.current = index
+    if (drawnWith.current.index === index && drawnWith.current.people === people.people) return
+    drawnWith.current = { index, people: people.people }
     if (view.current) refreshTokenHighlight(view.current)
   })
 
@@ -75,9 +83,12 @@ export function NoteEditor({
       markdown,
       renderPreview: renderMermaidPreview,
       plugins: [
-        tokenHighlight(() => [referenceHighlighter(dotOf)]),
-        tokenSuggest<ReferenceSuggestion>({
-          suggest: (fragment) => suggestReferences(fragment, latest.current.index.candidates),
+        tokenHighlight(() => [referenceHighlighter(dotOf), mentionHighlighter((id) => latest.current.people.byId.get(id)?.name)]),
+        tokenSuggest<Suggestion>({
+          suggest: (fragment) => [
+            ...suggestReferences(fragment, latest.current.index.candidates),
+            ...suggestPeople(fragment, latest.current.people.people),
+          ],
           onChange: (open, editorView) => {
             setOffered(open && { open, view: editorView })
             setSelected(0)
@@ -130,7 +141,7 @@ export function NoteEditor({
     return () => element.removeEventListener('keydown', onKeyDown, true)
   }, [])
 
-  // Hovering a highlighted Reference opens its card, as a chip's does.
+  // Hovering a highlighted Reference or Mention opens its card, as a chip's does.
   const hoverLater = (next: Hovered | undefined, delay: number) => {
     window.clearTimeout(hoverTimer.current)
     hoverTimer.current = window.setTimeout(() => setHovered(next), delay)
@@ -162,15 +173,25 @@ export function NoteEditor({
         className="ostraka-md min-h-full"
         onBlur={() => setOffered(undefined)}
         onMouseOver={(event) => {
-          const target = (event.target as Element).closest<HTMLElement>('[data-reference]')
-          if (target && target.dataset.reference !== hovered?.token) hoverLater({ token: target.dataset.reference!, anchor: target }, 300)
+          const target = (event.target as Element).closest<HTMLElement>('[data-reference], [data-mention]')
+          const next = target && hoveredAt(target)
+          if (target && next && next.token !== hovered?.token) hoverLater(next, 300)
           else if (target) window.clearTimeout(hoverTimer.current)
         }}
         onMouseOut={(event) => {
-          if ((event.target as Element).closest('[data-reference]')) hoverLater(undefined, 150)
+          if ((event.target as Element).closest('[data-reference], [data-mention]')) hoverLater(undefined, 150)
         }}
       />
-      {hovered && (
+      {hovered?.kind === 'mention' && (
+        <MentionHoverCard
+          key={hovered.token}
+          id={hovered.token}
+          anchor={hovered.anchor}
+          onOpenChange={(open) => !open && setHovered(undefined)}
+          onHover={(inside) => (inside ? window.clearTimeout(hoverTimer.current) : hoverLater(undefined, 150))}
+        />
+      )}
+      {hovered?.kind === 'reference' && (
         <ReferenceHoverCard
           key={hovered.token}
           token={hovered.token}
@@ -204,7 +225,11 @@ export function NoteEditor({
                 onMouseEnter={() => setSelected(at)}
                 className={cn('flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm', at === active && 'bg-accent')}
               >
-                <ReferenceSuggestionLabel suggestion={suggestion} />
+                {suggestion.kind === 'mention' ? (
+                  <MentionSuggestionLabel suggestion={suggestion} />
+                ) : (
+                  <ReferenceSuggestionLabel suggestion={suggestion} />
+                )}
                 {at === active && <kbd className="text-muted-foreground ml-auto text-[10px]">Tab</kbd>}
               </li>
             ))}
@@ -213,4 +238,11 @@ export function NoteEditor({
         )}
     </>
   )
+}
+
+/** What a highlighted element under the pointer names. */
+function hoveredAt(target: HTMLElement): Hovered | undefined {
+  if (target.dataset.mention) return { kind: 'mention', token: target.dataset.mention, anchor: target }
+  if (target.dataset.reference) return { kind: 'reference', token: target.dataset.reference, anchor: target }
+  return undefined
 }

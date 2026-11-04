@@ -1,5 +1,5 @@
 import { homedir } from 'node:os'
-import { delimiter, dirname } from 'node:path'
+import { delimiter, dirname, join } from 'node:path'
 import { parseArgs } from 'node:util'
 import {
   addSubTodo,
@@ -7,7 +7,6 @@ import {
   completeTodo,
   CONTENT_KINDS,
   contentPath,
-  devlogGaps,
   dropTodo,
   formatNotes,
   isBrokenDevlog,
@@ -17,17 +16,28 @@ import {
   listTags,
   isContentKind,
   listFinishedTodos,
-  listTodos,
   localDay,
+  missingDevlogWeeks,
+  listTodos,
   mentionedReferences,
-  snapshot,
   todaysTodos,
+  parseSearchParams,
+  resolveContentRoot,
+  SEARCH_KINDS,
+  searchContent,
+  searchParams,
+  snapshot,
+  type ContentKind,
+  type SearchHit,
+  type SearchKind,
+  type SearchQuery,
   type DevlogListing,
   type SubTodo,
   type Todo,
 } from '@ostraka/core'
-import { HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
+import { CONTENT_ROOT_HEADER, HOSTNAME, macKeychain, PORT, startServer, type Keychain } from '@ostraka/server'
 import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
+import { PEOPLE_USAGE, peopleCommand } from './people.ts'
 import { install as installAgent, realSystem, type System } from './install.ts'
 
 export type { System } from './install.ts'
@@ -35,14 +45,16 @@ export type { System } from './install.ts'
 export type Io = {
   env: Record<string, string | undefined>
   homeDir?: string
-  /** The clock that says what today is. Tests pass a fixed one. */
-  now?: () => Date
   /** launchd, node and the platform, for `install`. Tests pass a fake. */
   system?: System
   /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
   keychain?: Keychain
+  /** The current moment, for "today"; tests pass a fixed one. */
+  now?: () => Date
   /** Asks the user one line, for the `init` walkthrough. */
   readLine?: (prompt: string) => Promise<string>
+  /** Calls to the running server (`ostraka search`); tests pass a fake. */
+  fetch?: (url: string, init?: RequestInit) => Promise<Response>
   stdout: (text: string) => void
   stderr: (text: string) => void
 }
@@ -74,7 +86,9 @@ const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently ch
 
 const DEVLOG_USAGE = `  ostraka devlog list [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
                                 List Dev logs and monthly summaries, newest first (a broken one with its error)
-  ostraka devlog gaps [--json]  List the weekdays without a Dev log among the 7 before today, newest first
+  ostraka devlog missing [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
+                                List the weekdays with no Dev log, by week, oldest first: from the first
+                                Dev log (or --from) to today (or --to)
 `
 
 const TAG_USAGE = `  ostraka tag list [--json]     List the Tags in use on Todos, Notes, Dev logs and Sketches
@@ -84,13 +98,19 @@ const SNAPSHOT_USAGE = `  ostraka snapshot "<message>" [--json]
                                 Commit the content folder now (after an agent writes)
 `
 
+const SEARCH_USAGE = `  ostraka search [<query>] [--tag <tag>]... [--kind <${SEARCH_KINDS.join('|')}>]... [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
+                                Find Notes, Dev logs, Todos and Sketches: each word a prefix,
+                                "a phrase" exactly, a Reference or @mention as a whole token;
+                                every --tag must be on a hit; newest first with no query
+`
+
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
   ostraka install               Start the app at login (LaunchAgent), put \`ostraka\` in ~/.local/bin
                                 and link the repo's skills into ~/.claude/skills
   ostraka path <${KINDS}> [--json]
                                 Print where that content lives
-${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${TAG_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -109,10 +129,14 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await todoCommand(rest, io)
       case 'note':
         return await noteCommand(rest, io)
+      case 'search':
+        return await searchCommand(rest, io)
       case 'devlog':
         return await devlogCommand(rest, io)
       case 'tag':
         return await tagCommand(rest, io)
+      case 'people':
+        return await peopleCommand(rest, io)
       case 'backup':
         return await backupCommand(rest, io)
       case 'init':
@@ -169,9 +193,9 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
       json: { type: 'boolean' },
       reason: { type: 'string' },
       'finished-on': { type: 'string' },
-      parent: { type: 'string' },
       today: { type: 'boolean' },
       references: { type: 'boolean' },
+      parent: { type: 'string' },
     },
   })
   const [action, ...words] = positionals
@@ -222,7 +246,7 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
     return 1
   }
   if (action === 'list' && words.length === 0 && values.today) {
-    const todos = todaysTodos(await listTodos(options), today(io))
+    const todos = todaysTodos(await listTodos(options), localDay((io.now ?? (() => new Date()))()))
     print(
       todos,
       todos.length ? todos.map((todo) => `${todoLine(todo)}  (${todo.why})`).join('\n') : 'Nothing overdue, due today or high priority.',
@@ -267,8 +291,75 @@ async function noteCommand(args: string[], io: Io): Promise<number> {
   return 1
 }
 
-/** The local calendar day, as YYYY-MM-DD. */
-const today = (io: Io) => localDay(io.now?.() ?? new Date())
+const FOLDERS: Record<SearchKind, ContentKind> = { todo: 'todos', note: 'notes', devlog: 'devlogs', sketch: 'sketches' }
+
+/** The hits from the running server when it serves this content folder and its index is built; else undefined. */
+async function searchServer(query: SearchQuery, root: string, io: Io): Promise<SearchHit[] | undefined> {
+  const fetch = io.fetch ?? globalThis.fetch
+  try {
+    const res = await fetch(`http://${HOSTNAME}:${PORT}/api/search?${searchParams(query)}`, { signal: AbortSignal.timeout(5000) })
+    if (!res.ok || decodeURIComponent(res.headers.get(CONTENT_ROOT_HEADER) ?? '') !== root) return undefined
+    const answer = (await res.json()) as { indexing: boolean; hits: SearchHit[] }
+    return answer.indexing ? undefined : answer.hits
+  } catch {
+    return undefined // Not running: the files are searched directly.
+  }
+}
+
+async function searchCommand(args: string[], io: Io): Promise<number> {
+  const { positionals, values } = parseArgs({
+    args,
+    allowPositionals: true,
+    options: {
+      json: { type: 'boolean' },
+      tag: { type: 'string', multiple: true },
+      kind: { type: 'string', multiple: true },
+      from: { type: 'string' },
+      to: { type: 'string' },
+    },
+  })
+  const text = positionals.join(' ')
+  if (!text.trim() && !values.tag && !values.kind && !values.from && !values.to) {
+    io.stderr(`Usage:\n${SEARCH_USAGE}`)
+    return 1
+  }
+  // Checked as the server checks it, whichever ends up answering.
+  const query = parseSearchParams(
+    searchParams({ text, tags: values.tag, kinds: values.kind as SearchKind[], from: values.from, to: values.to }),
+  )
+  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
+  const root = await resolveContentRoot(options)
+  const hits = (await searchServer(query, root, io)) ?? (await searchContent(query, options))
+  const withPaths = hits.map((hit) => ({
+    ...hit,
+    ...(hit.kind !== 'todo' && { path: join(root, FOLDERS[hit.kind], `${hit.id}.md`) }),
+  }))
+  if (values.json) {
+    io.stdout(`${JSON.stringify(withPaths, null, 2)}\n`)
+    return 0
+  }
+  const lines = withPaths.map((hit) => {
+    const status = hit.status && hit.status !== 'open' ? [hit.status === 'done' ? '(done)' : '(Dropped)'] : []
+    const parent = hit.parentId ? [`(Sub-todo of ${hit.parentId})`] : []
+    const head = [
+      hit.kind,
+      hit.id,
+      hit.title,
+      hit.date,
+      ...(hit.tags.length ? [hit.tags.map((tag) => `#${tag}`).join(' ')] : []),
+      ...status,
+      ...parent,
+    ]
+    const snippet = hit.snippet
+      .map((piece) => (piece.match ? `**${piece.text}**` : piece.text))
+      .join('')
+      .replace(/\s+/g, ' ')
+      .trim()
+    return [head.join('  '), ...('path' in hit ? [`  ${hit.path}`] : []), ...(snippet ? [`  ${snippet}`] : [])].join('\n')
+  })
+  io.stdout(lines.length ? `${lines.join('\n')}\n` : 'Nothing found.\n')
+  return 0
+}
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const MONTH = /^\d{4}-\d{2}$/
@@ -293,24 +384,24 @@ async function devlogCommand(args: string[], io: Io): Promise<number> {
     options: { json: { type: 'boolean' }, from: { type: 'string' }, to: { type: 'string' } },
   })
   const { from, to } = values
-  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
-  if (positionals.length === 1 && positionals[0] === 'gaps' && from === undefined && to === undefined) {
-    const gaps = devlogGaps(await listDevlogs(options), today(io))
-    io.stdout(
-      values.json
-        ? `${JSON.stringify(gaps, null, 2)}\n`
-        : gaps.length
-          ? `${gaps.join('\n')}\n`
-          : 'No Dev log gaps in the 7 weekdays before today.\n',
-    )
-    return 0
-  }
+  const [subcommand] = positionals
   const dates = [from, to].filter((date) => date !== undefined)
-  if (positionals.length !== 1 || positionals[0] !== 'list' || !dates.every((date) => DAY.test(date))) {
+  if (positionals.length !== 1 || (subcommand !== 'list' && subcommand !== 'missing') || !dates.every((date) => DAY.test(date))) {
     io.stderr(`Usage:\n${DEVLOG_USAGE}`)
     return 1
   }
-  const logs = (await listDevlogs(options)).filter((log) => inRange(log.id, from, to))
+  const all = await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })
+  if (subcommand === 'missing') {
+    if (from === undefined && !all.some((log) => DAY.test(log.id))) {
+      io.stderr('No Dev log yet, so no first day to start from: pass --from <YYYY-MM-DD>.\n')
+      return 1
+    }
+    const weeks = missingDevlogWeeks(all, localDay((io.now ?? (() => new Date()))()), { from, to })
+    const lines = weeks.map((week) => `week of ${week.start}: ${week.days.join(' ')}`)
+    io.stdout(values.json ? `${JSON.stringify(weeks, null, 2)}\n` : lines.length ? `${lines.join('\n')}\n` : 'No missing days.\n')
+    return 0
+  }
+  const logs = all.filter((log) => inRange(log.id, from, to))
   io.stdout(values.json ? `${JSON.stringify(logs, null, 2)}\n` : logs.length ? `${logs.map(devlogLine).join('\n')}\n` : 'No Dev logs.\n')
   return 0
 }

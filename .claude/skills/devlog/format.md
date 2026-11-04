@@ -9,7 +9,7 @@ Run `ostraka path devlogs` for the folder; never hard-code it. In that folder:
 - `<YYYY-MM-DD>.md` is the Dev log of that day. There is at most one per day.
 - `<YYYY-MM>.md` is the monthly summary of that month, written from its days.
 
-Any other name is shown as broken. After writing, check the file with `ostraka devlog list --from <date> --to <date>` (a `broken:` line gives the reason the app will show), then run `ostraka snapshot "devlog: <date>"` once.
+Any other name is shown as broken. After writing, check the file with `ostraka devlog list --from <date> --to <date>` (a `broken:` line gives the reason the app will show). A run of the Dev log skill ends with one `ostraka snapshot`, however many files it wrote.
 
 ## A day
 
@@ -100,3 +100,7 @@ tags: [billing, code-review]
 ```
 
 `month` is the month, `YYYY-MM`, the same as the file name. `tags` is optional, with no limit. The body is free-form Markdown in house style, written from that month's days; the app shows it on top of the month's weeks.
+
+## Finding earlier content
+
+To find earlier days, Notes or Todos (a ticket's history, who was in a meeting), run `ostraka search`, never `rg` or `grep` on the content folder: `ostraka search "<words>" [--kind devlog|note|todo|sketch] [--tag <tag>] [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] --json`. Each word matches as a prefix, `"a phrase"` exactly, and a Reference (`PAY-1432`) or Mention (`@jane-doe`) only as that whole token. Each hit carries its file's `path` to read.

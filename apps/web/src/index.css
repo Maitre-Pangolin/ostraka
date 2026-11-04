@@ -216,6 +216,13 @@
   max-width: 100%;
   height: auto;
 }
+/* A Mention of a known Person highlighted in place (src/people/highlight.ts): still `@<person id>` text, tinted like the Mention chip. */
+.ostraka-md .milkdown .ostraka-mention {
+  color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
 
 /* Markdown read, not edited (Dev logs): the editor's look, from plain elements (`MarkdownView`). */
 .devlog-prose {
