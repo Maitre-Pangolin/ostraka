@@ -42,7 +42,7 @@ Run `ostraka devlog list --from <date> --to <date>` and read its line for `<date
 
 Read each Activity source for `<date>`. Each one is read-only: you look, you never post, comment, transition or mark anything. A source whose MCP server is missing, signed out or failing is skipped: say so in one line above the draft, and leave it out of `sources`. MCP servers are named by key below; if a named tool is missing, use whichever tool of that server does the same job.
 
-- **Todos** (`todos`): `ostraka todo list --finished-on <date> --json`. Each Todo done that day goes in Done as `[title](todo:<id>)`; each Dropped one as `Dropped [title](todo:<id>)`, then `: <dropReason>` when there is one.
+- **Todos** (`todos`): `ostraka todo list --finished-on <date> --json`. It lists Sub-todos finished that day too, each with its `parent`; a Sub-todo is an item of its own, with its own title and id, whatever its parent's state. Each Todo or Sub-todo done that day goes in Done as `[title](todo:<id>)`; each Dropped one as `Dropped [title](todo:<id>)`, then `: <dropReason>` when there is one.
 - **GitLab** (`gitlab`), from the `GitLab` MCP server. Find the user with `get_user`, then their merge requests with `list_merge_requests`: those they authored and those they review, updated on or after `<date>`. Keep what the user did on `<date>`:
   - opened (created on `<date>`), merged or closed (on `<date>`), and reviewed (they approved, or wrote a note on `<date>`; `get_merge_request_notes` shows the notes).
   - Write each as one Done line with the MR token `group/project!<iid>` (full project path) and its Jira ticket, taken from the MR's title, branch or description: `Opened acme/billing/api!412 for BILL-231: retry failed invoice webhooks`.

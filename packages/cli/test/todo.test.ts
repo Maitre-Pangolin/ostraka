@@ -117,6 +117,25 @@ describe('ostraka todo', () => {
     })
   })
 
+  it('lists the Sub-todos finished on a day as Parent › Sub-todo, naming the parent in JSON', async () => {
+    const parent = idOf((await ostraka('todo', 'add', 'Release 2.0')).stdout)
+    const notes = idOf((await ostraka('todo', 'add', 'Write the notes', '--parent', parent)).stdout)
+    const blog = idOf((await ostraka('todo', 'add', 'Blog post', '--parent', parent)).stdout)
+    await ostraka('todo', 'add', 'Tag the build', '--parent', parent)
+    await ostraka('todo', 'done', notes)
+    await ostraka('todo', 'drop', blog, '--reason', 'No time')
+
+    const today = new Date().toLocaleDateString('sv') // YYYY-MM-DD, local
+    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', today, '--json')).stdout)
+    expect(finished).toEqual([
+      expect.objectContaining({ id: blog, title: 'Blog post', status: 'dropped', parent: { id: parent, title: 'Release 2.0' } }),
+      expect.objectContaining({ id: notes, title: 'Write the notes', status: 'done', parent: { id: parent, title: 'Release 2.0' } }),
+    ])
+    expect((await ostraka('todo', 'list', '--finished-on', today)).stdout).toBe(
+      `${blog}  Release 2.0 › Blog post (Dropped: No time)\n${notes}  Release 2.0 › Write the notes (done)\n`,
+    )
+  })
+
   it('rejects a --finished-on that is not a day', async () => {
     expect(await ostraka('todo', 'list', '--finished-on', 'yesterday')).toEqual({
       code: 1,

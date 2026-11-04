@@ -15,7 +15,7 @@ import {
   listNotes,
   listTags,
   isContentKind,
-  listFinishedTodos,
+  listFinishedOn,
   localDay,
   missingDevlogWeeks,
   listTodos,
@@ -32,6 +32,7 @@ import {
   type SearchKind,
   type SearchQuery,
   type DevlogListing,
+  type FinishedSubTodo,
   type SubTodo,
   type Todo,
 } from '@ostraka/core'
@@ -72,7 +73,8 @@ const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
                                 Drop a Todo or Sub-todo: abandon it, optionally saying why
   ostraka todo list [--json]    List open Todos, most urgent first, their Sub-todos under them
   ostraka todo list --finished-on <YYYY-MM-DD> [--json]
-                                List the Todos done or Dropped that day, newest first
+                                List the Todos and Sub-todos done or Dropped that day, newest first
+                                (a Sub-todo as Parent › Sub-todo; --json names its parent)
   ostraka todo list --today [--json]
                                 List today's Todos for the Briefing: overdue, due today, then the top 3
                                 high-priority ones without a due date (a Sub-todo as Parent › Sub-todo)
@@ -184,6 +186,10 @@ function todoLine(todo: Pick<SubTodo, 'id' | 'title' | 'tags' | 'priority' | 'du
 const finishedLine = (todo: SubTodo) =>
   `${todoLine(todo)} (${todo.status === 'dropped' ? `Dropped${todo.dropReason ? `: ${todo.dropReason}` : ''}` : 'done'})`
 
+/** A finished Todo, or a finished Sub-todo listed on its own as `Parent › Sub-todo`. */
+const finishedOnLine = (item: Todo | FinishedSubTodo) =>
+  finishedLine('parent' in item ? { ...item, title: `${item.parent.title} › ${item.title}` } : item)
+
 /** An open Todo, then its Sub-todos indented under it in creation order, finished ones marked. */
 const openTodoLines = (todo: Todo) =>
   [todoLine(todo), ...todo.subTodos.map((sub) => `  ${sub.status === 'open' ? todoLine(sub) : finishedLine(sub)}`)].join('\n')
@@ -240,8 +246,8 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
     return 0
   }
   if (action === 'list' && words.length === 0 && finishedOn !== undefined && values.reason === undefined) {
-    const todos = await listFinishedTodos({ finishedOn }, options)
-    print(todos, todos.length ? todos.map(finishedLine).join('\n') : `No Todos finished on ${finishedOn}.`)
+    const items = await listFinishedOn({ finishedOn }, options)
+    print(items, items.length ? items.map(finishedOnLine).join('\n') : `No Todos finished on ${finishedOn}.`)
     return 0
   }
   if (values.reason !== undefined || finishedOn !== undefined) {

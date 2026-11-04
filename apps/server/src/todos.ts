@@ -81,7 +81,7 @@ export function todoRoutes(options: TodoOptions) {
   const changing = (c: Context) => ({ ...options, ifVersion: loadedVersion(c) })
 
   routes.get('/', async (c) => c.json((await listTodos(options)).map(versioned)))
-  routes.get('/finished', async (c) => c.json((await listFinishedTodos({}, options)).map(versioned)))
+  routes.get('/finished', async (c) => c.json((await listFinishedTodos(options)).map(versioned)))
 
   routes.post('/', async (c) => {
     const body = await readBody(c, NewTodoSchema)

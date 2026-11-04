@@ -75,8 +75,8 @@ export type TodoChange = z.infer<typeof TodoChangeSchema>
 export const DropTodoSchema = z.strictObject({ reason: z.string().optional() })
 export type DropTodo = z.infer<typeof DropTodoSchema>
 
-/** Which done and Dropped Todos to list: all of them, or those finished on one local day. */
-export const FinishedQuerySchema = z.strictObject({ finishedOn: day.optional() })
+/** Which done and Dropped Todos and Sub-todos to list: those finished on one local day. */
+export const FinishedQuerySchema = z.strictObject({ finishedOn: day })
 export type FinishedQuery = z.infer<typeof FinishedQuerySchema>
 
 // Every key in its place, so a write never reorders what an agent or git diff sees.

@@ -8,6 +8,7 @@ import {
   completeTodo,
   deleteTodo,
   dropTodo,
+  listFinishedOn,
   listFinishedTodos,
   listTags,
   listTodos,
@@ -150,18 +151,19 @@ describe('addTodo', () => {
 
 type Fixture = { id: string; priority?: string; due?: string; createdAt?: string; status?: string; finishedAt?: string }
 
-async function writeTodos(fixtures: Fixture[]) {
-  const todos = fixtures.map(({ id, priority = 'none', due, createdAt = '2026-10-01T10:00:00.000Z', status = 'open', finishedAt }) => ({
-    id,
-    title: `Todo ${id}`,
-    priority,
-    ...(due && { due }),
-    tags: [],
-    status,
-    createdAt,
-    ...(finishedAt && { finishedAt }),
-    subTodos: [],
-  }))
+const fixtureItem = ({ id, priority = 'none', due, createdAt = '2026-10-01T10:00:00.000Z', status = 'open', finishedAt }: Fixture) => ({
+  id,
+  title: `Todo ${id}`,
+  priority,
+  ...(due && { due }),
+  tags: [],
+  status,
+  createdAt,
+  ...(finishedAt && { finishedAt }),
+})
+
+async function writeTodos(fixtures: (Fixture & { subTodos?: Fixture[] })[]) {
+  const todos = fixtures.map((fixture) => ({ ...fixtureItem(fixture), subTodos: (fixture.subTodos ?? []).map(fixtureItem) }))
   await writeFile(todosFile(), JSON.stringify({ todos }, null, 2))
 }
 
@@ -480,10 +482,12 @@ describe('listFinishedTodos', () => {
       { id: 'done2', status: 'done', finishedAt: '2024-01-05T10:00:00.000Z' },
       { id: 'done3', status: 'done', finishedAt: at(2, 8) },
     ])
-    expect((await listFinishedTodos({}, options)).map((todo) => todo.id)).toEqual(['drop1', 'done3', 'done1', 'done2'])
+    expect((await listFinishedTodos(options)).map((todo) => todo.id)).toEqual(['drop1', 'done3', 'done1', 'done2'])
   })
+})
 
-  it('narrows to Todos finished on one local day, done and Dropped alike', async () => {
+describe('listFinishedOn', () => {
+  it('lists the Todos finished on one local day, done and Dropped alike, newest-finished first', async () => {
     await writeTodos([
       { id: 'early', status: 'done', finishedAt: at(2, 0, 5) },
       { id: 'drops', status: 'dropped', finishedAt: at(2, 17) },
@@ -492,12 +496,35 @@ describe('listFinishedTodos', () => {
       { id: 'tomor', status: 'dropped', finishedAt: at(3, 0, 5) },
       { id: 'still' },
     ])
-    expect((await listFinishedTodos({ finishedOn: '2026-11-02' }, options)).map((todo) => todo.id)).toEqual(['lates', 'drops', 'early'])
+    expect((await listFinishedOn({ finishedOn: '2026-11-02' }, options)).map((todo) => todo.id)).toEqual(['lates', 'drops', 'early'])
+  })
+
+  it('lists Sub-todos by their own finish, even under an open parent, naming their parent', async () => {
+    await writeTodos([
+      {
+        id: 'open1',
+        subTodos: [
+          { id: 'subdn', status: 'done', finishedAt: at(2, 11) },
+          { id: 'subdr', status: 'dropped', finishedAt: at(2, 9) },
+          { id: 'subyd', status: 'done', finishedAt: at(1, 15) },
+          { id: 'subop' },
+        ],
+      },
+      { id: 'done1', status: 'done', finishedAt: at(2, 10), subTodos: [{ id: 'early', status: 'done', finishedAt: at(1, 12) }] },
+    ])
+    const finished = await listFinishedOn({ finishedOn: '2026-11-02' }, options)
+    expect(finished.map((item) => [item.id, 'parent' in item ? item.parent : undefined])).toEqual([
+      ['subdn', { id: 'open1', title: 'Todo open1' }],
+      ['done1', undefined],
+      ['subdr', { id: 'open1', title: 'Todo open1' }],
+    ])
+    expect(finished[0]).toMatchObject({ title: 'Todo subdn', status: 'done', finishedAt: at(2, 11) })
+    expect((await listFinishedOn({ finishedOn: '2026-11-01' }, options)).map((item) => item.id)).toEqual(['subyd', 'early'])
   })
 
   it('rejects a day that is not YYYY-MM-DD', async () => {
-    await expect(listFinishedTodos({ finishedOn: '2/11/2026' }, options)).rejects.toThrow(/YYYY-MM-DD/)
-    await expect(listFinishedTodos({ finishedOn: '2026-02-30' }, options)).rejects.toThrow(/real day/)
+    await expect(listFinishedOn({ finishedOn: '2/11/2026' }, options)).rejects.toThrow(/YYYY-MM-DD/)
+    await expect(listFinishedOn({ finishedOn: '2026-02-30' }, options)).rejects.toThrow(/real day/)
   })
 })
 

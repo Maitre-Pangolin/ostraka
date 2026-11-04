@@ -73,6 +73,7 @@ export {
   completeTodo,
   deleteTodo,
   dropTodo,
+  listFinishedOn,
   listFinishedTodos,
   listTags,
   listTodos,
@@ -87,6 +88,7 @@ export {
   type TodoChangeOptions,
   updateTodo,
   type TodoItem,
+  type FinishedSubTodo,
   type TodoOptions,
 } from './todos.ts'
 export { formatMarkdown, HOUSE_STYLE, joinFrontmatter, splitFrontmatter, type Frontmatter } from './markdown.ts'

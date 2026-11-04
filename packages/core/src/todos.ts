@@ -402,12 +402,28 @@ export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
   return todos.filter((todo) => todo.status === 'open').toSorted(compareOpenTodos(today))
 }
 
-/** Done and Dropped Todos, kept forever, newest-finished first; `finishedOn` narrows to one local day. */
-export async function listFinishedTodos(query: FinishedQuery, options: TodoOptions = {}): Promise<Todo[]> {
+/** Done and Dropped Todos, kept forever, newest-finished first. */
+export async function listFinishedTodos(options: TodoOptions = {}): Promise<Todo[]> {
+  const { todos } = await readTodosFile(await contentPath('todos', options))
+  return todos.filter((todo) => todo.status !== 'open' && todo.finishedAt !== undefined).toSorted(compareFinishedTodos)
+}
+
+/** A Sub-todo listed on its own, with the Todo it sits under. */
+export type FinishedSubTodo = SubTodo & { parent: { id: string; title: string } }
+
+/**
+ * Everything done or Dropped on one local day, newest-finished first: Todos, and Sub-todos by their own finish
+ * (whatever their parent's state or day), each Sub-todo naming its parent.
+ */
+export async function listFinishedOn(query: FinishedQuery, options: TodoOptions = {}): Promise<(Todo | FinishedSubTodo)[]> {
   const { finishedOn } = FinishedQuerySchema.parse(query)
   const { todos } = await readTodosFile(await contentPath('todos', options))
-  return todos
-    .filter((todo) => todo.status !== 'open' && todo.finishedAt !== undefined)
-    .filter((todo) => finishedOn === undefined || localDay(new Date(todo.finishedAt!)) === finishedOn)
-    .toSorted(compareFinishedTodos)
+  const finishedThatDay = (item: SubTodo) =>
+    item.status !== 'open' && item.finishedAt !== undefined && localDay(new Date(item.finishedAt)) === finishedOn
+  return [
+    ...todos.filter(finishedThatDay),
+    ...todos.flatMap((todo) =>
+      todo.subTodos.filter(finishedThatDay).map((sub) => ({ ...sub, parent: { id: todo.id, title: todo.title } })),
+    ),
+  ].toSorted(compareFinishedTodos)
 }

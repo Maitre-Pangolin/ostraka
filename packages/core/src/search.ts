@@ -350,7 +350,7 @@ const todoDoc = (todo: SubTodo, parentId?: string): Doc => ({
 })
 
 async function todoDocs(options: ContentRootOptions): Promise<Doc[]> {
-  const [open, finished] = await Promise.all([listTodos(options), listFinishedTodos({}, options)])
+  const [open, finished] = await Promise.all([listTodos(options), listFinishedTodos(options)])
   return [...open, ...finished].flatMap((todo) => [todoDoc(todo), ...todo.subTodos.map((sub) => todoDoc(sub, todo.id))])
 }
 
