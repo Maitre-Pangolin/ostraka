@@ -64,6 +64,21 @@ export function devlogDays<L extends { id: string }>(range: { from: string; to: 
 }
 
 /**
+ * Dev log gaps for the Briefing: the weekdays among the `weekdays` before today that have no Dev log (a broken file
+ * counts as one), newest first. Today is left out, since its Dev log is written at the end of the day.
+ */
+export function devlogGaps(logs: { id: string }[], today: string, weekdays = 7): string[] {
+  const written = new Set(logs.map((log) => log.id))
+  const gaps: string[] = []
+  for (let date = addDays(today, -1), seen = 0; seen < weekdays; date = addDays(date, -1)) {
+    if (isWeekend(date)) continue
+    seen++
+    if (!written.has(date)) gaps.push(date)
+  }
+  return gaps
+}
+
+/**
  * The Dev logs list: months newest first, each with its summary on top when there is one, then its weeks newest
  * first. It runs from the first Dev log to today, so every weekday since without one shows as missing.
  */

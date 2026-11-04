@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest'
 import type { DevlogListing, DevlogSummary } from '../src/devlog-schema.ts'
 import {
   devlogDays,
+  devlogGaps,
   devlogList,
   devlogRangePresets,
   devlogSectionProblems,
@@ -70,6 +71,26 @@ describe('devlogDays', () => {
       ['2026-10-30', undefined],
       ['2026-10-29', '2026-10-29'],
       ['2026-10-28', undefined],
+    ])
+  })
+})
+
+describe('devlogGaps', () => {
+  it('is the weekdays without a Dev log among the 7 before today, newest first', () => {
+    const broken = { id: '2026-10-27', version: 'v', modifiedAt: '', error: 'Broken YAML header' }
+    const logs = [day('2026-10-30'), day('2026-10-28', { off: true }), broken, day('2026-11-01'), day('2026-10-23')]
+    expect(devlogGaps(logs, TODAY)).toEqual(['2026-11-03', '2026-11-02', '2026-10-29', '2026-10-26'])
+  })
+
+  it('leaves today out, since its Dev log is written at the end of the day', () => {
+    expect(devlogGaps([], '2026-11-02')).toEqual([
+      '2026-10-30',
+      '2026-10-29',
+      '2026-10-28',
+      '2026-10-27',
+      '2026-10-26',
+      '2026-10-23',
+      '2026-10-22',
     ])
   })
 })

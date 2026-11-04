@@ -34,6 +34,8 @@ export {
 export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { dueAfterParent } from './sub-todos.ts'
+export { compareOpenTodos, localDay } from './todo-order.ts'
+export { mentionedReferences, todaysTodos, type BriefingTodo } from './briefing.ts'
 export { defaultTagColor, TAG_COLORS, type Tag, type TagColor } from './tag-color.ts'
 export { TagSettingsSchema, TagsFileSchema, type TagSettings, type TagsFile } from './tag-schema.ts'
 export { readTagsFile, TagsFileError } from './tags.ts'
@@ -146,6 +148,7 @@ export {
 export { listDevlogs, readDevlog, readDevlogsBetween, updateDevlog, type DevlogChangeOptions, type DevlogOptions } from './devlogs.ts'
 export {
   devlogDays,
+  devlogGaps,
   devlogList,
   devlogRangePresets,
   devlogSectionProblems,

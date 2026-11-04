@@ -7,6 +7,7 @@ import {
   completeTodo,
   CONTENT_KINDS,
   contentPath,
+  devlogGaps,
   dropTodo,
   formatNotes,
   isBrokenDevlog,
@@ -17,7 +18,10 @@ import {
   isContentKind,
   listFinishedTodos,
   listTodos,
+  localDay,
+  mentionedReferences,
   snapshot,
+  todaysTodos,
   type DevlogListing,
   type SubTodo,
   type Todo,
@@ -31,6 +35,8 @@ export type { System } from './install.ts'
 export type Io = {
   env: Record<string, string | undefined>
   homeDir?: string
+  /** The clock that says what today is. Tests pass a fixed one. */
+  now?: () => Date
   /** launchd, node and the platform, for `install`. Tests pass a fake. */
   system?: System
   /** The macOS Keychain from the `ostraka` binary, a fake in tests; `backup` and `init` refuse to run without one. */
@@ -54,6 +60,11 @@ const TODO_USAGE = `  ostraka todo add <title> [--parent <id>] [--json]
   ostraka todo list [--json]    List open Todos, most urgent first, their Sub-todos under them
   ostraka todo list --finished-on <YYYY-MM-DD> [--json]
                                 List the Todos done or Dropped that day, newest first
+  ostraka todo list --today [--json]
+                                List today's Todos for the Briefing: overdue, due today, then the top 3
+                                high-priority ones without a due date (a Sub-todo as Parent › Sub-todo)
+  ostraka todo list --references [--json]
+                                List the MR and Jira References open Todos and Sub-todos mention
 `
 
 const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently changed first (a broken one with its error)
@@ -63,6 +74,7 @@ const NOTE_USAGE = `  ostraka note list [--json]    List Notes, most recently ch
 
 const DEVLOG_USAGE = `  ostraka devlog list [--from <YYYY-MM-DD>] [--to <YYYY-MM-DD>] [--json]
                                 List Dev logs and monthly summaries, newest first (a broken one with its error)
+  ostraka devlog gaps [--json]  List the weekdays without a Dev log among the 7 before today, newest first
 `
 
 const TAG_USAGE = `  ostraka tag list [--json]     List the Tags in use on Todos, Notes, Dev logs and Sketches
@@ -137,7 +149,7 @@ async function path(args: string[], io: Io): Promise<number> {
 const PRIORITY_TOKENS = { high: '*high', medium: '*med', low: '*low', none: undefined }
 
 /** `id  title  #tag *prio ^date`: the properties written back as the tokens that set them. */
-function todoLine(todo: SubTodo): string {
+function todoLine(todo: Pick<SubTodo, 'id' | 'title' | 'tags' | 'priority' | 'due'>): string {
   const tokens = [...todo.tags.map((tag) => `#${tag}`), PRIORITY_TOKENS[todo.priority], todo.due && `^${todo.due}`].filter(Boolean)
   return [`${todo.id}  ${todo.title}`, ...(tokens.length ? [tokens.join(' ')] : [])].join('  ')
 }
@@ -158,12 +170,23 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
       reason: { type: 'string' },
       'finished-on': { type: 'string' },
       parent: { type: 'string' },
+      today: { type: 'boolean' },
+      references: { type: 'boolean' },
     },
   })
   const [action, ...words] = positionals
   const finishedOn = values['finished-on']
   const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
   const print = (value: unknown, text: string) => io.stdout(values.json ? `${JSON.stringify(value, null, 2)}\n` : `${text}\n`)
+  // `--today` and `--references` are each a listing of their own, so they take no other option.
+  const briefing = [values.today, values.references].filter(Boolean).length
+  if (
+    briefing &&
+    (action !== 'list' || briefing > 1 || finishedOn !== undefined || values.reason !== undefined || values.parent !== undefined)
+  ) {
+    io.stderr(`Usage:\n${TODO_USAGE}`)
+    return 1
+  }
 
   if (action === 'add' && words.length > 0 && values.parent !== undefined) {
     const added = await addSubTodo(values.parent, { title: words.join(' ') }, options)
@@ -198,6 +221,19 @@ async function todoCommand(args: string[], io: Io): Promise<number> {
     io.stderr(`Usage:\n${TODO_USAGE}`)
     return 1
   }
+  if (action === 'list' && words.length === 0 && values.today) {
+    const todos = todaysTodos(await listTodos(options), today(io))
+    print(
+      todos,
+      todos.length ? todos.map((todo) => `${todoLine(todo)}  (${todo.why})`).join('\n') : 'Nothing overdue, due today or high priority.',
+    )
+    return 0
+  }
+  if (action === 'list' && words.length === 0 && values.references) {
+    const references = mentionedReferences(await listTodos(options))
+    print(references, references.length ? references.join('\n') : 'No References in open Todos.')
+    return 0
+  }
   if (action === 'list' && words.length === 0) {
     const todos = await listTodos(options)
     print(todos, todos.length ? todos.map(openTodoLines).join('\n') : 'No open Todos.')
@@ -231,6 +267,9 @@ async function noteCommand(args: string[], io: Io): Promise<number> {
   return 1
 }
 
+/** The local calendar day, as YYYY-MM-DD. */
+const today = (io: Io) => localDay(io.now?.() ?? new Date())
+
 const DAY = /^\d{4}-\d{2}-\d{2}$/
 const MONTH = /^\d{4}-\d{2}$/
 
@@ -254,12 +293,24 @@ async function devlogCommand(args: string[], io: Io): Promise<number> {
     options: { json: { type: 'boolean' }, from: { type: 'string' }, to: { type: 'string' } },
   })
   const { from, to } = values
+  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
+  if (positionals.length === 1 && positionals[0] === 'gaps' && from === undefined && to === undefined) {
+    const gaps = devlogGaps(await listDevlogs(options), today(io))
+    io.stdout(
+      values.json
+        ? `${JSON.stringify(gaps, null, 2)}\n`
+        : gaps.length
+          ? `${gaps.join('\n')}\n`
+          : 'No Dev log gaps in the 7 weekdays before today.\n',
+    )
+    return 0
+  }
   const dates = [from, to].filter((date) => date !== undefined)
   if (positionals.length !== 1 || positionals[0] !== 'list' || !dates.every((date) => DAY.test(date))) {
     io.stderr(`Usage:\n${DEVLOG_USAGE}`)
     return 1
   }
-  const logs = (await listDevlogs({ env: io.env, homeDir: io.homeDir ?? homedir() })).filter((log) => inRange(log.id, from, to))
+  const logs = (await listDevlogs(options)).filter((log) => inRange(log.id, from, to))
   io.stdout(values.json ? `${JSON.stringify(logs, null, 2)}\n` : logs.length ? `${logs.map(devlogLine).join('\n')}\n` : 'No Dev logs.\n')
   return 0
 }
