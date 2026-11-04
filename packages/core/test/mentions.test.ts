@@ -1,5 +1,13 @@
 import { describe, expect, it } from 'vitest'
-import { completedMentions, findMentions, mentionedPeople, personLinks, suggestPeople, type MentionCandidate } from '../src/mentions.ts'
+import {
+  completedMentions,
+  findMentions,
+  mentionedPeople,
+  personLinks,
+  replaceMentions,
+  suggestPeople,
+  type MentionCandidate,
+} from '../src/mentions.ts'
 import { joinPieces, splitChips, type TextPiece } from '../src/references.ts'
 
 describe('findMentions', () => {
@@ -35,6 +43,18 @@ const people: MentionCandidate[] = [
 ]
 
 const ids = (fragment: string) => suggestPeople(fragment, people).map((suggestion) => suggestion.token)
+
+describe('replaceMentions', () => {
+  it('rewrites each whole Mention of one Person, leaving longer ids, emails and other Persons alone', () => {
+    expect(
+      replaceMentions('@milena-s with @milena-sx, milena-s@corp.example and @bram. Ask @milena-s!', 'milena-s', 'milena-senechal'),
+    ).toBe('@milena-senechal with @milena-sx, milena-s@corp.example and @bram. Ask @milena-senechal!')
+  })
+
+  it('leaves a text without that Mention as it is', () => {
+    expect(replaceMentions('Ask @bram', 'milena-s', 'milena-senechal')).toBe('Ask @bram')
+  })
+})
 
 describe('suggestPeople', () => {
   it('suggests every Person after @, by name, leaving out the ignored', () => {

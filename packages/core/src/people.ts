@@ -9,6 +9,7 @@ import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.t
 import { foldText, personIdFromName } from './mentions.ts'
 import {
   formatPeopleFile,
+  isStubPerson,
   NewPersonSchema,
   PeopleFileSchema,
   PersonIdentitiesSchema,
@@ -45,7 +46,7 @@ async function readPeopleFile(file: string): Promise<PeopleFile> {
 }
 
 /** The only way `people.json` is written: under its lock, an invalid file refused, the result validated. */
-async function updatePeople<T>(options: PeopleOptions, change: (file: PeopleFile) => T): Promise<T> {
+export async function updatePeople<T>(options: PeopleOptions, change: (file: PeopleFile) => T): Promise<T> {
   const file = await contentPath('people', options)
   await mkdir(dirname(file), { recursive: true })
   return withFileLock(
@@ -68,6 +69,11 @@ export async function listPeople(options: ContentRootOptions = {}): Promise<Pers
   return people.toSorted((a, b) => a.id.localeCompare(b.id))
 }
 
+/** The Stub Persons, by id: no email yet and not ignored. */
+export async function listStubPeople(options: ContentRootOptions = {}): Promise<Person[]> {
+  return (await listPeople(options)).filter(isStubPerson)
+}
+
 /** One Person by id. */
 export async function getPerson(id: string, options: ContentRootOptions = {}): Promise<Person> {
   const person = (await listPeople(options)).find((candidate) => candidate.id === id)
@@ -78,7 +84,7 @@ export async function getPerson(id: string, options: ContentRootOptions = {}): P
 const sameEmail = (a: string | undefined, b: string | undefined) =>
   a !== undefined && b !== undefined && a.toLowerCase() === b.toLowerCase()
 
-function assertEmailFree(people: Person[], person: Person) {
+export function assertEmailFree(people: Person[], person: Person) {
   const owner = people.find((other) => other.id !== person.id && sameEmail(other.email, person.email))
   if (owner) throw new PersonExistsError(`${owner.id} already has the email ${person.email}.`)
 }

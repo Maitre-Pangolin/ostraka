@@ -375,6 +375,26 @@ export async function retagTodos(retag: (tags: string[]) => string[], options: T
   })
 }
 
+/**
+ * Rewrites the free text (title, description, drop reason) of every Todo and Sub-todo in any state, in one write of
+ * `todos.json`: `rewrite` gets a text and answers its new one. Says how many items changed; nothing is written when
+ * none would.
+ */
+export async function rewriteTodoTexts(rewrite: (text: string) => string, options: TodoOptions = {}): Promise<number> {
+  const fields = ['title', 'description', 'dropReason'] as const
+  const changes = (item: TodoItem) => fields.some((field) => item[field] !== undefined && rewrite(item[field]) !== item[field])
+  if (!(await allTodoItems(options)).some(changes)) return 0
+  return updateTodos(options, (file) => {
+    let changed = 0
+    for (const item of file.todos.flatMap((todo) => [todo, ...todo.subTodos])) {
+      if (!changes(item)) continue
+      for (const field of fields) if (item[field] !== undefined) item[field] = rewrite(item[field])
+      changed++
+    }
+    return changed
+  })
+}
+
 /** Open Todos in their automatic order. */
 export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))

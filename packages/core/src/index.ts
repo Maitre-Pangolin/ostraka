@@ -182,6 +182,7 @@ export {
 export { localDay } from './todo-order.ts'
 export {
   formatPeopleFile,
+  isStubPerson,
   NewPersonSchema,
   PeopleFileSchema,
   PERSON_ID,
@@ -197,12 +198,14 @@ export {
   findPeople,
   getPerson,
   listPeople,
+  listStubPeople,
   PeopleFileError,
   PersonExistsError,
   PersonNotFoundError,
   refreshPerson,
   type PeopleOptions,
 } from './people.ts'
+export { mergePerson, PersonChangeError, personMentions, renamePerson, type MentionUse } from './person-changes.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,

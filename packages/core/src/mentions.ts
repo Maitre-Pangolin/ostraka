@@ -35,6 +35,18 @@ export function parseMention(word: string): string | undefined {
   return found && found.start === 0 && found.end === word.length ? found.id : undefined
 }
 
+/** `text` with every Mention of Person `from` written as a Mention of `to`; nothing else changes. */
+export function replaceMentions(text: string, from: string, to: string): string {
+  let result = ''
+  let at = 0
+  for (const found of findMentions(text)) {
+    if (found.id !== from) continue
+    result += text.slice(at, found.start) + mentionToken(to)
+    at = found.end
+  }
+  return result + text.slice(at)
+}
+
 /** The Persons a text mentions, each once, in order. */
 export const mentionedPeople = (text: string) => [...new Set(findMentions(text).map((found) => found.id))]
 

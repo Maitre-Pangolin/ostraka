@@ -32,6 +32,9 @@ export const PersonSchema = z.strictObject({
 })
 export type Person = z.infer<typeof PersonSchema>
 
+/** A Stub Person: no email yet and not ignored, so the `people` skill still has to fill in their identities. */
+export const isStubPerson = (person: Pick<Person, 'email' | 'ignored'>) => !person.email && !person.ignored
+
 export const PeopleFileSchema = z.strictObject({ people: z.array(PersonSchema) })
 export type PeopleFile = z.infer<typeof PeopleFileSchema>
 
