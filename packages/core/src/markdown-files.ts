@@ -162,9 +162,14 @@ export function markdownFiles<H>(kind: MarkdownKind, schema: z.ZodType<H>) {
     /**
      * Changes a file under its lock: refused if it changed since `ifVersion` or its header is broken. The header
      * stays byte-for-byte except for the fields set; the body is written in house style. When the result is the
-     * file as it is, nothing is written.
+     * file as it is, nothing is written. The change can be worked out from the file as read under the lock (a bulk
+     * rewrite that must not lose a concurrent edit).
      */
-    async update(id: string, change: MarkdownChange, options: MarkdownChangeOptions = {}): Promise<MarkdownFile<H>> {
+    async update(
+      id: string,
+      changeOrRewrite: MarkdownChange | ((current: MarkdownFile<H>) => MarkdownChange),
+      options: MarkdownChangeOptions = {},
+    ): Promise<MarkdownFile<H>> {
       const file = await fileOf(id, options)
       return withFileLock(
         file,
@@ -173,6 +178,7 @@ export function markdownFiles<H>(kind: MarkdownKind, schema: z.ZodType<H>) {
           assertCurrentVersion(options.ifVersion, contentVersion(text), `${kind}/${id}.md`)
           const current = parse(id, text, modifiedAt)
           if (isBrokenFile(current)) throw new MarkdownFileError(`${kind}/${id}.md has a broken header; fix it first. ${current.error}`)
+          const change = typeof changeOrRewrite === 'function' ? changeOrRewrite(current) : changeOrRewrite
           const { header, yaml, gap, body } = parts(text)
           const eol = header.includes('\r\n') ? '\r\n' : '\n'
           const yamlStart = header.indexOf('\n') + 1

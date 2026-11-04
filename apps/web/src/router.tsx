@@ -8,6 +8,7 @@ import { NotesView } from './notes/notes-view'
 import { SettingsView } from './settings/settings-view'
 import { EmptyState, Shell } from './shell/shell'
 import { SketchesView } from './sketches/sketches-view'
+import { TagsView } from './tags/tags-view'
 import { TodosView } from './todos/todos-view'
 
 const rootRoute = createRootRoute({ component: Shell })
@@ -30,6 +31,7 @@ const routeTree = rootRoute.addChildren([
   createRoute({ getParentRoute: () => rootRoute, path: '/devlogs', validateSearch: parseDevlogsView, component: DevlogsView }),
   // The open Sketch and its mode live in search params; without one the view opens on its list.
   createRoute({ getParentRoute: () => rootRoute, path: '/sketches', validateSearch: parseSketchesView, component: SketchesView }),
+  createRoute({ getParentRoute: () => rootRoute, path: '/tags', component: TagsView }),
   createRoute({ getParentRoute: () => rootRoute, path: '/settings', component: SettingsView }),
 ])
 
