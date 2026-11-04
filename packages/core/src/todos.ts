@@ -348,6 +348,33 @@ export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
   return [...names].toSorted().map((name) => ({ name, color: settings[name]?.color ?? defaultTagColor(name) }))
 }
 
+/** Every Todo and Sub-todo in any state, for gathering their Tags. */
+export async function allTodoItems(options: TodoOptions = {}): Promise<TodoItem[]> {
+  const { todos } = await readTodosFile(await contentPath('todos', options))
+  return todos.flatMap((todo) => [todo, ...todo.subTodos])
+}
+
+const sameTags = (a: string[], b: string[]) => a.length === b.length && a.every((tag, index) => tag === b[index])
+
+/**
+ * Rewrites the Tags of every Todo and Sub-todo in any state, in one write of `todos.json`: `retag` gets an item's
+ * Tags and answers its new ones. Says how many items changed; nothing is written when none would.
+ */
+export async function retagTodos(retag: (tags: string[]) => string[], options: TodoOptions = {}): Promise<number> {
+  const items = await allTodoItems(options)
+  if (items.every((item) => sameTags(item.tags, retag(item.tags)))) return 0
+  return updateTodos(options, (file) => {
+    let changed = 0
+    for (const item of file.todos.flatMap((todo) => [todo, ...todo.subTodos])) {
+      const tags = retag(item.tags)
+      if (sameTags(item.tags, tags)) continue
+      item.tags = tags
+      changed++
+    }
+    return changed
+  })
+}
+
 /** Open Todos in their automatic order. */
 export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
