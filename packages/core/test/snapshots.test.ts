@@ -47,6 +47,19 @@ describe('snapshot', { timeout: 30_000 }, () => {
     expect(committedFiles()).toEqual(['todos.json'])
   })
 
+  it('leaves out the Dev log migration’s working folder, in a new repo and in one made before it', async () => {
+    git('init', '--quiet')
+    await mkdir(join(contentRoot, '.git', 'info'), { recursive: true })
+    await writeFile(join(contentRoot, '.git', 'info', 'exclude'), '# ostraka: writes in progress\n*.lock\n*.tmp\n')
+    await writeFile(join(contentRoot, 'todos.json'), '{"todos":[]}\n')
+    await mkdir(join(contentRoot, '.migration', 'raw', '2026-02'), { recursive: true })
+    await writeFile(join(contentRoot, '.migration', 'raw', '2026-02', '2026-02-02.md'), '## Monday 2\n')
+
+    await snapshot('first', options)
+
+    expect(committedFiles()).toEqual(['todos.json'])
+  })
+
   it('gets its own repo even when the content folder sits inside another repo', async () => {
     git('init', '--quiet')
     const nested = join(contentRoot, 'content')
