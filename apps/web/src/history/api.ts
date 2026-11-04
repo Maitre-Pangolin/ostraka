@@ -2,7 +2,7 @@
 // kind, so live updates refetch it with the file; one version's text never changes, so it is fetched once.
 import type { FileSnapshot, FileVersion, Restore } from '@ostraka/core/history-schema'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
-import { forgetOwnChanges, post, request } from '@/lib/api'
+import { forgetOwnChanges, post, request } from '../lib/api' // Relative, so the root test run resolves it.
 
 export type { FileSnapshot, Restore }
 

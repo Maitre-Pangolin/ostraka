@@ -1,15 +1,16 @@
 import { isBrokenSketch, type SketchMode, type SketchesView as ViewState } from '@ostraka/core/sketch-schema'
 import { useNavigate, useSearch } from '@tanstack/react-router'
 import { ArrowLeft, Code, Columns2, Eye, Plus, TriangleAlert } from 'lucide-react'
-import { lazy, Suspense, useCallback, useEffect, useRef, useState } from 'react'
+import { lazy, Suspense, useState } from 'react'
 import { Button } from '@/components/ui/button'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ApiError, isStale } from '@/lib/api'
-import { onFileRestore } from '@/history/api'
+import { ApiError } from '@/lib/api'
 import { FileHistory, HistoryButton } from '@/history/file-history'
 import { useAfter } from '@/lib/use-after'
+import { SaveStatus } from '@/lib/save-status'
+import { useAutosave, type SaveState } from '@/lib/use-autosave'
 import { cn } from '@/lib/utils'
-import { SaveStatus, TagAdder, type SaveState } from '@/notes/notes-view'
+import { TagAdder } from '@/notes/notes-view'
 import { useRememberOpened } from '@/search/recent'
 import { EmptyState } from '@/shell/shell'
 import { TagDot, TagPill } from '@/todos/properties'
@@ -20,9 +21,6 @@ import { useMermaid } from './use-mermaid'
 const MermaidEditor = lazy(() => import('./mermaid-editor').then((module) => ({ default: module.MermaidEditor })))
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
-
-/** How long typing pauses before the Sketch is saved. */
-const SAVE_AFTER_MS = 600
 
 /**
  * The Sketches view: it opens on the list, with the open Sketch beside it from `@3xl` and one at a time below. The
@@ -147,115 +145,30 @@ function SketchRow({ sketch, active, onOpen }: { sketch: SketchListing; active: 
 function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMode: (mode: SketchMode) => void }) {
   const query = useSketch(id)
   useRememberOpened('sketch', id, query.data?.title)
-  const update = useUpdateSketch(id)
-  // What the editor shows: the text it was loaded with, from which version; a new `loaded` remounts it.
-  const [loaded, setLoaded] = useState<{ text: string; version: string; count: number }>()
-  // The text as typed, for the preview.
-  const [text, setText] = useState('')
   const [state, setState] = useState<SaveState>('saved')
   const [error, setError] = useState<string>()
-  const pending = useRef<string | undefined>(undefined)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  // Versions this view wrote: the refetch after its own save is not a change made elsewhere.
-  const own = useRef(new Set<string>())
-  const drawing = useMermaid(text)
-
   const [historyOpen, setHistoryOpen] = useState(false)
-  // A restore of this Sketch started: its result reloads the editor even at a version seen before.
-  const restored = useRef(false)
-
-  const load = useCallback((sketch: Sketch, reload = false) => {
-    setLoaded((current) =>
-      current?.version === sketch.version && !reload
-        ? current
-        : { text: sketch.mermaid, version: sketch.version, count: (current?.count ?? 0) + 1 },
-    )
-    setText(sketch.mermaid)
-  }, [])
+  const autosave = useAutosave({
+    path: `sketches/${id}.md`,
+    query,
+    update: useUpdateSketch(id),
+    textOf: (sketch: Sketch) => sketch.mermaid,
+    changeOf: (mermaid) => ({ mermaid }),
+    saveOnClose: (change, version) => void saveSketch(id, change, version, true),
+    onState: setState,
+    onError: setError,
+  })
+  const { loaded } = autosave
+  // The text as typed, for the preview: the last edit of the text the editor shows, else that text.
+  const [edited, setEdited] = useState<{ count: number; text: string }>()
+  const text = (edited && edited.count === loaded?.count ? edited.text : loaded?.text) ?? ''
+  const drawing = useMermaid(text)
+  const onEdit = (next: string) => {
+    if (loaded) setEdited({ count: loaded.count, text: next })
+    autosave.onEdit(next)
+  }
 
   const sketch = query.data
-  useEffect(() => {
-    if (!sketch || (own.current.has(sketch.version) && !restored.current)) return
-    // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
-    if (pending.current !== undefined || update.isPending) return
-    const reload = restored.current
-    restored.current = false
-    load(sketch, reload)
-  }, [sketch, update.isPending, load])
-
-  // A restore may bring back a version this view saved or loaded earlier: the restored file is shown regardless.
-  useEffect(
-    () =>
-      onFileRestore((path) => {
-        if (path !== `sketches/${id}.md`) return
-        own.current.clear()
-        restored.current = true
-      }),
-    [id],
-  )
-
-  const save = (change: { mermaid?: string; title?: string; tags?: string[] }) => {
-    if (!loaded) return
-    setState('saving')
-    update.mutate(
-      { ...change, version: loaded.version },
-      {
-        onSuccess: (saved: Sketch) => {
-          own.current.add(saved.version)
-          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
-          restored.current = false
-          setError(undefined)
-          setState(pending.current === undefined ? 'saved' : 'editing')
-        },
-        onError: async (failed) => {
-          pending.current = undefined
-          setState('saved')
-          setError(isStale(failed) ? `${failed.message} Showing the newer version.` : failed.message)
-          if (!isStale(failed)) return
-          const { data: newer } = await query.refetch()
-          if (newer) load(newer)
-        },
-      },
-    )
-  }
-
-  const flush = () => {
-    clearTimeout(timer.current)
-    const mermaid = pending.current
-    if (mermaid === undefined) return
-    pending.current = undefined
-    save({ mermaid })
-  }
-  // The window closing: the request has to start now, not after the mutation queue's next tick.
-  const flushOnClose = () => {
-    clearTimeout(timer.current)
-    const mermaid = pending.current
-    if (mermaid === undefined || !loaded) return
-    pending.current = undefined
-    void saveSketch(id, { mermaid }, loaded.version, true)
-  }
-  const flushRef = useRef({ flush, flushOnClose })
-  useEffect(() => {
-    flushRef.current = { flush, flushOnClose }
-  })
-  // Leaving the Sketch (another one opened, the view or the window closed) saves what is waiting.
-  useEffect(() => {
-    const leave = () => flushRef.current.flushOnClose()
-    window.addEventListener('pagehide', leave)
-    return () => {
-      window.removeEventListener('pagehide', leave)
-      flushRef.current.flush()
-    }
-  }, [])
-
-  const onEdit = (next: string) => {
-    setText(next)
-    pending.current = next
-    setState('editing')
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => flushRef.current.flush(), SAVE_AFTER_MS)
-  }
-
   if (query.error) {
     return (
       <div className="flex flex-col gap-1 p-3 text-sm">
@@ -270,10 +183,7 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
   }
   if (!sketch || !loaded) return null
 
-  const change = (header: { title?: string; tags?: string[] }) => {
-    flush()
-    save(header)
-  }
+  const change = (header: { title?: string; tags?: string[] }) => autosave.change(header)
 
   return (
     <div className="@container/sketch flex min-h-0 flex-1 flex-col">
@@ -285,7 +195,7 @@ function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMo
           open={historyOpen}
           onClick={() => {
             // What is waiting is saved first, so the history and a restore start from it.
-            if (!historyOpen) flush()
+            if (!historyOpen) autosave.flush()
             setHistoryOpen(!historyOpen)
           }}
         />

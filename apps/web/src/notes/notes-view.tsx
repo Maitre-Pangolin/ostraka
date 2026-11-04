@@ -1,15 +1,16 @@
 import { IDEA_TAG, isBrokenNote, type NotesView as ViewState } from '@ostraka/core/note-schema'
 import { normalizeTag } from '@ostraka/core/todo-tokens'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { ArrowLeft, Check, Lightbulb, Pencil, Plus, Tag, TriangleAlert } from 'lucide-react'
-import { lazy, Suspense, useEffect, useRef, useState, type ReactNode } from 'react'
+import { ArrowLeft, Lightbulb, Plus, Tag, TriangleAlert } from 'lucide-react'
+import { lazy, Suspense, useRef, useState, type ReactNode } from 'react'
 import { Button } from '@/components/ui/button'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
-import { ApiError, isStale } from '@/lib/api'
+import { ApiError } from '@/lib/api'
+import { SaveStatus } from '@/lib/save-status'
+import { useAutosave, type SaveState } from '@/lib/use-autosave'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
-import { onFileRestore } from '@/history/api'
 import { FileHistory, HistoryButton } from '@/history/file-history'
 import { useSectionSearch, type SearchHit } from '@/search/api'
 import { useFindHighlight } from '@/search/find-highlight'
@@ -25,9 +26,6 @@ import type { NoteEditorHandle } from './note-editor'
 const NoteEditor = lazy(() => import('./note-editor').then((module) => ({ default: module.NoteEditor })))
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
-
-/** How long typing pauses before the Note is saved. */
-const SAVE_AFTER_MS = 600
 
 /**
  * The Notes view: the list (all Notes, or only the Ideas) beside the open Note, side by side from `@3xl` and one at
@@ -193,8 +191,6 @@ function NoteRow({ note, hit, active, onOpen }: { note: NoteListing; hit?: Searc
   )
 }
 
-export type SaveState = 'saved' | 'editing' | 'saving'
-
 /**
  * One open Note. Typing saves after a pause, from the version the editor was loaded with; a save is refused if the
  * file changed elsewhere since, and the newer content is shown instead. A change made elsewhere while nothing is
@@ -203,106 +199,25 @@ export type SaveState = 'saved' | 'editing' | 'saving'
 function NoteDetail({ id, find }: { id: string; find?: string }) {
   const query = useNote(id)
   useRememberOpened('note', id, query.data?.title)
-  const update = useUpdateNote(id)
-  // What the editor shows: the body it was loaded with, from which version; a new `loaded` remounts it.
-  const [loaded, setLoaded] = useState<{ body: string; version: string; count: number }>()
   const [state, setState] = useState<SaveState>('saved')
   const [error, setError] = useState<string>()
   const [historyOpen, setHistoryOpen] = useState(false)
-  const pending = useRef<string | undefined>(undefined)
   const editor = useRef<NoteEditorHandle | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
   // The search's matches highlighted in the text, the first scrolled to on opening.
   const matches = useFindHighlight(find, id)
-  // Versions this view wrote: the refetch after its own save is not a change made elsewhere.
-  const own = useRef(new Set<string>())
-  // A restore of this Note started: its result reloads the editor even at a version seen before.
-  const restored = useRef(false)
-
-  const note = query.data
-  useEffect(() => {
-    if (!note || (own.current.has(note.version) && !restored.current)) return
-    // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
-    if (pending.current !== undefined || update.isPending) return
-    const reload = restored.current
-    restored.current = false
-    setLoaded((current) =>
-      current?.version === note.version && !reload ? current : { body: note.body, version: note.version, count: (current?.count ?? 0) + 1 },
-    )
-  }, [note, update.isPending])
-
-  const save = (change: { body?: string; tags?: string[] }) => {
-    if (!loaded) return
-    setState('saving')
-    update.mutate(
-      { ...change, version: loaded.version },
-      {
-        onSuccess: (saved: Note) => {
-          own.current.add(saved.version)
-          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
-          restored.current = false
-          setError(undefined)
-          setState(pending.current === undefined ? 'saved' : 'editing')
-        },
-        onError: async (failed) => {
-          pending.current = undefined
-          setState('saved')
-          setError(isStale(failed) ? `${failed.message} Showing the newer version.` : failed.message)
-          if (!isStale(failed)) return
-          const { data: newer } = await query.refetch()
-          if (newer) setLoaded((current) => ({ body: newer.body, version: newer.version, count: (current?.count ?? 0) + 1 }))
-        },
-      },
-    )
-  }
-
-  const flush = () => {
-    editor.current?.flush()
-    clearTimeout(timer.current)
-    const body = pending.current
-    if (body === undefined) return
-    pending.current = undefined
-    save({ body })
-  }
-  // The window closing: the request has to start now, not after the mutation queue's next tick.
-  const flushOnClose = () => {
-    editor.current?.flush()
-    clearTimeout(timer.current)
-    const body = pending.current
-    if (body === undefined || !loaded) return
-    pending.current = undefined
-    void saveNote(id, { body }, loaded.version, true)
-  }
-  const flushRef = useRef({ flush, flushOnClose })
-  useEffect(() => {
-    flushRef.current = { flush, flushOnClose }
+  const autosave = useAutosave({
+    path: `notes/${id}.md`,
+    query,
+    update: useUpdateNote(id),
+    textOf: (note: Note) => note.body,
+    changeOf: (body) => ({ body }),
+    saveOnClose: (change, version) => void saveNote(id, change, version, true),
+    beforeFlush: () => editor.current?.flush(),
+    onState: setState,
+    onError: setError,
   })
-  // A restore may bring back a version this view saved or loaded earlier: the restored file is shown regardless.
-  useEffect(
-    () =>
-      onFileRestore((path) => {
-        if (path !== `notes/${id}.md`) return
-        own.current.clear()
-        restored.current = true
-      }),
-    [id],
-  )
-  // Leaving the Note (another one opened, the view or the window closed) saves what is waiting.
-  useEffect(() => {
-    const leave = () => flushRef.current.flushOnClose()
-    window.addEventListener('pagehide', leave)
-    return () => {
-      window.removeEventListener('pagehide', leave)
-      flushRef.current.flush()
-    }
-  }, [])
-
-  const onEdit = (body: string) => {
-    pending.current = body
-    setState('editing')
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => flushRef.current.flush(), SAVE_AFTER_MS)
-  }
+  const { loaded } = autosave
+  const note = query.data
 
   if (query.error) {
     return (
@@ -318,10 +233,7 @@ function NoteDetail({ id, find }: { id: string; find?: string }) {
   }
   if (!note || !loaded) return null
 
-  const setTags = (tags: string[]) => {
-    flush()
-    save({ tags })
-  }
+  const setTags = (tags: string[]) => autosave.change({ tags })
   const isIdea = note.tags.includes(IDEA_TAG)
 
   return (
@@ -345,7 +257,7 @@ function NoteDetail({ id, find }: { id: string; find?: string }) {
           open={historyOpen}
           onClick={() => {
             // What is waiting is saved first, so the history and a restore start from it.
-            if (!historyOpen) flush()
+            if (!historyOpen) autosave.flush()
             setHistoryOpen(!historyOpen)
           }}
         />
@@ -357,21 +269,10 @@ function NoteDetail({ id, find }: { id: string; find?: string }) {
       {/* Hidden, not unmounted, behind the history: the editor keeps what it shows. */}
       <div ref={matches} className={cn('min-h-0 flex-1 overflow-y-auto', historyOpen && 'hidden')}>
         <Suspense>
-          <NoteEditor key={loaded.count} markdown={loaded.body} onEdit={onEdit} handle={editor} />
+          <NoteEditor key={loaded.count} markdown={loaded.text} onEdit={autosave.onEdit} handle={editor} />
         </Suspense>
       </div>
     </div>
-  )
-}
-
-export function SaveStatus({ state }: { state: SaveState }) {
-  const label = state === 'saved' ? 'Saved' : state === 'saving' ? 'Saving…' : 'Editing'
-  return (
-    <span role="status" className="text-muted-foreground flex shrink-0 items-center gap-1 text-[11px]">
-      {state === 'saved' ? <Check aria-hidden className="size-3" /> : <Pencil aria-hidden className="size-3" />}
-      <span className="hidden @md:inline">{label}</span>
-      <span className="sr-only @md:hidden">{label}</span>
-    </span>
   )
 }
 

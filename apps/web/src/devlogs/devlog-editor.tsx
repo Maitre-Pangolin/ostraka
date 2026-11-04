@@ -1,20 +1,13 @@
 // Editing a Dev log or monthly summary in the Notes editor, once Edit is pressed. Saves as Notes do: after a pause,
 // on leaving and when the window closes, from the version the editor was loaded with; a stale save is refused and
 // the newer content shown.
-import { Check, Pencil } from 'lucide-react'
-import { lazy, Suspense, useEffect, useImperativeHandle, useRef, useState, type RefObject } from 'react'
-import { onFileRestore } from '@/history/api'
-import { isStale } from '@/lib/api'
+import { lazy, Suspense, useImperativeHandle, useRef, type RefObject } from 'react'
+import { useAutosave, type SaveState } from '@/lib/use-autosave'
 import type { NoteEditorHandle } from '@/notes/note-editor'
 import { saveDevlog, useDevlog, useUpdateDevlog, type Devlog, type MonthlySummary } from './api'
 
 // Milkdown loads with the first edit, not with the app.
 const NoteEditor = lazy(() => import('@/notes/note-editor').then((module) => ({ default: module.NoteEditor })))
-
-/** How long typing pauses before the file is saved. */
-const SAVE_AFTER_MS = 600
-
-export type SaveState = 'saved' | 'editing' | 'saving'
 
 /** `flush()` saves what is waiting now: before the history opens, so it and a restore start from it. */
 export type DevlogEditorHandle = { flush(): void }
@@ -34,119 +27,25 @@ export function DevlogEditor({
   onError: (error: string | undefined) => void
   handle?: RefObject<DevlogEditorHandle | null>
 }) {
-  const query = useDevlog(id)
-  const update = useUpdateDevlog(id)
-  const [loaded, setLoaded] = useState<{ body: string; version: string; count: number }>()
-  const pending = useRef<string | undefined>(undefined)
   const editor = useRef<NoteEditorHandle | null>(null)
-  const timer = useRef<ReturnType<typeof setTimeout>>(undefined)
-  // Versions this editor wrote: the refetch after its own save is not a change made elsewhere.
-  const own = useRef(new Set<string>())
-  // A restore of this file started: its result reloads the editor even at a version seen before.
-  const restored = useRef(false)
-
-  const log = query.data
-  useEffect(() => {
-    if (!log || (own.current.has(log.version) && !restored.current)) return
-    // A change made elsewhere: shown at once, unless an edit is waiting (its save is refused and then shows it).
-    if (pending.current !== undefined || update.isPending) return
-    const reload = restored.current
-    restored.current = false
-    setLoaded((current) =>
-      current?.version === log.version && !reload ? current : { body: log.body, version: log.version, count: (current?.count ?? 0) + 1 },
-    )
-  }, [log, update.isPending])
-
-  const save = (body: string) => {
-    if (!loaded) return
-    onState('saving')
-    update.mutate(
-      { body, version: loaded.version },
-      {
-        onSuccess: (saved: Devlog | MonthlySummary) => {
-          own.current.add(saved.version)
-          // Saved over whatever a restore left (or a restore that changed nothing): no reload is due.
-          restored.current = false
-          onError(undefined)
-          onState(pending.current === undefined ? 'saved' : 'editing')
-        },
-        onError: async (failed) => {
-          pending.current = undefined
-          onState('saved')
-          onError(isStale(failed) ? `${failed.message} Showing the newer version.` : failed.message)
-          if (!isStale(failed)) return
-          const { data: newer } = await query.refetch()
-          if (newer) setLoaded((current) => ({ body: newer.body, version: newer.version, count: (current?.count ?? 0) + 1 }))
-        },
-      },
-    )
-  }
-
-  const flush = () => {
-    editor.current?.flush()
-    clearTimeout(timer.current)
-    const body = pending.current
-    if (body === undefined) return
-    pending.current = undefined
-    save(body)
-  }
-  // The window closing: the request has to start now, not after the mutation queue's next tick.
-  const flushOnClose = () => {
-    editor.current?.flush()
-    clearTimeout(timer.current)
-    const body = pending.current
-    if (body === undefined || !loaded) return
-    pending.current = undefined
-    void saveDevlog(id, { body }, loaded.version, true)
-  }
-  const flushRef = useRef({ flush, flushOnClose })
-  useEffect(() => {
-    flushRef.current = { flush, flushOnClose }
+  const autosave = useAutosave({
+    path: `devlogs/${id}.md`,
+    query: useDevlog(id),
+    update: useUpdateDevlog(id),
+    textOf: (log: Devlog | MonthlySummary) => log.body,
+    changeOf: (body) => ({ body }),
+    saveOnClose: (change, version) => void saveDevlog(id, change, version, true),
+    beforeFlush: () => editor.current?.flush(),
+    onState,
+    onError,
   })
-  useImperativeHandle(handle, () => ({ flush: () => flushRef.current.flush() }), [])
-  // A restore may bring back a version this editor saved or loaded earlier: the restored file is shown regardless.
-  useEffect(
-    () =>
-      onFileRestore((path) => {
-        if (path !== `devlogs/${id}.md`) return
-        own.current.clear()
-        restored.current = true
-      }),
-    [id],
-  )
-  // Leaving the editor (View pressed, another day opened, the window closed) saves what is waiting.
-  useEffect(() => {
-    const leave = () => flushRef.current.flushOnClose()
-    window.addEventListener('pagehide', leave)
-    return () => {
-      window.removeEventListener('pagehide', leave)
-      flushRef.current.flush()
-    }
-  }, [])
+  useImperativeHandle(handle, () => ({ flush: autosave.flush }))
 
-  const onEdit = (body: string) => {
-    pending.current = body
-    onState('editing')
-    clearTimeout(timer.current)
-    timer.current = setTimeout(() => flushRef.current.flush(), SAVE_AFTER_MS)
-  }
-
+  const { loaded } = autosave
   if (!loaded) return null
   return (
     <Suspense>
-      <NoteEditor key={loaded.count} markdown={loaded.body} onEdit={onEdit} handle={editor} />
+      <NoteEditor key={loaded.count} markdown={loaded.text} onEdit={autosave.onEdit} handle={editor} />
     </Suspense>
-  )
-}
-
-/** The quiet save status in the header: Editing, Saving…, Saved. */
-export function SaveStatus({ state }: { state: SaveState }) {
-  const label = state === 'saved' ? 'Saved' : state === 'saving' ? 'Saving…' : 'Editing'
-  return (
-    <span role="status" className="text-muted-foreground flex shrink-0 items-center gap-1 text-[11px]">
-      {state === 'saved' ? <Check aria-hidden className="size-3" /> : <Pencil aria-hidden className="size-3" />}
-      <span className="hidden @md:inline">{label}</span>
-      <span className="sr-only @md:hidden">{label}</span>
-    </span>
   )
 }
