@@ -230,13 +230,18 @@ export {
   type SnippetPiece,
 } from './search.ts'
 export {
+  approveMigratedMonth,
   MIGRATION_FOLDER,
+  migrationStatus,
+  retagStagedMonth,
+  type ApprovedMonth,
   reviewMigratedMonth,
   splitMonthlyDevlog,
   type MigrationUsage,
   type MonthFolders,
   type MonthReview,
   type MonthSplit,
+  type MonthStatus,
   type SplitAnomaly,
   type SplitAnomalyKind,
   type SplitOptions,

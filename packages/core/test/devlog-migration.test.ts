@@ -1,11 +1,20 @@
 // The migration of the old monthly Dev log files: a script (no AI) splits each month into raw daily files under
 // `.migration/raw/`, an agent session per month stages reformatted days under `.migration/staged/`, and an approved
 // month moves into `devlogs/` with one Snapshot. The sample months in fixtures/ are invented.
+import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { reviewMigratedMonth, splitMonthlyDevlog, type ContentRootOptions } from '../src/index.ts'
+import {
+  approveMigratedMonth,
+  listDevlogs,
+  migrationStatus,
+  retagStagedMonth,
+  reviewMigratedMonth,
+  splitMonthlyDevlog,
+  type ContentRootOptions,
+} from '../src/index.ts'
 
 const FIXTURES = new URL('./fixtures/old-devlogs/', import.meta.url).pathname
 
@@ -202,5 +211,116 @@ describe('reviewMigratedMonth', () => {
 
   it('says when a month was never split', async () => {
     await expect(reviewMigratedMonth('2026-04', options)).rejects.toThrow('2026-04 is not split yet')
+  })
+})
+
+describe('retagStagedMonth', () => {
+  it('renames, merges or removes a Tag on the staged days, leaving the rest of each file as it is', async () => {
+    await stage('2026-02', '2026-02-02.md', day('2026-02-02', ['shop', 'code-review'], '## Done\n\n- Reviewed acme/shop/web!88\n'))
+    await stage(
+      '2026-02',
+      '2026-02-03.md',
+      '---\ndate: 2026-02-03\ntags: [shop-web, exports] # suggested\nsources: []\n---\n\n## Notes\n\n- CSV\n',
+    )
+    await stage('2026-02', '2026-02-04.md', day('2026-02-04', ['shop-web', 'shop']))
+
+    expect(await retagStagedMonth('2026-02', 'shop-web', 'shop', options)).toEqual(['2026-02-03', '2026-02-04'])
+    expect(await readFile(staged('2026-02', '2026-02-03.md'), 'utf8')).toBe(
+      '---\ndate: 2026-02-03\ntags: [shop, exports] # suggested\nsources: []\n---\n\n## Notes\n\n- CSV\n',
+    )
+    expect(await readFile(staged('2026-02', '2026-02-04.md'), 'utf8')).toBe(day('2026-02-04', ['shop']))
+
+    expect(await retagStagedMonth('2026-02', 'exports', undefined, options)).toEqual(['2026-02-03'])
+    expect(await readFile(staged('2026-02', '2026-02-03.md'), 'utf8')).toMatch(/^tags: \[shop\] # suggested$/m)
+    expect(await readFile(staged('2026-02', '2026-02-02.md'), 'utf8')).toBe(
+      day('2026-02-02', ['shop', 'code-review'], '## Done\n\n- Reviewed acme/shop/web!88\n'),
+    )
+  })
+
+  it('refuses a name that is not a Tag', async () => {
+    await stage('2026-02', '2026-02-02.md', day('2026-02-02', ['shop']))
+    await expect(retagStagedMonth('2026-02', 'shop', 'Shop Web!', options)).rejects.toThrow(/isn’t a Tag/)
+  })
+})
+
+const git = (...args: string[]) => execFileSync('git', ['-C', contentRoot, ...args], { encoding: 'utf8' }).trim()
+
+/** The sample February, split and staged in full as an agent session would leave it. */
+async function stageFebruary(): Promise<void> {
+  await splitMonthlyDevlog(await original('2026-02.md'), options)
+  for (const date of ['2026-02-02', '2026-02-03', '2026-02-04', '2026-02-06']) await stage('2026-02', `${date}.md`, day(date, ['shop']))
+  await stage('2026-02', '2026-02-05.md', '---\ndate: 2026-02-05\noff: true\nlabel: Holiday\n---\n')
+  await stage('2026-02', 'uncertainties.md', '- 2026-02-05: "Holiday" alone, staged as an off day\n')
+}
+
+// Each git process takes a few hundred ms to spawn under the test runner on macOS.
+describe('approveMigratedMonth', { timeout: 30_000 }, () => {
+  it('moves the month’s staged days into the Dev logs and snapshots them as migrate: <YYYY-MM>', async () => {
+    await stageFebruary()
+    const before = await readFile(staged('2026-02', '2026-02-03.md'), 'utf8')
+
+    const approved = await approveMigratedMonth('2026-02', options)
+
+    expect(approved.moved).toEqual(['2026-02-02', '2026-02-03', '2026-02-04', '2026-02-05', '2026-02-06'])
+    expect(approved.snapshot).toEqual({ commit: git('rev-parse', 'HEAD'), message: 'migrate: 2026-02' })
+    expect(await readFile(join(contentRoot, 'devlogs', '2026-02-03.md'), 'utf8')).toBe(before)
+    expect((await listDevlogs(options)).map((log) => [log.id, 'error' in log])).toEqual([
+      ['2026-02-06', false],
+      ['2026-02-05', false],
+      ['2026-02-04', false],
+      ['2026-02-03', false],
+      ['2026-02-02', false],
+    ])
+    expect(git('log', '--format=%s')).toBe('migrate: 2026-02')
+    expect(git('ls-tree', '-r', '--name-only', 'HEAD').split('\n')).toEqual([
+      'devlogs/2026-02-02.md',
+      'devlogs/2026-02-03.md',
+      'devlogs/2026-02-04.md',
+      'devlogs/2026-02-05.md',
+      'devlogs/2026-02-06.md',
+    ])
+    expect(await readdir(staged('2026-02'))).toEqual(['uncertainties.md'])
+  })
+
+  it('refuses, moving nothing, while a day is unstaged, broken or already has a Dev log', async () => {
+    await stageFebruary()
+    await rm(staged('2026-02', '2026-02-06.md'))
+    await stage('2026-02', '2026-02-04.md', day('2026-02-04', ['a', 'b', 'c', 'd']))
+    await devlog('2026-02-03', day('2026-02-03', []))
+
+    const refusal = approveMigratedMonth('2026-02', options)
+
+    await expect(refusal).rejects.toThrow(/2026-02-06 is not staged/)
+    await expect(refusal).rejects.toThrow(/2026-02-04: Invalid header/)
+    await expect(refusal).rejects.toThrow(/2026-02-03 already has a Dev log/)
+    expect(await readdir(join(contentRoot, 'devlogs'))).toEqual(['2026-02-03.md'])
+    expect((await readdir(staged('2026-02'))).length).toBe(5)
+  })
+
+  it('refuses a month with nothing staged', async () => {
+    await splitMonthlyDevlog(await original('2026-02.md'), options)
+    await expect(approveMigratedMonth('2026-02', options)).rejects.toThrow('Nothing staged for 2026-02')
+  })
+})
+
+describe('migrationStatus', { timeout: 30_000 }, () => {
+  it('lists each month split, where it stands and what its session used, oldest first', async () => {
+    expect(await migrationStatus(options)).toEqual([])
+    await stageFebruary()
+    await mkdir(join(contentRoot, '.migration', 'usage'), { recursive: true })
+    await writeFile(join(contentRoot, '.migration', 'usage', '2026-02.json'), JSON.stringify(CLAUDE_RESULT))
+    await approveMigratedMonth('2026-02', options)
+    await splitMonthlyDevlog(await original('messy-month.md'), options)
+    await stage('2026-03', '2026-03-02.md', day('2026-03-02', []))
+    const april = join(originals, 'april.md')
+    await writeFile(april, '# April 2026\n\n## Wednesday 1\n\n- Kick-off for the returns flow\n')
+    await splitMonthlyDevlog(april, options)
+    await writeFile(join(contentRoot, '.migration', 'usage', '2026-04.json'), 'Error: session stopped')
+
+    expect(await migrationStatus(options)).toEqual([
+      { month: '2026-02', stage: 'approved', rawDays: 5, stagedDays: 0, anomalies: 0, usage: expect.objectContaining({ costUsd: 1.87 }) },
+      { month: '2026-03', stage: 'staged', rawDays: 5, stagedDays: 1, anomalies: 10 },
+      { month: '2026-04', stage: 'split', rawDays: 1, stagedDays: 0, anomalies: 0, usage: { error: expect.any(String) } },
+    ])
   })
 })

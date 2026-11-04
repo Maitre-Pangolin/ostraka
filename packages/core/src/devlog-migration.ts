@@ -4,13 +4,17 @@
 //   staged/<YYYY-MM>/    the days reformatted by an agent session, with its uncertainties.md
 //   usage/<YYYY-MM>.json that session's usage, as `claude -p --output-format json` prints it
 // The old files are only ever read.
-import { access, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
+import { constants } from 'node:fs'
+import { access, copyFile, mkdir, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { basename, join } from 'node:path'
+import { contentPath } from './content-path.ts'
 import { resolveContentRoot, type ContentRootOptions } from './content-root.ts'
 import { addDays, devlogSectionProblems, isWeekend, monthEnd, weekday } from './devlog-days.ts'
 import { isBrokenDevlog } from './devlog-schema.ts'
 import { listDevlogs, readDevlogText } from './devlogs.ts'
 import { splitFrontmatter } from './markdown.ts'
+import { snapshot, type Snapshot } from './snapshots.ts'
+import { normalizeTag } from './todo-tokens.ts'
 import { listTags } from './todos.ts'
 
 /** The migration's working folder in the content folder. Hidden, so the watcher skips it; Snapshots exclude it. */
@@ -273,6 +277,52 @@ const readOptional = (file: string) => readFile(file, 'utf8').catch(() => undefi
 
 const number = (value: unknown) => (typeof value === 'number' ? value : undefined)
 
+/** A Tag as typed (`#Code review` reads `code-review`); throws for anything else. */
+function tagName(typed: string): string {
+  const name = normalizeTag(typed.trim().replace(/^#/, ''))
+  if (name === undefined) throw new Error(`“${typed}” isn’t a Tag: use lowercase letters, digits and hyphens`)
+  return name
+}
+
+/** A `tags: [a, b]` header line, the one form the Dev log skill writes. */
+const TAGS_LINE = /^tags:[ \t]*\[([^\]\r\n]*)\]/m
+
+/**
+ * Renames Tag `from` to `to` on the month's staged days (a merge when a day has both: it keeps one), or removes it
+ * when `to` is undefined. Only each header's `tags:` line changes. Says which days changed.
+ */
+export async function retagStagedMonth(
+  month: string,
+  from: string,
+  to: string | undefined,
+  options: ContentRootOptions = {},
+): Promise<string[]> {
+  const old = tagName(from)
+  const next = to === undefined ? undefined : tagName(to)
+  const { staged } = await monthFolders(month, options)
+  const changed: string[] = []
+  for (const date of await dayFiles(staged)) {
+    const file = join(staged, `${date}.md`)
+    const text = await readFile(file, 'utf8')
+    const { header } = splitFrontmatter(text)
+    const line = TAGS_LINE.exec(header)
+    if (!line) {
+      if (/^tags:/m.test(header)) throw new Error(`${file}: write its Tags on one line, tags: [a, b]`)
+      continue
+    }
+    const tags = line[1]!
+      .split(',')
+      .map((tag) => tag.trim().replace(/^["']|["']$/g, ''))
+      .filter(Boolean)
+    if (!tags.includes(old)) continue
+    const retagged = [...new Set(tags.flatMap((tag) => (tag === old ? (next === undefined ? [] : [next]) : [tag])))]
+    const nextHeader = header.slice(0, line.index) + `tags: [${retagged.join(', ')}]` + header.slice(line.index + line[0].length)
+    await writeFile(file, nextHeader + text.slice(header.length))
+    changed.push(date)
+  }
+  return changed
+}
+
 /** The usage in a `claude -p --output-format json` result, or why it can't be read. */
 function readUsage(text: string): MigrationUsage | { error: string } {
   let result: Record<string, unknown>
@@ -364,4 +414,80 @@ export async function reviewMigratedMonth(month: string, options: ContentRootOpt
     samples: [...new Set([...unsure, ...longest])].slice(0, SAMPLES).toSorted(),
     ...(usage !== undefined && { usage: readUsage(usage) }),
   }
+}
+
+/**
+ * Where a month split for migration stands: `split` (no day staged yet), `staged` (days waiting for review) or
+ * `approved` (moved into `devlogs/`), with what its agent session used once it has run.
+ */
+export type MonthStatus = {
+  month: string
+  stage: 'split' | 'staged' | 'approved'
+  rawDays: number
+  stagedDays: number
+  anomalies: number
+  usage?: MigrationUsage | { error: string }
+}
+
+/** Every month split for migration, oldest first: where it stands and its session's usage, to judge the next. */
+export async function migrationStatus(options: ContentRootOptions = {}): Promise<MonthStatus[]> {
+  const root = join(await resolveContentRoot(options), MIGRATION_FOLDER)
+  const months = (await readdir(join(root, 'raw')).catch(() => [])).filter((name) => /^\d{4}-\d{2}$/.test(name)).toSorted()
+  const written = new Set((await listDevlogs(options)).map((log) => log.id))
+  return Promise.all(
+    months.map(async (month): Promise<MonthStatus> => {
+      const folders = await monthFolders(month, options)
+      const [raw, staged, report, usage] = await Promise.all([
+        dayFiles(folders.raw),
+        dayFiles(folders.staged),
+        readOptional(join(folders.raw, SPLIT_REPORT)),
+        readOptional(folders.usage),
+      ])
+      const approved = !staged.length && raw.length > 0 && raw.every((date) => written.has(date))
+      return {
+        month,
+        stage: staged.length ? 'staged' : approved ? 'approved' : 'split',
+        rawDays: raw.length,
+        stagedDays: staged.length,
+        anomalies: report === undefined ? 0 : (JSON.parse(report) as MonthSplit).anomalies.length,
+        ...(usage !== undefined && { usage: readUsage(usage) }),
+      }
+    }),
+  )
+}
+
+/** An approved month: the days moved into `devlogs/`, and its Snapshot (none when nothing changed). */
+export type ApprovedMonth = { month: string; moved: string[]; snapshot?: Snapshot }
+
+/** What stops a month from moving in: every reason, one per line. */
+function approvalBlockers(review: MonthReview): string[] {
+  const { month } = review
+  if (!review.stagedDays.length) return [`Nothing staged for ${month}: run its agent session first`]
+  return [
+    ...review.unstaged.map((date) => `${date} is not staged: the session skipped it`),
+    ...review.unexpected.filter((date) => !date.startsWith(`${month}-`)).map((date) => `${date} is not in ${month}`),
+    ...review.problems.flatMap(({ date, problems }) => problems.map((problem) => `${date}: ${problem}`)),
+    ...review.conflicts.map((date) => `${date} already has a Dev log: it is never overwritten`),
+  ]
+}
+
+/**
+ * Moves an approved month's staged days into `devlogs/` and makes one Snapshot, `migrate: <YYYY-MM>`. Refuses,
+ * moving nothing, while a raw day is unstaged, a staged day wouldn't read as a valid Dev log, or a day already has
+ * one. The rest of the month's migration files stay in `.migration/`.
+ */
+export async function approveMigratedMonth(month: string, options: ContentRootOptions = {}): Promise<ApprovedMonth> {
+  const review = await reviewMigratedMonth(month, options)
+  const blockers = approvalBlockers(review)
+  if (blockers.length) throw new Error(`${month} can’t be approved yet:\n${blockers.map((line) => `- ${line}`).join('\n')}`)
+  const devlogs = await contentPath('devlogs', options)
+  await mkdir(devlogs, { recursive: true })
+  for (const date of review.stagedDays) {
+    const from = join(review.folders.staged, `${date}.md`)
+    // Copied only when no Dev log has appeared there meanwhile, then removed from the staging folder.
+    await copyFile(from, join(devlogs, `${date}.md`), constants.COPYFILE_EXCL)
+    await rm(from)
+  }
+  const made = await snapshot(`migrate: ${month}`, options)
+  return { month, moved: review.stagedDays, ...(made && { snapshot: made }) }
 }
