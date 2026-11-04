@@ -110,6 +110,12 @@ describe('ostraka people', () => {
     ])
   })
 
+  it('ignores a Person, taking them off the Stub Persons', async () => {
+    await ostraka('people', 'add', 'Zoe P', '--id', 'zoe-p')
+    expect(await ostraka('people', 'ignore', 'zoe-p')).toEqual({ code: 0, stdout: 'Ignored zoe-p  Zoe P  (ignored)\n', stderr: '' })
+    expect((await ostraka('people', 'list', '--stubs')).stdout).toBe('No Stub Persons.\n')
+  })
+
   it('renames a Person and merges one into another, rewriting Mentions, with counts shown first by --dry-run', async () => {
     await ostraka('people', 'add', 'Milena S', '--id', 'milena-s')
     await ostraka('people', 'add', 'Bram Okonkwo', '--email', 'bram@corp.example')

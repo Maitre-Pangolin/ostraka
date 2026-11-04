@@ -6,6 +6,7 @@ import {
   addPerson,
   findPeople,
   getPerson,
+  ignorePerson,
   listPeople,
   PeopleFileError,
   PersonExistsError,
@@ -129,6 +130,15 @@ describe('getPerson', () => {
     const added = await addPerson({ name: 'Ilse Vantongeren' }, options)
     expect(await getPerson('ilse-vantongeren', options)).toEqual(added)
     await expect(getPerson('nobody', options)).rejects.toThrow(PersonNotFoundError)
+  })
+})
+
+describe('ignorePerson', () => {
+  it('marks a Person ignored, so they are no longer a Stub Person', async () => {
+    await addPerson({ id: 'zoe-p', name: 'Zoe P' }, options)
+    expect(await ignorePerson('zoe-p', options)).toEqual({ id: 'zoe-p', name: 'Zoe P', aliases: [], ignored: true })
+    expect(await getPerson('zoe-p', options)).toMatchObject({ ignored: true })
+    await expect(ignorePerson('nobody', options)).rejects.toThrow(PersonNotFoundError)
   })
 })
 

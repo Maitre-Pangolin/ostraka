@@ -6,6 +6,7 @@ import {
   addPerson,
   findPeople,
   getPerson,
+  ignorePerson,
   listPeople,
   listStubPeople,
   mergePerson,
@@ -27,6 +28,8 @@ export const PEOPLE_USAGE = `  ostraka people find <name|id|alias|email|handle> 
   ostraka people refresh <id> [--email <email>] [--slack-id <id>] [--slack-handle <handle>]
                          [--gitlab <username>] [--jira <account id>] [--json]
                                 Record identities looked up again by email; the others stay as cached
+  ostraka people ignore <id> [--json]
+                                Mark a Person ignored: no skill offers to add or fill them again
   ostraka people list [--stubs] [--json]
                                 Everyone in the People directory; --stubs only Stub Persons (no email, not ignored)
   ostraka people rename <id> <new id> [--name <name>] [--dry-run] [--json]
@@ -125,6 +128,11 @@ export async function peopleCommand(args: string[], io: Io): Promise<number> {
   if (action === 'refresh' && words.length === 1 && Object.keys(given).length > 0) {
     const person = await refreshPerson(words[0]!, given, options)
     print(person, `Refreshed ${personCard(person)}`)
+    return 0
+  }
+  if (action === 'ignore' && words.length === 1) {
+    const person = await ignorePerson(words[0]!, options)
+    print(person, `Ignored ${personLine(person)}`)
     return 0
   }
   if (action === 'list' && words.length === 0) {

@@ -114,6 +114,16 @@ export async function refreshPerson(id: string, identities: PersonIdentities, op
   })
 }
 
+/** Marks a Person ignored: skills no longer offer to add or fill them, so they stop being a Stub Person. */
+export async function ignorePerson(id: string, options: PeopleOptions = {}): Promise<Person> {
+  return updatePeople(options, (file) => {
+    const person = file.people.find((candidate) => candidate.id === id)
+    if (!person) throw new PersonNotFoundError(`No Person ${id} in the People directory.`)
+    person.ignored = true
+    return person
+  })
+}
+
 /**
  * The Persons a query names, for agents checking the directory before an MCP lookup: by any part of the name, id or
  * an alias (case and accents ignored), or exactly by email, Slack handle (with or without `@`) or GitLab username.

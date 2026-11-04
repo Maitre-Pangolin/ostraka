@@ -197,6 +197,7 @@ export {
   addPerson,
   findPeople,
   getPerson,
+  ignorePerson,
   listPeople,
   listStubPeople,
   PeopleFileError,
