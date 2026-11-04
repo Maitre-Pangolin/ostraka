@@ -1,10 +1,18 @@
 import { homedir } from 'node:os'
 import { join, resolve } from 'node:path'
 import { loadConfig } from './config.ts'
+import type { LockOptions } from './locked-file.ts'
 
 export type ContentRootOptions = {
   env?: Record<string, string | undefined>
   homeDir?: string
+}
+
+/** What reading and changing content takes, as the app, the CLI and agents pass it: where it lives, the clock, the lock. */
+export type ContentOptions = ContentRootOptions & {
+  /** The clock; tests pass a fixed one. */
+  now?: () => Date
+  lock?: LockOptions
 }
 
 function expandHome(path: string, homeDir: string): string {

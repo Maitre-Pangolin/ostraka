@@ -14,7 +14,7 @@ import {
   TagsFileError,
   tagUsage,
   TodosFileError,
-  type TodoOptions,
+  type ContentOptions,
 } from '@ostraka/core'
 import { Hono, type Context } from 'hono'
 import { readBody } from './todos.ts'
@@ -33,7 +33,7 @@ function onTagError(error: Error, c: Context) {
  * the Tag filter), and Tag management: usage counts, rename, merge and delete (each rewriting every item using the
  * Tag in one request) and colour (saved to `tags.yml`). All through core.
  */
-export function tagRoutes(options: TodoOptions) {
+export function tagRoutes(options: ContentOptions) {
   const routes = new Hono()
   routes.onError(onTagError)
   routes.get('/', async (c) => c.json(await listTags(options)))

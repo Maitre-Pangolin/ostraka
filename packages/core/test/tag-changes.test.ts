@@ -14,11 +14,11 @@ import {
   TagNotFoundError,
   TagsFileError,
   tagUsage,
-  type TodoOptions,
+  type ContentOptions,
 } from '../src/index.ts'
 
 let contentRoot: string
-let options: TodoOptions
+let options: ContentOptions
 
 beforeEach(async () => {
   contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))

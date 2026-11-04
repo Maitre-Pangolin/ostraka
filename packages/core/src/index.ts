@@ -9,7 +9,13 @@ export {
   type ContentChange,
   type ContentKind,
 } from './content-path.ts'
-export { locateContentRoot, resolveContentRoot, type ContentRootOptions, type ContentRootSource } from './content-root.ts'
+export {
+  locateContentRoot,
+  resolveContentRoot,
+  type ContentOptions,
+  type ContentRootOptions,
+  type ContentRootSource,
+} from './content-root.ts'
 export {
   DropTodoSchema,
   FinishedQuerySchema,
@@ -89,7 +95,6 @@ export {
   updateTodo,
   type TodoItem,
   type FinishedSubTodo,
-  type TodoOptions,
 } from './todos.ts'
 export { formatMarkdown, HOUSE_STYLE, joinFrontmatter, splitFrontmatter, type Frontmatter } from './markdown.ts'
 export {

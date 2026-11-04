@@ -1,7 +1,7 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { backupState, configPath, loadConfig, locateContentRoot, type TodoOptions } from '@ostraka/core'
+import { backupState, configPath, loadConfig, locateContentRoot, type ContentOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { activityPoller, type Activity } from './activity/poller.ts'
@@ -25,7 +25,7 @@ export type AppOptions = {
   /** Folder holding the built web app (index.html and assets). */
   webDist: string
   /** Where content and config.yml live (env and home folder) and the clock; defaults to the real ones. Tests point it at a temp folder. */
-  content?: TodoOptions
+  content?: ContentOptions
   /** Called after each successful write to content through the API; the server schedules a Snapshot from it. */
   onContentChange?: () => void
   /** Read from the Keychain once at startup. Routes may say whether one exists, never return it. */

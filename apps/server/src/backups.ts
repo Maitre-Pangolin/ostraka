@@ -1,11 +1,11 @@
 // Backup scheduling: push after a Snapshot, at most once every 15 minutes; check the remote at start.
-import { backup, backupState, checkBackup, type BackupResult, type BackupStatus, type TodoOptions } from '@ostraka/core'
+import { backup, backupState, checkBackup, type BackupResult, type BackupStatus, type ContentOptions } from '@ostraka/core'
 
 export const BACKUP_INTERVAL_MS = 15 * 60_000
 
 export type BackupsOptions = {
-  /** Where content lives and the clock (TodoOptions, as the app gets them). */
-  content?: TodoOptions
+  /** Where content lives and the clock, as the app gets them. */
+  content?: ContentOptions
   /** The push token (Keychain item `ostraka-push`, read once at startup), revealed for each check or push. */
   token?: () => string | undefined
   intervalMs?: number

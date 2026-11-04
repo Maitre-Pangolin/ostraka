@@ -4,8 +4,8 @@ import { dirname } from 'node:path'
 import { z } from 'zod'
 import { contentPath } from './content-path.ts'
 import { assertCurrentVersion, contentVersion } from './content-version.ts'
-import type { ContentRootOptions } from './content-root.ts'
-import { withFileLock, writeFileAtomic, type LockOptions } from './locked-file.ts'
+import type { ContentOptions } from './content-root.ts'
+import { withFileLock, writeFileAtomic } from './locked-file.ts'
 import { defaultTagColor, type Tag } from './tag-color.ts'
 import { listDevlogs } from './devlogs.ts'
 import { listNotes } from './notes.ts'
@@ -31,16 +31,10 @@ import {
 } from './todo-schema.ts'
 import { pullTokens } from './todo-tokens.ts'
 
-export type TodoOptions = ContentRootOptions & {
-  /** The clock; tests pass a fixed one. */
-  now?: () => Date
-  lock?: LockOptions
-}
-
 /** For a change to an existing Todo made from a loaded copy: the `todoVersion` of that copy. */
-export type TodoChangeOptions = TodoOptions & { ifVersion?: string }
+export type TodoChangeOptions = ContentOptions & { ifVersion?: string }
 
-const clock = (options: TodoOptions) => (options.now ?? (() => new Date()))()
+const clock = (options: ContentOptions) => (options.now ?? (() => new Date()))()
 
 export class TodosFileError extends Error {}
 export class TodoNotFoundError extends Error {}
@@ -71,7 +65,7 @@ async function readTodosFile(file: string): Promise<TodosFile> {
  * The only way `todos.json` is written: under its lock, read and validate the current file (an invalid one is
  * refused, never overwritten), apply the change, validate the result, then write a temp file and rename it.
  */
-async function updateTodos<T>(options: TodoOptions, change: (file: TodosFile) => T): Promise<T> {
+async function updateTodos<T>(options: ContentOptions, change: (file: TodosFile) => T): Promise<T> {
   const file = await contentPath('todos', options)
   await mkdir(dirname(file), { recursive: true })
   return withFileLock(
@@ -146,7 +140,7 @@ function newItem({ title, description, tags, priority, due }: Editable, file: To
 }
 
 /** Adds an open Todo at the top level. Tokens in its title and description become its properties. */
-export async function addTodo(input: NewTodo, options: TodoOptions = {}): Promise<Todo> {
+export async function addTodo(input: NewTodo, options: ContentOptions = {}): Promise<Todo> {
   const now = clock(options)
   const properties = typedProperties(input, now)
   return updateTodos(options, (file) => {
@@ -160,7 +154,7 @@ export async function addTodo(input: NewTodo, options: TodoOptions = {}): Promis
  * Adds an open Sub-todo at the end of a Todo's Sub-todos (they keep creation order). It inherits nothing from its
  * parent. A Sub-todo can't have Sub-todos of its own: one level only.
  */
-export async function addSubTodo(parentId: string, input: NewTodo, options: TodoOptions = {}): Promise<SubTodo> {
+export async function addSubTodo(parentId: string, input: NewTodo, options: ContentOptions = {}): Promise<SubTodo> {
   const now = clock(options)
   const properties = typedProperties(input, now)
   return updateTodos(options, (file) => {
@@ -307,7 +301,7 @@ const refuseTaken = (file: TodosFile, ids: string[]) => {
 }
 
 /** Puts a deleted Todo back as it was (Undo of delete). Refused if any of its ids is taken meanwhile. */
-export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promise<Todo> {
+export async function restoreTodo(input: Todo, options: ContentOptions = {}): Promise<Todo> {
   const todo = TodoSchema.parse(input)
   return updateTodos(options, (file) => {
     refuseTaken(file, [todo.id, ...todo.subTodos.map((sub) => sub.id)])
@@ -320,7 +314,7 @@ export async function restoreTodo(input: Todo, options: TodoOptions = {}): Promi
  * Puts a deleted Sub-todo back under its parent as it was, in its creation place (Undo of delete). Refused if its id
  * is taken meanwhile.
  */
-export async function restoreSubTodo(parentId: string, input: SubTodo, options: TodoOptions = {}): Promise<SubTodo> {
+export async function restoreSubTodo(parentId: string, input: SubTodo, options: ContentOptions = {}): Promise<SubTodo> {
   const sub = SubTodoSchema.parse(input)
   return updateTodos(options, (file) => {
     const found = locate(file, parentId)
@@ -337,7 +331,7 @@ export async function restoreSubTodo(parentId: string, input: SubTodo, options: 
  * Every Tag in use, once each, sorted: on open, done and Dropped Todos and their Sub-todos, on Notes, Dev logs and Sketches. Each has its
  * colour from `tags.yml`, or the one its name hashes to.
  */
-export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
+export async function listTags(options: ContentOptions = {}): Promise<Tag[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   const settings = await readTagsFile(options)
   const [notes, sketches, devlogs] = await Promise.all([listNotes(options), listSketches(options), listDevlogs(options)])
@@ -349,7 +343,7 @@ export async function listTags(options: TodoOptions = {}): Promise<Tag[]> {
 }
 
 /** Every Todo and Sub-todo in any state, for gathering their Tags. */
-export async function allTodoItems(options: TodoOptions = {}): Promise<TodoItem[]> {
+export async function allTodoItems(options: ContentOptions = {}): Promise<TodoItem[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   return todos.flatMap((todo) => [todo, ...todo.subTodos])
 }
@@ -360,7 +354,7 @@ const sameTags = (a: string[], b: string[]) => a.length === b.length && a.every(
  * Rewrites the Tags of every Todo and Sub-todo in any state, in one write of `todos.json`: `retag` gets an item's
  * Tags and answers its new ones. Says how many items changed; nothing is written when none would.
  */
-export async function retagTodos(retag: (tags: string[]) => string[], options: TodoOptions = {}): Promise<number> {
+export async function retagTodos(retag: (tags: string[]) => string[], options: ContentOptions = {}): Promise<number> {
   const items = await allTodoItems(options)
   if (items.every((item) => sameTags(item.tags, retag(item.tags)))) return 0
   return updateTodos(options, (file) => {
@@ -380,7 +374,7 @@ export async function retagTodos(retag: (tags: string[]) => string[], options: T
  * `todos.json`: `rewrite` gets a text and answers its new one. Says how many items changed; nothing is written when
  * none would.
  */
-export async function rewriteTodoTexts(rewrite: (text: string) => string, options: TodoOptions = {}): Promise<number> {
+export async function rewriteTodoTexts(rewrite: (text: string) => string, options: ContentOptions = {}): Promise<number> {
   const fields = ['title', 'description', 'dropReason'] as const
   const changes = (item: TodoItem) => fields.some((field) => item[field] !== undefined && rewrite(item[field]) !== item[field])
   if (!(await allTodoItems(options)).some(changes)) return 0
@@ -396,14 +390,14 @@ export async function rewriteTodoTexts(rewrite: (text: string) => string, option
 }
 
 /** Open Todos in their automatic order. */
-export async function listTodos(options: TodoOptions = {}): Promise<Todo[]> {
+export async function listTodos(options: ContentOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   const today = localDay(clock(options))
   return todos.filter((todo) => todo.status === 'open').toSorted(compareOpenTodos(today))
 }
 
 /** Done and Dropped Todos, kept forever, newest-finished first. */
-export async function listFinishedTodos(options: TodoOptions = {}): Promise<Todo[]> {
+export async function listFinishedTodos(options: ContentOptions = {}): Promise<Todo[]> {
   const { todos } = await readTodosFile(await contentPath('todos', options))
   return todos.filter((todo) => todo.status !== 'open' && todo.finishedAt !== undefined).toSorted(compareFinishedTodos)
 }
@@ -415,7 +409,7 @@ export type FinishedSubTodo = SubTodo & { parent: { id: string; title: string } 
  * Everything done or Dropped on one local day, newest-finished first: Todos, and Sub-todos by their own finish
  * (whatever their parent's state or day), each Sub-todo naming its parent.
  */
-export async function listFinishedOn(query: FinishedQuery, options: TodoOptions = {}): Promise<(Todo | FinishedSubTodo)[]> {
+export async function listFinishedOn(query: FinishedQuery, options: ContentOptions = {}): Promise<(Todo | FinishedSubTodo)[]> {
   const { finishedOn } = FinishedQuerySchema.parse(query)
   const { todos } = await readTodosFile(await contentPath('todos', options))
   const finishedThatDay = (item: SubTodo) =>

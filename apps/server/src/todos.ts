@@ -24,7 +24,7 @@ import {
   updateTodo,
   type SubTodo,
   type TodoItem,
-  type TodoOptions,
+  type ContentOptions,
 } from '@ostraka/core'
 import { Hono, type Context } from 'hono'
 import { loadedVersion, withoutVersion, withVersion } from './versions.ts'
@@ -73,7 +73,7 @@ function onTodoError(error: Error, c: Context) {
  * Sub-todo answered carries its own `version`; a change to an existing one sent with `If-Match` is refused (412) if it
  * changed since.
  */
-export function todoRoutes(options: TodoOptions) {
+export function todoRoutes(options: ContentOptions) {
   const routes = new Hono()
   routes.onError(onTodoError)
 

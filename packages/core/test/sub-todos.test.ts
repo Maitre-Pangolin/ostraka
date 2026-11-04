@@ -20,15 +20,15 @@ import {
   TodosFileError,
   todoVersion,
   updateTodo,
-  type TodoOptions,
+  type ContentOptions,
 } from '../src/index.ts'
 
 let contentRoot: string
-let options: TodoOptions
+let options: ContentOptions
 
 // Monday 2 November 2026, 09:30 local time.
 const NOW = new Date(2026, 10, 2, 9, 30)
-const minutesLater = (minutes: number): TodoOptions => ({ ...options, now: () => new Date(NOW.getTime() + minutes * 60_000) })
+const minutesLater = (minutes: number): ContentOptions => ({ ...options, now: () => new Date(NOW.getTime() + minutes * 60_000) })
 
 beforeEach(async () => {
   contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))

@@ -24,11 +24,11 @@ import {
   TodosFileError,
   todoVersion,
   updateTodo,
-  type TodoOptions,
+  type ContentOptions,
 } from '../src/index.ts'
 
 let contentRoot: string
-let options: TodoOptions
+let options: ContentOptions
 
 // Monday 2 November 2026, 09:30 local time.
 const NOW = new Date(2026, 10, 2, 9, 30)
