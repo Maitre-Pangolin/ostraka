@@ -58,6 +58,8 @@ code-review:
   color: blue
 ```
 
+The app's Tags view (the tag icon at the bottom of the rail) lists every Tag in use with its colour and how many Todos, Notes, Dev logs and Sketches use it. From there a Tag can be coloured (saved to `tags.yml`), renamed, merged into another or deleted. A rename, merge or delete rewrites every Todo and Sub-todo and the `tags:` line of every Note, Dev log and Sketch using the Tag, in one request and after a confirmation; files with a broken header are left alone. The next Snapshot holds the whole change, so History undoes it file by file. The API is `GET /api/tags/usage`, `POST /api/tags/<name>/rename {to}`, `POST /api/tags/<name>/merge {into}`, `DELETE /api/tags/<name>` and `PUT /api/tags/<name>/color {color}` (`null` for the default).
+
 ## Install it
 
 From the main checkout (not a worktree: the paths written point at this repo):
