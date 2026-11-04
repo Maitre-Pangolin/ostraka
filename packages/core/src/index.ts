@@ -34,6 +34,7 @@ export {
 export { contentVersion, StaleVersionError } from './content-version.ts'
 export { FileLockedError, type LockOptions } from './locked-file.ts'
 export { dueAfterParent } from './sub-todos.ts'
+export { mentionedReferences, todaysTodos, type BriefingTodo } from './briefing.ts'
 export {
   defaultTagColor,
   TAG_COLORS,
