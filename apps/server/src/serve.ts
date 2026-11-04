@@ -1,6 +1,6 @@
 import { fileURLToPath } from 'node:url'
 import { serve, type ServerType } from '@hono/node-server'
-import { startAutoSnapshots, type AutoSnapshotOptions } from '@ostraka/core'
+import { searchIndexPath, startAutoSnapshots, type AutoSnapshotOptions } from '@ostraka/core'
 import { systemClock } from './activity/clock.ts'
 import type { Fetch } from './activity/http.ts'
 import { workOverview } from './activity/work-overview.ts'
@@ -8,6 +8,7 @@ import { createApp, HOSTNAME, PORT } from './app.ts'
 import { startBackups, type Backups } from './backups.ts'
 import { contentEvents } from './content-events.ts'
 import { referenceLookup } from './references.ts'
+import { startSearch } from './search.ts'
 import { readCredentials, type Keychain } from './keychain.ts'
 
 export const DEFAULT_WEB_DIST = fileURLToPath(new URL('../../web/dist', import.meta.url))
@@ -57,10 +58,23 @@ export async function startServer({
   // Every change on disk, the CLI's and agents' included, is snapshotted; the same watcher feeds live updates.
   const events = contentEvents(content)
   const unwatch = await events.subscribe(() => snapshots.changed())
+  // Search follows the same watcher, ahead of the browsers' live updates, and is rebuilt from the files in the
+  // background ("indexing…" until then). Its file is in the cache folder, outside the content folder.
+  const search = await startSearch({ content, events, file: searchIndexPath(homeDir) })
   // The work overview polls from startup, at its hidden rates until a window reports that it is visible.
   const activity = workOverview({ fetch, credentials, content: { homeDir }, clock: systemClock })
   const references = referenceLookup({ fetch, credentials, content: { homeDir } })
-  const app = createApp({ webDist, content, credentials, onContentChange: snapshots.changed, events, activity, backups, references })
+  const app = createApp({
+    webDist,
+    content,
+    credentials,
+    onContentChange: snapshots.changed,
+    events,
+    activity,
+    backups,
+    references,
+    search,
+  })
   activity.start()
   try {
     const server = await new Promise<ServerType>((resolve, reject) => {
@@ -77,6 +91,7 @@ export async function startServer({
         await closed
         activity.stop()
         unwatch()
+        await search.stop()
         await snapshots.stop()
         backups.stop()
         await backups.idle()
@@ -85,6 +100,7 @@ export async function startServer({
   } catch (error) {
     activity.stop()
     unwatch()
+    await search.stop()
     await snapshots.stop()
     backups.stop()
     throw error

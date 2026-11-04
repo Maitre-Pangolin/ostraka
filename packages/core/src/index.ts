@@ -179,6 +179,29 @@ export {
   type MissingDevlogWeek,
 } from './devlog-days.ts'
 export { localDay } from './todo-order.ts'
+export {
+  formatPeopleFile,
+  NewPersonSchema,
+  PeopleFileSchema,
+  PERSON_ID,
+  PersonIdentitiesSchema,
+  PersonSchema,
+  type NewPerson,
+  type PeopleFile,
+  type Person,
+  type PersonIdentities,
+} from './person-schema.ts'
+export {
+  addPerson,
+  findPeople,
+  getPerson,
+  listPeople,
+  PeopleFileError,
+  PersonExistsError,
+  PersonNotFoundError,
+  refreshPerson,
+  type PeopleOptions,
+} from './people.ts'
 export { findSecrets } from './secret-scan.ts'
 export {
   BACKUP_REMOTE,
@@ -192,3 +215,17 @@ export {
   type CloneResult,
 } from './backup.ts'
 export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
+export {
+  openSearchIndex,
+  parseSearchParams,
+  SEARCH_KINDS,
+  SearchQuerySchema,
+  searchParams,
+  searchContent,
+  searchIndexPath,
+  type SearchHit,
+  type SearchIndex,
+  type SearchKind,
+  type SearchQuery,
+  type SnippetPiece,
+} from './search.ts'

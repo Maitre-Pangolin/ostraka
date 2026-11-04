@@ -48,7 +48,7 @@ Read each Activity source for `<date>`. Each one is read-only: you look, you nev
 - **Slack** (`slack`), from the `slack` MCP server. Find the user's Slack id with `slack_read_user_profile`, then `slack_search_public_and_private` with `from:<@USERID> on:<date>`. Open the threads that look substantial with `slack_read_thread`. Group messages by conversation, not one line per message: a discussion worth keeping goes in Meetings & discussions, a decision or blocker in Notes. Small talk and quick acknowledgements are left out.
 - **Outlook**: there is no Outlook source yet. Leave `outlook` out of `sources`, and ask about meetings in step 3.
 
-People named in a line are Mentions, `@<person id>`. Look each one up with `ostraka people find <name or email>`. When it finds nobody, or fails, write their name as plain text and remember them for the end of the run.
+People named in a line are Mentions, `@<person id>`. Look each one up with `ostraka people find <name or email>`: it prints one `<person id>  <name>  <email>` line per match (`--json` for the records), and `No Person matches …` when it finds nobody. A Person marked `(ignored)` stays a plain name and is not offered at the end of the run. When it finds nobody, or fails, write their name as plain text and remember them for the end of the run.
 
 Done when every source above was read or noted as skipped.
 

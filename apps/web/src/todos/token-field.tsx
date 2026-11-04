@@ -2,7 +2,9 @@
 // typing next to one can't break it, Backspace removes it whole. Completed `#tag`, `*prio` and `^date` leave the text
 // (picked from the suggestions with Tab or ↵, or followed by a space) and their values go to `onTokens`. A complete
 // `pay/api!809`, `PAY-1432` or unique `!809` becomes a chip on a space or punctuation, and a pasted MR or Jira URL
-// becomes its token. The value in and out is plain text; the model lives in `token-doc.ts`.
+// becomes its token. `@` suggests Persons from the People directory; a Mention of one is a chip showing their name.
+// The value in and out is plain text; the model lives in `token-doc.ts`.
+import { suggestPeople, type MentionSuggestion } from '@ostraka/core/mentions'
 import { referenceFromUrl, suggestReferences, type ReferenceSuggestion } from '@ostraka/core/references'
 import { suggestTokens, type TokenProps, type TokenSuggestion } from '@ostraka/core/todo-tokens'
 import { baseKeymap, splitBlock } from '@milkdown/kit/prose/commands'
@@ -14,12 +16,14 @@ import { EditorView, type NodeView } from '@milkdown/kit/prose/view'
 import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
+import { usePeopleIndex } from '@/people/api'
+import { MentionChip, MentionSuggestionLabel } from '@/people/mention-chip'
 import { useReferenceIndex, useReferenceSites } from '@/references/api'
 import { ReferenceChip, ReferenceSuggestionLabel } from '@/references/reference-chip'
 import { longDate, useToday } from './due'
 import { PRIORITY_LABEL } from './priority'
 import { PriorityFlag, TagPill } from './properties'
-import { chipEditorState, docToText, referenceNode, settle } from './token-doc'
+import { chipEditorState, docToText, mentionNode, referenceNode, settle } from './token-doc'
 
 export type TokenFieldProps = {
   value: string
@@ -39,7 +43,7 @@ export type TokenFieldProps = {
   className?: string
 }
 
-type Suggestion = TokenSuggestion | ReferenceSuggestion
+type Suggestion = TokenSuggestion | ReferenceSuggestion | MentionSuggestion
 
 /** The word before the caret: back to a space, a line start or a chip. */
 function fragmentAt(state: EditorState): string {
@@ -48,8 +52,8 @@ function fragmentAt(state: EditorState): string {
   return /[^\s￼]*$/.exec($from.parent.textBetween(0, $from.parentOffset, undefined, '￼'))?.[0] ?? ''
 }
 
-/** A chip's DOM, filled by React through a portal so it shows live status and its hover card. */
-type ChipView = { id: number; dom: HTMLElement; token: string }
+/** A chip's DOM, filled by React through a portal so it shows live status (or a Person's name) and its hover card. */
+type ChipView = { id: number; dom: HTMLElement } & ({ kind: 'reference'; token: string } | { kind: 'mention'; person: string })
 
 let nextChipId = 0
 
@@ -81,16 +85,22 @@ export function TokenField({
   const today = useToday()
   const index = useReferenceIndex()
   const sites = useReferenceSites()
+  const people = usePeopleIndex()
   const suggestions: Suggestion[] =
     dismissed || !focused || !fragment
       ? []
-      : [...suggestTokens(fragment, { today, tags, exclude }), ...suggestReferences(fragment, index.candidates)].slice(0, 8)
+      : [
+          ...suggestTokens(fragment, { today, tags, exclude }),
+          ...suggestReferences(fragment, index.candidates),
+          ...suggestPeople(fragment, people.people),
+        ].slice(0, 8)
   const active = Math.min(selected, suggestions.length - 1)
+  const { isPerson } = people
 
   // The editor is made once; its handlers read the latest props and state through this ref.
-  const latest = useRef({ onChange, onTokens, onEnter, onBlur, today, index, sites, suggestions, active, multiline })
+  const latest = useRef({ onChange, onTokens, onEnter, onBlur, today, index, sites, isPerson, suggestions, active, multiline })
   useLayoutEffect(() => {
-    latest.current = { onChange, onTokens, onEnter, onBlur, today, index, sites, suggestions, active, multiline }
+    latest.current = { onChange, onTokens, onEnter, onBlur, today, index, sites, isPerson, suggestions, active, multiline }
   })
 
   const pick = (suggestion: Suggestion) => {
@@ -100,6 +110,7 @@ export function TokenField({
     const start = from - fragmentAt(editor.state).length
     const tr = editor.state.tr
     if (suggestion.kind === 'reference') tr.replaceWith(start, from, [referenceNode(suggestion.token), editor.state.schema.text(' ')])
+    else if (suggestion.kind === 'mention') tr.replaceWith(start, from, [mentionNode(suggestion.id), editor.state.schema.text(' ')])
     else tr.insertText(`${suggestion.token} `, start, from)
     editor.dispatch(tr)
     setSelected(0)
@@ -148,7 +159,10 @@ export function TokenField({
     const chipView = (node: Node): NodeView => {
       const dom = document.createElement('span')
       dom.contentEditable = 'false'
-      const chip = { id: nextChipId++, dom, token: node.attrs.token as string }
+      const chip: ChipView =
+        node.type.name === 'mention'
+          ? { id: nextChipId++, dom, kind: 'mention', person: node.attrs.id as string }
+          : { id: nextChipId++, dom, kind: 'reference', token: node.attrs.token as string }
       setChips((current) => [...current, chip])
       return {
         dom,
@@ -159,8 +173,8 @@ export function TokenField({
     }
 
     const editor: EditorView = new EditorView(mount.current!, {
-      state: chipEditorState(emitted.current, [history(), keys, keymap(baseKeymap)]),
-      nodeViews: { reference: chipView },
+      state: chipEditorState(emitted.current, [history(), keys, keymap(baseKeymap)], { isPerson: latest.current.isPerson }),
+      nodeViews: { reference: chipView, mention: chipView },
       // A title stays on one line, pasted line breaks included.
       transformPastedText: (text) => (latest.current.multiline ? text : text.replace(/\r?\n/g, ' ')),
       handlePaste: (current, event) => {
@@ -185,8 +199,8 @@ export function TokenField({
       dispatchTransaction(tr: Transaction) {
         let state = editor.state.apply(tr)
         if (tr.docChanged && !editor.composing) {
-          const { today: day, index: known } = latest.current
-          const settled = settle(state, { today: day, openMergeRequests: known.openMergeRequests, pullProps: true })
+          const { today: day, index: known, isPerson: person } = latest.current
+          const settled = settle(state, { today: day, openMergeRequests: known.openMergeRequests, pullProps: true, isPerson: person })
           if (settled) {
             state = state.apply(settled.tr)
             if (settled.props) latest.current.onTokens(settled.props)
@@ -222,10 +236,17 @@ export function TokenField({
     const editor = view.current
     if (!editor || value === emitted.current) return
     emitted.current = value
-    editor.updateState(chipEditorState(value, [...editor.state.plugins]))
+    editor.updateState(chipEditorState(value, [...editor.state.plugins], { isPerson: latest.current.isPerson }))
     typing.current = ''
     setFragment('')
   }, [value])
+
+  // The People directory loaded or changed: Mentions of known Persons become chips, unless the field is being edited.
+  useEffect(() => {
+    const editor = view.current
+    if (!editor || editor.hasFocus()) return
+    editor.updateState(chipEditorState(emitted.current, [...editor.state.plugins], { isPerson }))
+  }, [isPerson])
 
   // ARIA on ProseMirror's own element: a combobox whose listbox holds the suggestions.
   useLayoutEffect(() => {
@@ -267,7 +288,13 @@ export function TokenField({
           {placeholder}
         </span>
       )}
-      {chips.map((chip) => createPortal(<ReferenceChip token={chip.token} inEditor />, chip.dom, chip.id))}
+      {chips.map((chip) =>
+        createPortal(
+          chip.kind === 'mention' ? <MentionChip id={chip.person} inEditor /> : <ReferenceChip token={chip.token} inEditor />,
+          chip.dom,
+          chip.id,
+        ),
+      )}
       <ul
         id={listId}
         role="listbox"
@@ -299,6 +326,7 @@ export function TokenField({
 }
 
 function SuggestionLabel({ suggestion }: { suggestion: Suggestion }) {
+  if (suggestion.kind === 'mention') return <MentionSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'reference') return <ReferenceSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'tag')
     return (

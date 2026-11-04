@@ -34,6 +34,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { FileHistory, HistoryButton } from '@/history/file-history'
 import { ApiError } from '@/lib/api'
 import { useAfter } from '@/lib/use-after'
+import { PeoplePicker, PersonFilterChips } from '@/people/people-filter'
 import { cn } from '@/lib/utils'
 import { ReferenceText } from '@/references/reference-chip'
 import { EmptyState } from '@/shell/shell'
@@ -261,7 +262,13 @@ function RangePicker({ view, today, onView }: { view: ViewState; today: string; 
   const [picking, setPicking] = useState<DateRange>()
   const chosen = view.from && view.to ? { from: view.from, to: view.to } : undefined
   const show = (from: string, to: string) => {
-    onView({ from, to, ...(view.tag && { tag: view.tag }), ...(view.match && { match: view.match }) })
+    onView({
+      from,
+      to,
+      ...(view.tag && { tag: view.tag }),
+      ...(view.match && { match: view.match }),
+      ...(view.person && { person: view.person }),
+    })
     setOpen(false)
   }
   return (
@@ -443,14 +450,21 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
   const tagOptions = [
     ...new Set([...days.flatMap(({ log }) => (log && !isBrokenDevlog(log) ? log.tags : [])), ...(view.tag ?? [])]),
   ].toSorted()
-  const setFilter = (next: Pick<ViewState, 'tag' | 'match'>) =>
-    onView({ from: view.from, to: view.to, ...(next.tag?.length && { tag: next.tag }), ...(next.match && { match: next.match }) })
+  const setFilter = (next: Pick<ViewState, 'tag' | 'match' | 'person'>) =>
+    onView({
+      from: view.from,
+      to: view.to,
+      ...(next.tag?.length && { tag: next.tag }),
+      ...(next.match && { match: next.match }),
+      ...(next.person?.length && { person: next.person }),
+    })
 
   return (
     <div className="flex min-h-0 flex-1 flex-col">
       <div className="flex min-h-10 shrink-0 flex-wrap items-center gap-1.5 border-b px-3 py-1">
         <h2 className="truncate text-sm font-medium">{rangeLabel(view.from, view.to)}</h2>
         <span className="flex-1" />
+        <PeoplePicker chosen={view.person ?? []} onToggle={(id) => setFilter({ ...view, person: toggled(view.person, id) })} />
         <FilterPicker
           label="Tags"
           icon={<Hash className="size-3.5" />}
@@ -467,6 +481,7 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
             />
           }
         />
+        <PersonFilterChips chosen={view.person ?? []} onRemove={(id) => setFilter({ ...view, person: toggled(view.person, id) })} />
         {view.tag && view.tag.length > 1 && (
           <span className="text-muted-foreground text-[11px] font-medium">{view.match === 'any' ? 'Any of' : 'All of'}</span>
         )}
@@ -482,8 +497,8 @@ function RangeView({ view, onView }: { view: ViewState & { from: string; to: str
         {slow && <SkeletonRows />}
         {query.data && !shown.length && (
           <EmptyState>
-            {view.tag
-              ? 'No Dev log on these days has these Tags. Remove a Tag or choose other dates.'
+            {view.tag || view.person
+              ? 'No Dev log on these days matches these filters. Remove one or choose other dates.'
               : 'Nothing on these days. Choose other dates.'}
           </EmptyState>
         )}

@@ -115,6 +115,21 @@ describe('filterDevlogDays', () => {
     expect(dates(filterDevlogDays(entries, { tag: ['billing', 'auth'] }))).toEqual(['2026-10-30'])
     expect(dates(filterDevlogDays(entries, { tag: ['billing', 'auth'], match: 'any' }))).toEqual(['2026-10-30', '2026-10-29', '2026-10-27'])
   })
+
+  it('keeps only Dev logs whose text mentions all the chosen Persons', () => {
+    const withBodies = devlogDays(
+      { from: '2026-10-26', to: '2026-10-30' },
+      [
+        { ...day('2026-10-30', { tags: ['billing'] }), body: '## Done\n\n- Paired with @ilse-vantongeren and @bram\n' },
+        { ...day('2026-10-29'), body: '## Meetings & discussions\n\n- 1:1 with @bram\n' },
+        { ...day('2026-10-27'), body: '## Notes\n\n- Wrote to ilse@corp.example\n' },
+      ],
+      TODAY,
+    )
+    expect(dates(filterDevlogDays(withBodies, { person: ['bram'] }))).toEqual(['2026-10-30', '2026-10-29'])
+    expect(dates(filterDevlogDays(withBodies, { person: ['bram', 'ilse-vantongeren'] }))).toEqual(['2026-10-30'])
+    expect(dates(filterDevlogDays(withBodies, { person: ['bram'], tag: ['billing'] }))).toEqual(['2026-10-30'])
+  })
 })
 
 describe('devlogRangePresets', () => {
@@ -139,6 +154,11 @@ describe('parseDevlogsView', () => {
       to: '2026-10-31',
       tag: ['billing'],
       match: 'any',
+    })
+    expect(parseDevlogsView({ from: '2026-10-01', to: '2026-10-31', person: ['bram', 'Bad Id', 'bram'] })).toEqual({
+      from: '2026-10-01',
+      to: '2026-10-31',
+      person: ['bram'],
     })
     expect(parseDevlogsView({ from: '2026-10-01' })).toEqual({})
     expect(parseDevlogsView({ from: '2026-10-31', to: '2026-10-01' })).toEqual({ from: '2026-10-01', to: '2026-10-31' })

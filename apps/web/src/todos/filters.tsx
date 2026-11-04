@@ -1,9 +1,10 @@
-// The Todo filters: Priority and Tags chips that open pickers, then the active values as removable chips and
+// The Todo filters: Priority, People and Tags chips that open pickers, then the active values as removable chips and
 // Clear all. The filter itself lives in the URL search params (see `src/router.tsx`).
 import type { Priority } from '@ostraka/core/todo-schema'
 import { isFiltering, type TodoFilter } from '@ostraka/core/todo-filter'
 import { ChevronDown, Flag, Hash, Search, X } from 'lucide-react'
 import { useState, type ReactNode } from 'react'
+import { PeoplePicker, PersonFilterChips } from '@/people/people-filter'
 import { Checkbox } from '@/components/ui/checkbox'
 import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover'
 import { cn } from '@/lib/utils'
@@ -44,6 +45,7 @@ export function TodoFilters({ filter, onChange }: { filter: TodoFilter; onChange
           </span>
         )}
       />
+      <PeoplePicker chosen={filter.person ?? []} onToggle={(id) => onChange({ ...filter, person: toggled(filter.person, id) })} />
       <FilterPicker
         label="Tags"
         icon={<Hash className="size-3.5" />}
@@ -73,6 +75,7 @@ export function TodoFilters({ filter, onChange }: { filter: TodoFilter; onChange
               {PRIORITY_LABEL[priority]}
             </ActiveChip>
           ))}
+          <PersonFilterChips chosen={filter.person ?? []} onRemove={(id) => onChange({ ...filter, person: toggled(filter.person, id) })} />
           {chosenTags.length > 1 && (
             <span className="text-muted-foreground text-[11px] font-medium">{filter.match === 'any' ? 'Any of' : 'All of'}</span>
           )}
@@ -106,6 +109,7 @@ export function FilterPicker<T extends string>({
   name,
   header,
   empty = 'Nothing to pick.',
+  searchText = (value) => value,
 }: {
   label: string
   icon: ReactNode
@@ -117,10 +121,12 @@ export function FilterPicker<T extends string>({
   name: (value: T) => string
   header?: ReactNode
   empty?: ReactNode
+  /** What the search field matches an option by, lowercase; its value by default. */
+  searchText?: (value: T) => string
 }) {
   const [query, setQuery] = useState('')
   const searchable = options.length > SEARCH_PAST
-  const shown = searchable ? options.filter((option) => option.includes(query.trim().toLowerCase())) : options
+  const shown = searchable ? options.filter((option) => searchText(option).includes(query.trim().toLowerCase())) : options
   return (
     <Popover onOpenChange={(open) => open || setQuery('')}>
       <PopoverTrigger
