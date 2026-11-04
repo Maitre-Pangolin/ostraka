@@ -68,6 +68,6 @@ Nothing is written before the reply. Then:
 - **Ignored**: `ostraka people add "<name>" --email <email> --ignored`, so no skill offers them again.
 - **Neither**: write nothing; they may be offered on a later run.
 
-When anyone was added or ignored, run `ostraka snapshot "people: add <N>"` once, `<N>` being how many.
+When anyone was added or ignored, run `ostraka snapshot "people: add <N>"` once, `<N>` being how many. A calling skill that snapshots right after this step makes that one Snapshot instead.
 
-Done when every candidate is added, ignored or declined, and the snapshot is made when anything was written.
+Done when every candidate is added, ignored or declined, and a Snapshot is made or left to the calling skill when anything was written.
