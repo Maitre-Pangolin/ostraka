@@ -2,6 +2,7 @@
 import { IDEA_TAG, type NewNote, type Note, type NoteChange, type NoteListing } from '@ostraka/core/note-schema'
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { patch, post, request } from '@/lib/api'
+import { saveNewPeople } from '@/people/new-people'
 
 export type { Note, NoteListing }
 
@@ -34,9 +35,14 @@ export function useCreateNote() {
   })
 }
 
-/** Sends a change to a Note; `keepalive` lets it finish while the page closes. Starts the request at once. */
-export const saveNote = (id: string, change: NoteChange, version: string, keepalive?: boolean) =>
-  patch<Note>(`/notes/${encodeURIComponent(id)}`, change, { version, keepalive })
+/**
+ * Sends a change to a Note, after writing the new Persons it mentions; `keepalive` lets it finish while the page
+ * closes.
+ */
+export async function saveNote(id: string, change: NoteChange, version: string, keepalive?: boolean) {
+  await saveNewPeople(change.body)
+  return patch<Note>(`/notes/${encodeURIComponent(id)}`, change, { version, keepalive })
+}
 
 /**
  * Saves a Note's body or Tags from the copy it was made from (`version`); refused with 412 if the file changed

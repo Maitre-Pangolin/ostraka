@@ -100,8 +100,11 @@ describe('References in the Notes editor', () => {
 })
 
 describe('Mentions in the Notes editor', () => {
-  const names = new Map([['bram', 'Bram Okonkwo']])
-  const mentions = tokenHighlight(() => [mentionHighlighter((id) => names.get(id))])
+  const people = new Map([
+    ['bram', { name: 'Bram Okonkwo', stub: false }],
+    ['milena-s', { name: 'Milena S', stub: true }],
+  ])
+  const mentions = tokenHighlight(() => [mentionHighlighter((id) => people.get(id))])
   const markdown = 'Ask @bram and @quentin, not `@bram` or [@bram](https://x.test).\n'
 
   it('leaves a Note with Mentions byte-identical', async () => {
@@ -113,6 +116,14 @@ describe('Mentions in the Notes editor', () => {
     const root = await open(markdown, { plugins: [mentions] })
     const highlighted = [...root.querySelectorAll<HTMLElement>('[data-mention]')]
     expect(highlighted.map((element) => [element.textContent, element.title])).toEqual([['@bram', 'Bram Okonkwo']])
+    expect(highlighted[0]!.classList.contains('ostraka-mention-stub')).toBe(false)
+  })
+
+  it('underlines a Stub Person’s Mention with dots and calls them incomplete', async () => {
+    const root = await open('Ask @milena-s.\n', { plugins: [mentions] })
+    const highlighted = root.querySelector<HTMLElement>('[data-mention]')!
+    expect(highlighted.title).toBe('Milena S (incomplete)')
+    expect(highlighted.classList.contains('ostraka-mention-stub')).toBe(true)
   })
 })
 

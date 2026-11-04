@@ -2,9 +2,10 @@
 // typing next to one can't break it, Backspace removes it whole. Completed `#tag`, `*prio` and `^date` leave the text
 // (picked from the suggestions with Tab or ↵, or followed by a space) and their values go to `onTokens`. A complete
 // `pay/api!809`, `PAY-1432` or unique `!809` becomes a chip on a space or punctuation, and a pasted MR or Jira URL
-// becomes its token. `@` suggests Persons from the People directory; a Mention of one is a chip showing their name.
+// becomes its token. `@` suggests Persons from the People directory, and "Add Person" last for an id none matches; a
+// Mention of one is a chip showing their name (a new one marked new, written when the text is saved).
 // The value in and out is plain text; the model lives in `token-doc.ts`.
-import { suggestPeople, type MentionSuggestion } from '@ostraka/core/mentions'
+import { suggestPeople, type MentionSuggestion, type NewPersonSuggestion } from '@ostraka/core/mentions'
 import { referenceFromUrl, suggestReferences, type ReferenceSuggestion } from '@ostraka/core/references'
 import { suggestTokens, type TokenProps, type TokenSuggestion } from '@ostraka/core/todo-tokens'
 import { baseKeymap, splitBlock } from '@milkdown/kit/prose/commands'
@@ -13,11 +14,12 @@ import { keymap } from '@milkdown/kit/prose/keymap'
 import type { Node } from '@milkdown/kit/prose/model'
 import type { EditorState, Transaction } from '@milkdown/kit/prose/state'
 import { EditorView, type NodeView } from '@milkdown/kit/prose/view'
-import { useEffect, useId, useLayoutEffect, useRef, useState } from 'react'
+import { useEffect, useId, useLayoutEffect, useMemo, useRef, useState } from 'react'
 import { createPortal } from 'react-dom'
 import { cn } from '@/lib/utils'
 import { usePeopleIndex } from '@/people/api'
 import { MentionChip, MentionSuggestionLabel } from '@/people/mention-chip'
+import { markNewPerson, useNewPeople } from '@/people/new-people'
 import { useReferenceIndex, useReferenceSites } from '@/references/api'
 import { ReferenceChip, ReferenceSuggestionLabel } from '@/references/reference-chip'
 import { longDate, useToday } from './due'
@@ -43,7 +45,7 @@ export type TokenFieldProps = {
   className?: string
 }
 
-type Suggestion = TokenSuggestion | ReferenceSuggestion | MentionSuggestion
+type Suggestion = TokenSuggestion | ReferenceSuggestion | MentionSuggestion | NewPersonSuggestion
 
 /** The word before the caret: back to a space, a line start or a chip. */
 function fragmentAt(state: EditorState): string {
@@ -86,16 +88,25 @@ export function TokenField({
   const index = useReferenceIndex()
   const sites = useReferenceSites()
   const people = usePeopleIndex()
+  const newPeople = useNewPeople()
+  // New Persons picked in this window count as Persons until they are saved: suggested again and kept as chips.
+  const candidates = useMemo(
+    () => [...people.people, ...newPeople.filter((person) => !people.byId.has(person.id)).map((person) => ({ ...person, aliases: [] }))],
+    [people, newPeople],
+  )
+  const isPerson = useMemo(() => {
+    const ids = new Set(candidates.map((person) => person.id))
+    return (id: string) => ids.has(id)
+  }, [candidates])
   const suggestions: Suggestion[] =
     dismissed || !focused || !fragment
       ? []
       : [
           ...suggestTokens(fragment, { today, tags, exclude }),
           ...suggestReferences(fragment, index.candidates),
-          ...suggestPeople(fragment, people.people),
+          ...suggestPeople(fragment, candidates, { offerNew: people.loaded }),
         ].slice(0, 8)
   const active = Math.min(selected, suggestions.length - 1)
-  const { isPerson } = people
 
   // The editor is made once; its handlers read the latest props and state through this ref.
   const latest = useRef({ onChange, onTokens, onEnter, onBlur, today, index, sites, isPerson, suggestions, active, multiline })
@@ -110,8 +121,10 @@ export function TokenField({
     const start = from - fragmentAt(editor.state).length
     const tr = editor.state.tr
     if (suggestion.kind === 'reference') tr.replaceWith(start, from, [referenceNode(suggestion.token), editor.state.schema.text(' ')])
-    else if (suggestion.kind === 'mention') tr.replaceWith(start, from, [mentionNode(suggestion.id), editor.state.schema.text(' ')])
-    else tr.insertText(`${suggestion.token} `, start, from)
+    else if (suggestion.kind === 'mention' || suggestion.kind === 'new-person') {
+      if (suggestion.kind === 'new-person') markNewPerson({ id: suggestion.id, name: suggestion.name })
+      tr.replaceWith(start, from, [mentionNode(suggestion.id), editor.state.schema.text(' ')])
+    } else tr.insertText(`${suggestion.token} `, start, from)
     editor.dispatch(tr)
     setSelected(0)
   }
@@ -326,7 +339,7 @@ export function TokenField({
 }
 
 function SuggestionLabel({ suggestion }: { suggestion: Suggestion }) {
-  if (suggestion.kind === 'mention') return <MentionSuggestionLabel suggestion={suggestion} />
+  if (suggestion.kind === 'mention' || suggestion.kind === 'new-person') return <MentionSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'reference') return <ReferenceSuggestionLabel suggestion={suggestion} />
   if (suggestion.kind === 'tag')
     return (

@@ -3,6 +3,7 @@ import { defaultTagColor, type Tag, type TagColor } from '@ostraka/core/tag-colo
 import type { DropTodo, NewTodo, SubTodo as StoredSubTodo, Todo as StoredTodo, TodoChange } from '@ostraka/core/todo-schema'
 import { useMutation, useQuery, useQueryClient, type QueryClient } from '@tanstack/react-query'
 import { patch, post, remove, request } from '@/lib/api'
+import { saveNewPeople } from '@/people/new-people'
 
 /** A Sub-todo as the server answers it, with the version a change made from this copy sends back. */
 export type SubTodo = StoredSubTodo & { version: string }
@@ -50,7 +51,10 @@ const invalidateOpenAndTags = (queryClient: QueryClient) =>
 export function useAddTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: (todo: NewTodo) => post<Todo>('/todos', todo),
+    mutationFn: async (todo: NewTodo) => {
+      await saveNewPeople(todo.title, todo.description)
+      return post<Todo>('/todos', todo)
+    },
     onSettled: () => invalidateOpenAndTags(queryClient),
   })
 }
@@ -59,7 +63,10 @@ export function useAddTodo() {
 export function useAddSubTodo() {
   const queryClient = useQueryClient()
   return useMutation({
-    mutationFn: ({ parentId, ...todo }: NewTodo & { parentId: string }) => post<SubTodo>(`/todos/${parentId}/sub-todos`, todo),
+    mutationFn: async ({ parentId, ...todo }: NewTodo & { parentId: string }) => {
+      await saveNewPeople(todo.title, todo.description)
+      return post<SubTodo>(`/todos/${parentId}/sub-todos`, todo)
+    },
     onSettled: () => invalidateOpenAndTags(queryClient),
   })
 }
@@ -100,8 +107,10 @@ export function useUpdateTodo() {
   return useMutation({
     // One edit at a time, so each goes on from the version the one before it left.
     scope: { id: 'todo-edits' },
-    mutationFn: ({ todo: { id, version }, change }: { todo: TodoItem; change: TodoChange }) =>
-      patch<TodoItem>(`/todos/${id}`, change, { version }),
+    mutationFn: async ({ todo: { id, version }, change }: { todo: TodoItem; change: TodoChange }) => {
+      await saveNewPeople(change.title, change.description)
+      return patch<TodoItem>(`/todos/${id}`, change, { version })
+    },
     onMutate: async ({ todo: { id }, change }) => {
       await queryClient.cancelQueries({ queryKey: OPEN_TODOS })
       const before = queryClient.getQueryData<Todo[]>(OPEN_TODOS)

@@ -1,8 +1,17 @@
 // A Mention shown as the Person's current display name. Hovering (or focusing and clicking) opens their contact
-// card: a Slack DM first, then email, GitLab and Jira profile links, each value with a copy button. A Mention of an id
-// not in the People directory stays plain text, with an offer to add that Person. The same chip shows in lists and,
-// as an atom, inside the chip editor.
-import { mentionToken, personLinks, type MentionSuggestion, type PersonLinks } from '@ostraka/core/mentions'
+// card: a Slack DM first, then email, GitLab and Jira profile links, each value with a copy button. A Stub Person's
+// Mention is underlined with dots and their card says "Incomplete"; a new Person picked from "Add Person" and not saved
+// yet is marked new. A Mention of an id not in the People directory stays plain text, with an offer to add that
+// Person. The same chip shows in lists and, as an atom, inside the chip editor.
+import {
+  mentionToken,
+  personLinks,
+  personNameFromId,
+  type MentionSuggestion,
+  type NewPersonSuggestion,
+  type PersonLinks,
+} from '@ostraka/core/mentions'
+import { isStubPerson } from '@ostraka/core/person-schema'
 import { Check, Copy, GitBranch, Mail, MessageCircle, SquareKanban, UserPlus, UserRound } from 'lucide-react'
 import { useState, type FormEvent, type ReactNode } from 'react'
 import { buttonVariants, Button } from '@/components/ui/button'
@@ -11,6 +20,7 @@ import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover
 import { cn } from '@/lib/utils'
 import { useReferenceSites } from '@/references/api'
 import { useAddPerson, usePeopleIndex, type Person } from './api'
+import { useNewPeople, type NewPerson } from './new-people'
 
 const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
 const stop = (event: { stopPropagation: () => void }) => event.stopPropagation()
@@ -26,7 +36,9 @@ export type MentionChipProps = {
 export function MentionChip({ id, inEditor }: MentionChipProps) {
   const { byId, loaded } = usePeopleIndex()
   const person = byId.get(id)
+  const added = useNewPeople().find((candidate) => candidate.id === id)
   if (person) return <KnownMention person={person} inEditor={inEditor} />
+  if (added) return <NewMention person={added} inEditor={inEditor} />
   if (!loaded || inEditor) return <span>{mentionToken(id)}</span>
   return <UnknownMention id={id} />
 }
@@ -46,6 +58,7 @@ function KnownMention({ person, inEditor }: { person: Person; inEditor?: boolean
         className={cn(
           'text-primary hover:bg-primary/10 mx-px inline rounded px-0.5 font-medium whitespace-nowrap select-none',
           'cursor-default',
+          isStubPerson(person) && STUB_UNDERLINE,
           focusRing,
         )}
       >
@@ -55,6 +68,49 @@ function KnownMention({ person, inEditor }: { person: Person; inEditor?: boolean
         <ContactCard person={person} />
       </PopoverContent>
     </Popover>
+  )
+}
+
+/** A Stub Person's Mention: underlined with dots until the `people` skill fills them in. */
+const STUB_UNDERLINE = 'underline decoration-dotted decoration-1 underline-offset-[3px]'
+
+/** A Mention of a Person picked from "Add Person", written to the People directory when the text is saved. */
+function NewMention({ person, inEditor }: { person: NewPerson; inEditor?: boolean }) {
+  return (
+    <Popover>
+      <PopoverTrigger
+        openOnHover
+        delay={300}
+        closeDelay={150}
+        nativeButton={false}
+        tabIndex={inEditor ? -1 : 0}
+        aria-label={`Mention of ${person.name}, a new Person`}
+        onClick={stop}
+        render={<span data-mention-chip={person.id} />}
+        className={cn(
+          'text-primary hover:bg-primary/10 mx-px inline rounded px-0.5 font-medium whitespace-nowrap select-none',
+          'cursor-default',
+          STUB_UNDERLINE,
+          focusRing,
+        )}
+      >
+        {person.name}
+        <span className="text-muted-foreground ml-1 align-super text-[10px] font-normal">new</span>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-72 gap-2" onClick={stop}>
+        <NewPersonCard person={person} />
+      </PopoverContent>
+    </Popover>
+  )
+}
+
+/** A new Person's card: who they will be once the text mentioning them is saved. */
+function NewPersonCard({ person }: { person: NewPerson }) {
+  return (
+    <>
+      <PersonHeading name={person.name} id={person.id} />
+      <p className="text-muted-foreground text-xs">New Person: added to the People directory when this is saved.</p>
+    </>
   )
 }
 
@@ -72,15 +128,8 @@ export function ContactCard({ person }: { person: Person }) {
   const slack = person.slackHandle ? `@${person.slackHandle}` : person.slackId
   return (
     <>
-      <div className="flex min-w-0 items-center gap-2">
-        <span aria-hidden className="bg-primary/15 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">
-          {initials(person.name)}
-        </span>
-        <div className="min-w-0">
-          <p className="truncate text-sm font-medium">{person.name}</p>
-          <p className="text-muted-foreground truncate text-[11px]">{mentionToken(person.id)}</p>
-        </div>
-      </div>
+      <PersonHeading name={person.name} id={person.id} stub={isStubPerson(person)} />
+      {isStubPerson(person) && <p className="text-muted-foreground text-xs">No email or IDs yet: the people skill fills them in.</p>}
       {(links.slack || links.email) && (
         <div className="flex gap-1.5">
           {links.slack && (
@@ -105,6 +154,21 @@ export function ContactCard({ person }: { person: Person }) {
         <ContactRow icon={<SquareKanban />} label="Jira" value={person.jiraAccountId} href={links.jira} />
       </dl>
     </>
+  )
+}
+
+function PersonHeading({ name, id, stub }: { name: string; id: string; stub?: boolean }) {
+  return (
+    <div className="flex min-w-0 items-center gap-2">
+      <span aria-hidden className="bg-primary/15 text-primary grid size-8 shrink-0 place-items-center rounded-full text-xs font-semibold">
+        {initials(name)}
+      </span>
+      <div className="min-w-0 flex-1">
+        <p className="truncate text-sm font-medium">{name}</p>
+        <p className="text-muted-foreground truncate text-[11px]">{mentionToken(id)}</p>
+      </div>
+      {stub && <span className="text-muted-foreground shrink-0 rounded-full border px-1.5 py-px text-[11px]">Incomplete</span>}
+    </div>
   )
 }
 
@@ -155,13 +219,6 @@ function CopyButton({ value, label }: { value: string; label: string }) {
   )
 }
 
-/** `quentin-dupre` → `Quentin Dupre`: the name guessed for a Person added from a Mention. */
-const nameFromId = (id: string) =>
-  id
-    .split('-')
-    .map((word) => word.charAt(0).toUpperCase() + word.slice(1))
-    .join(' ')
-
 /** A Mention of an id not in the People directory: plain text, then an offer to add that Person. */
 function UnknownMention({ id }: { id: string }) {
   const [open, setOpen] = useState(false)
@@ -186,7 +243,7 @@ function UnknownMention({ id }: { id: string }) {
 }
 
 function AddPersonForm({ id, onAdded }: { id: string; onAdded: () => void }) {
-  const [name, setName] = useState(() => nameFromId(id))
+  const [name, setName] = useState(() => personNameFromId(id))
   const [email, setEmail] = useState('')
   const add = useAddPerson()
   const submit = (event: FormEvent) => {
@@ -215,8 +272,16 @@ function AddPersonForm({ id, onAdded }: { id: string; onAdded: () => void }) {
   )
 }
 
-/** A Person offered while a Mention is typed: their name, then the id it writes. */
-export function MentionSuggestionLabel({ suggestion }: { suggestion: MentionSuggestion }) {
+/** A Person offered while a Mention is typed: their name, then the id it writes; or the offer to add a new one. */
+export function MentionSuggestionLabel({ suggestion }: { suggestion: MentionSuggestion | NewPersonSuggestion }) {
+  if (suggestion.kind === 'new-person')
+    return (
+      <>
+        <UserPlus aria-hidden className="text-muted-foreground size-3 shrink-0" />
+        <span className="min-w-0 truncate">Add Person “{suggestion.id}”</span>
+        <span className="text-muted-foreground min-w-0 truncate text-[11px]">{suggestion.name}</span>
+      </>
+    )
   return (
     <>
       <UserRound aria-hidden className="text-muted-foreground size-3 shrink-0" />
@@ -240,7 +305,8 @@ export function MentionHoverCard({
   onHover: (inside: boolean) => void
 }) {
   const person = usePeopleIndex().byId.get(id)
-  if (!person) return null
+  const added = useNewPeople().find((candidate) => candidate.id === id)
+  if (!person && !added) return null
   return (
     <Popover open onOpenChange={onOpenChange}>
       <PopoverContent
@@ -252,7 +318,7 @@ export function MentionHoverCard({
         onMouseEnter={() => onHover(true)}
         onMouseLeave={() => onHover(false)}
       >
-        <ContactCard person={person} />
+        {person ? <ContactCard person={person} /> : <NewPersonCard person={added!} />}
       </PopoverContent>
     </Popover>
   )

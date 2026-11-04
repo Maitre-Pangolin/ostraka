@@ -3,6 +3,7 @@ import type { BrokenDevlog, Devlog, DevlogChange, DevlogListing, MonthlySummary 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query'
 import { useMemo } from 'react'
 import { patch, request } from '@/lib/api'
+import { saveNewPeople } from '@/people/new-people'
 import { useFinishedTodos, useOpenTodos } from '@/todos/api'
 
 export type { BrokenDevlog, Devlog, DevlogListing, MonthlySummary }
@@ -32,9 +33,11 @@ export function useDevlog(id: string | undefined) {
   })
 }
 
-/** Sends a new body; `keepalive` lets it finish while the page closes. Starts the request at once. */
-export const saveDevlog = (id: string, change: DevlogChange, version: string, keepalive?: boolean) =>
-  patch<Devlog | MonthlySummary>(`/devlogs/${encodeURIComponent(id)}`, change, { version, keepalive })
+/** Sends a new body, after writing the new Persons it mentions; `keepalive` lets it finish while the page closes. */
+export async function saveDevlog(id: string, change: DevlogChange, version: string, keepalive?: boolean) {
+  await saveNewPeople(change.body)
+  return patch<Devlog | MonthlySummary>(`/devlogs/${encodeURIComponent(id)}`, change, { version, keepalive })
+}
 
 /**
  * Saves a body edited from the copy it was loaded with (`version`); refused with 412 if the file changed elsewhere

@@ -223,6 +223,11 @@
   border-radius: 0.25rem;
   font-weight: 500;
 }
+/* A Stub Person's Mention, or a new Person's not saved yet: underlined with dots, like its chip. */
+.ostraka-md .milkdown .ostraka-mention-stub {
+  text-decoration: underline dotted 1px;
+  text-underline-offset: 3px;
+}
 
 /* Markdown read, not edited (Dev logs): the editor's look, from plain elements (`MarkdownView`). */
 .devlog-prose {

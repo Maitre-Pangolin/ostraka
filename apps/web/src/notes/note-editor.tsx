@@ -1,10 +1,11 @@
 // The Notes editor as a React component: Crepe (toolbar on selection, `/` menu, Markdown shortcuts) styled with
 // the app's tokens in index.css, Mermaid blocks drawn in place. References are highlighted in place with their status
 // dot and hover card, and suggested while typed (`!` for my open MRs, `KEY-` for my sprint tickets). Mentions of known
-// Persons are highlighted with their contact card on hover, and suggested after `@`. Both stay plain tokens in the
-// Markdown.
+// Persons are highlighted with their contact card on hover, and suggested after `@`, with "Add Person" last for an id
+// none matches. Both stay plain tokens in the Markdown.
 import '@milkdown/crepe/theme/common/style.css'
-import { suggestPeople, type MentionSuggestion } from '@ostraka/core/mentions'
+import { suggestPeople, type MentionSuggestion, type NewPersonSuggestion } from '@ostraka/core/mentions'
+import { isStubPerson } from '@ostraka/core/person-schema'
 import { suggestReferences, type ReferenceSuggestion } from '@ostraka/core/references'
 import { editorViewCtx } from '@milkdown/kit/core'
 import type { EditorView } from '@milkdown/kit/prose/view'
@@ -14,6 +15,7 @@ import { cn } from '@/lib/utils'
 import { usePeopleIndex } from '@/people/api'
 import { mentionHighlighter } from '@/people/highlight'
 import { MentionHoverCard, MentionSuggestionLabel } from '@/people/mention-chip'
+import { markNewPerson, useNewPeople } from '@/people/new-people'
 import { useReferenceIndex } from '@/references/api'
 import { referenceHighlighter } from '@/references/highlight'
 import { ReferenceHoverCard, ReferenceSuggestionLabel } from '@/references/reference-chip'
@@ -25,7 +27,7 @@ import { pickSuggestion, tokenSuggest, type OpenSuggestions } from './token-sugg
 
 export type NoteEditorHandle = { flush(): void }
 
-type Suggestion = ReferenceSuggestion | MentionSuggestion
+type Suggestion = ReferenceSuggestion | MentionSuggestion | NewPersonSuggestion
 type Offered = { open: OpenSuggestions<Suggestion>; view: EditorView }
 /** A highlighted token under the pointer: a Reference's token, or a Mention's Person id. */
 type Hovered = { kind: 'reference' | 'mention'; token: string; anchor: Element }
@@ -48,6 +50,7 @@ export function NoteEditor({
   const view = useRef<EditorView | null>(null)
   const index = useReferenceIndex()
   const people = usePeopleIndex()
+  const newPeople = useNewPeople()
   const [offered, setOffered] = useState<Offered>()
   const [selected, setSelected] = useState(0)
   const [dismissed, setDismissed] = useState<string>()
@@ -60,16 +63,17 @@ export function NoteEditor({
   const active = Math.min(selected, suggestions.length - 1)
 
   // The editor is made once per text; its plugins read the latest state through this ref.
-  const latest = useRef({ onEdit, index, people, shown, suggestions, active })
+  const latest = useRef({ onEdit, index, people, newPeople, shown, suggestions, active })
   useLayoutEffect(() => {
-    latest.current = { onEdit, index, people, shown, suggestions, active }
+    latest.current = { onEdit, index, people, newPeople, shown, suggestions, active }
   })
 
   // A status that changed (the top bar polled again) redraws the dots; a changed People directory, the Mentions.
-  const drawnWith = useRef({ index, people: people.people })
+  const drawnWith = useRef({ index, people: people.people, newPeople })
   useEffect(() => {
-    if (drawnWith.current.index === index && drawnWith.current.people === people.people) return
-    drawnWith.current = { index, people: people.people }
+    const drawn = drawnWith.current
+    if (drawn.index === index && drawn.people === people.people && drawn.newPeople.length === newPeople.length) return
+    drawnWith.current = { index, people: people.people, newPeople }
     if (view.current) refreshTokenHighlight(view.current)
   })
 
@@ -78,16 +82,32 @@ export function NoteEditor({
       const polled = latest.current.index.polled.get(token)
       return polled ? polledStatus(polled).dot : UNKNOWN_DOT
     }
+    // A Stub Person, or a new one not saved yet, is highlighted underlined with dots.
+    const mentioned = (id: string) => {
+      const person = latest.current.people.byId.get(id)
+      if (person) return { name: person.name, stub: isStubPerson(person) }
+      const added = latest.current.newPeople.find((candidate) => candidate.id === id)
+      return added && { name: added.name, stub: true }
+    }
     const editor = createNoteEditor({
       root: root.current!,
       markdown,
       renderPreview: renderMermaidPreview,
       plugins: [
-        tokenHighlight(() => [referenceHighlighter(dotOf), mentionHighlighter((id) => latest.current.people.byId.get(id)?.name)]),
+        tokenHighlight(() => [referenceHighlighter(dotOf), mentionHighlighter(mentioned)]),
         tokenSuggest<Suggestion>({
           suggest: (fragment) => [
             ...suggestReferences(fragment, latest.current.index.candidates),
-            ...suggestPeople(fragment, latest.current.people.people),
+            ...suggestPeople(
+              fragment,
+              [
+                ...latest.current.people.people,
+                ...latest.current.newPeople
+                  .filter((person) => !latest.current.people.byId.has(person.id))
+                  .map((person) => ({ ...person, aliases: [] })),
+              ],
+              { offerNew: latest.current.people.loaded },
+            ),
           ],
           onChange: (open, editorView) => {
             setOffered(open && { open, view: editorView })
@@ -131,7 +151,7 @@ export function NoteEditor({
         setSelected((at + (event.key === 'ArrowDown' ? 1 : offers.length - 1)) % offers.length)
       } else if ((event.key === 'Enter' || event.key === 'Tab') && !event.shiftKey) {
         handled()
-        pickSuggestion(open.view, open.open, offers[at]!)
+        pick(open, offers[at]!)
       } else if (event.key === 'Escape') {
         handled()
         setDismissed(`${open.open.from} ${open.open.fragment}`)
@@ -220,12 +240,12 @@ export function NoteEditor({
                 // Keep focus in the editor: pick on mouse down, before it would blur.
                 onMouseDown={(event) => {
                   event.preventDefault()
-                  pickSuggestion(shown.view, shown.open, suggestion)
+                  pick(shown, suggestion)
                 }}
                 onMouseEnter={() => setSelected(at)}
                 className={cn('flex h-7 cursor-pointer items-center gap-2 rounded-md px-2 text-sm', at === active && 'bg-accent')}
               >
-                {suggestion.kind === 'mention' ? (
+                {suggestion.kind === 'mention' || suggestion.kind === 'new-person' ? (
                   <MentionSuggestionLabel suggestion={suggestion} />
                 ) : (
                   <ReferenceSuggestionLabel suggestion={suggestion} />
@@ -238,6 +258,12 @@ export function NoteEditor({
         )}
     </>
   )
+}
+
+/** Writes the picked token; picking "Add Person" marks them new, to be written when the text is saved. */
+function pick({ view, open }: Offered, suggestion: Suggestion) {
+  if (suggestion.kind === 'new-person') markNewPerson({ id: suggestion.id, name: suggestion.name })
+  pickSuggestion(view, open, suggestion)
 }
 
 /** What a highlighted element under the pointer names. */
