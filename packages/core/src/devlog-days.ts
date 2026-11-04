@@ -1,7 +1,7 @@
 // Dev logs laid out over the calendar: the list by month and week, a date range stacked by day, the gaps (a weekday
 // with no Dev log), presets for the range and the Tag filter. Pure and free of Node and zod, so the web app shares it.
 import type { BrokenDevlog, DevlogListing, DevlogSummary, MonthlySummaryListing } from './devlog-schema.ts'
-import { mentionsAll, parsePeople } from './todo-filter.ts'
+import { mentionsAll, parsePeople, parseSearchText } from './todo-filter.ts'
 import { normalizeTag } from './todo-tokens.ts'
 
 /** A day in a list or range: its Dev log (maybe broken), or none when it is a weekday nobody wrote up yet. */
@@ -90,6 +90,18 @@ export function devlogList(logs: DevlogListing[], today: string): DevlogMonth[] 
   return [...months.values()].toSorted((a, b) => b.month.localeCompare(a.month))
 }
 
+/** The list narrowed to the Dev logs a search found (`found`, by id), in its order: gaps and empty weeks and months go. */
+export function searchDevlogList(months: DevlogMonth[], found: ReadonlySet<string>): DevlogMonth[] {
+  return months.flatMap(({ month, summary, weeks }) => {
+    const kept = weeks.flatMap(({ start, days }) => {
+      const shown = days.filter(({ log }) => log && found.has(log.id))
+      return shown.length ? [{ start, days: shown }] : []
+    })
+    const keptSummary = summary && found.has(summary.id) ? summary : undefined
+    return kept.length || keptSummary ? [{ month, ...(keptSummary && { summary: keptSummary }), weeks: kept }] : []
+  })
+}
+
 /** A week (its Monday) with the weekdays in it that have no Dev log, oldest first. */
 export type MissingDevlogWeek = { start: string; days: string[] }
 
@@ -123,10 +135,14 @@ export type DevlogFilter = { tag?: string[]; match?: 'any'; person?: string[] }
  * The days the filter keeps, in order. Choosing a Tag or a Person keeps only Dev logs that have it (a Person is looked
  * for in the body): gaps and broken files go.
  */
-export function filterDevlogDays<L extends object>(days: DevlogDay<L>[], { tag = [], match, person = [] }: DevlogFilter): DevlogDay<L>[] {
-  if (!tag.length && !person.length) return days
-  return days.filter(({ log }) => {
-    if (!log || !('tags' in log)) return false
+export function filterDevlogDays<L extends object>(
+  days: DevlogDay<L>[],
+  { tag = [], match, person = [] }: DevlogFilter,
+  found?: ReadonlySet<string>,
+): DevlogDay<L>[] {
+  if (!tag.length && !person.length && !found) return days
+  return days.filter(({ date, log }) => {
+    if (!log || !('tags' in log) || (found && !found.has(date))) return false
     const tags = log.tags as string[]
     const tagged = !tag.length || (match === 'any' ? tag.some((name) => tags.includes(name)) : tag.every((name) => tags.includes(name)))
     const body = 'body' in log && typeof log.body === 'string' ? log.body : ''
@@ -153,7 +169,8 @@ export function devlogRangePresets(today: string): DevlogRange[] {
  * The Dev logs view's state in the URL: the open day or monthly summary (`log`), or a date range stacked by day
  * (`from` and `to`) with its Tag filter. With neither, the view shows its list.
  */
-export type DevlogsView = { log?: string; from?: string; to?: string } & DevlogFilter
+/** The Dev logs view's state in the URL: the open Dev log, a date range with its filter, and the search box's text. */
+export type DevlogsView = { log?: string; from?: string; to?: string; q?: string } & DevlogFilter
 
 const isDay = (value: unknown): value is string =>
   typeof value === 'string' && DAY.test(value) && toDate(value).toISOString().startsWith(value)
@@ -167,8 +184,10 @@ export function parseDevlogsView(search: Record<string, unknown>): DevlogsView {
     ...new Set(raw.map((value) => (typeof value === 'string' ? normalizeTag(value) : undefined)).filter((value) => value !== undefined)),
   ]
   const person = parsePeople(search.person)
+  const q = parseSearchText(search.q)
   return {
     ...(log && { log }),
+    ...(q !== undefined && { q }),
     ...(range && { from: range[0], to: range[1] }),
     ...(tag.length > 0 && { tag }),
     ...(search.match === 'any' && { match: 'any' }),

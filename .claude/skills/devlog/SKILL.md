@@ -50,7 +50,7 @@ Read each Activity source for `<date>`. Each one is read-only: you look, you nev
 - **Slack** (`slack`), from the `slack` MCP server. Find the user's Slack id with `slack_read_user_profile`, then `slack_search_public_and_private` with `from:<@USERID> on:<date>`. Open the threads that look substantial with `slack_read_thread`. Group messages by conversation, not one line per message: a discussion worth keeping goes in Meetings & discussions, a decision or blocker in Notes. Small talk and quick acknowledgements are left out.
 - **Outlook**: there is no Outlook source yet. Leave `outlook` out of `sources`, and ask about meetings in step 3.
 
-People named in a line are Mentions, `@<person id>`. Look each one up with `ostraka people find <name or email>`: it prints one `<person id>  <name>  <email>` line per match (`--json` for the records), and `No Person matches …` when it finds nobody. A Person marked `(ignored)` stays a plain name and is not offered at the end of the run. When it finds nobody, or fails, write their name as plain text and remember them for the end of the run.
+People named in a line are written as Mentions, `@<person id>`. Find each one with the `people` skill: `ostraka people find <name, email or Slack ID>` first (a Slack message carries the Slack ID, so search by it), MCP only for someone it doesn't find. A Person marked `(ignored)` is written as their plain name. Someone not in the People directory is written as their plain name for now and kept as a `people` candidate for the end of the run.
 
 Done when every source above was read or noted as skipped.
 
@@ -89,6 +89,6 @@ Done when the file lists without `broken:`. The Snapshot waits for the end of th
 
 Every run ends here, once, whichever branch it took and however many files it wrote:
 
-1. Run `ostraka snapshot "<message>"` once: `devlog: <date>` for one day, `devlog: backfill <first date>..<last date>` for a Backfill, `devlog: reformat <first date>..<last date>`, or `devlog: summary <YYYY-MM>`. With nothing written, it reports that nothing changed, which is fine.
-2. Tell the user the path of each file written.
-3. If any person was written as a plain name, name them in one line and offer to add them with the `people` skill.
+1. Offer to add the `people` candidates of the files written, as the `people` skill's last step says: each one added becomes `@<person id>` in those files. Its Snapshot is the next step's.
+2. Run `ostraka snapshot "<message>"` once: `devlog: <date>` for one day, `devlog: backfill <first date>..<last date>` for a Backfill, `devlog: reformat <first date>..<last date>`, or `devlog: summary <YYYY-MM>`. With nothing written, it reports that nothing changed, which is fine.
+3. Tell the user the path of each file written.

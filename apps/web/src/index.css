@@ -224,6 +224,12 @@
   font-weight: 500;
 }
 
+/* Search matches in what a view shows (src/search/find-highlight.ts): painted over the text, like ⌘K's <mark>. */
+::highlight(ostraka-search) {
+  background-color: color-mix(in oklch, var(--primary) 28%, transparent);
+  color: var(--foreground);
+}
+
 /* Markdown read, not edited (Dev logs): the editor's look, from plain elements (`MarkdownView`). */
 .devlog-prose {
   font-size: 15px;

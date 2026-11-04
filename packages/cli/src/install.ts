@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { access, chmod, lstat, mkdir, readdir, rm, symlink, writeFile } from 'node:fs/promises'
+import { access, chmod, lstat, mkdir, readdir, readFile, rm, symlink, writeFile } from 'node:fs/promises'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 
@@ -30,6 +30,8 @@ const REPO_DIR = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/
 const BIN = join(REPO_DIR, 'packages', 'cli', 'bin', 'ostraka.ts')
 /** The repo's agent skills, the single source of the ones linked into ~/.claude/skills. */
 const SKILLS_DIR = join(REPO_DIR, '.claude', 'skills')
+/** The People instruction for ~/.claude/CLAUDE.md and Cursor's User Rules, which the user adds themselves. */
+const GLOBAL_INSTRUCTION = join(SKILLS_DIR, 'people', 'global-instruction.md')
 
 export type InstallResult = {
   plist: string
@@ -41,6 +43,8 @@ export type InstallResult = {
   skippedSkills: string[]
   /** The old Cursor `/devlog` command, when it is still there: the devlog skill replaces it. */
   oldDevlogCommand?: string
+  /** The global People instruction, when ~/.claude/CLAUDE.md doesn't run `ostraka people find` yet. */
+  globalInstruction?: string
 }
 
 /**
@@ -67,6 +71,8 @@ export async function install(homeDir: string, system: System): Promise<InstallR
     () => true,
     () => false,
   )
+  const claudeMd = await readFile(join(homeDir, '.claude', 'CLAUDE.md'), 'utf8').catch(() => '')
+  const needsGlobalInstruction = !claudeMd.includes('ostraka people find')
 
   const domain = `gui/${system.uid}`
   // Not loaded yet is fine: bootout only clears a previous install so bootstrap picks up the new file.
@@ -74,7 +80,15 @@ export async function install(homeDir: string, system: System): Promise<InstallR
   const { code, stderr } = await system.launchctl(['bootstrap', domain, plist])
   if (code !== 0) throw new Error(`launchctl bootstrap ${domain} ${plist} failed (${code}): ${stderr.trim()}`)
 
-  return { plist, shim, logs, skills, skippedSkills, ...(hasOldDevlogCommand && { oldDevlogCommand }) }
+  return {
+    plist,
+    shim,
+    logs,
+    skills,
+    skippedSkills,
+    ...(hasOldDevlogCommand && { oldDevlogCommand }),
+    ...(needsGlobalInstruction && { globalInstruction: GLOBAL_INSTRUCTION }),
+  }
 }
 
 /**

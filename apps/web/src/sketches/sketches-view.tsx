@@ -10,6 +10,7 @@ import { FileHistory, HistoryButton } from '@/history/file-history'
 import { useAfter } from '@/lib/use-after'
 import { cn } from '@/lib/utils'
 import { SaveStatus, TagAdder, type SaveState } from '@/notes/notes-view'
+import { useRememberOpened } from '@/search/recent'
 import { EmptyState } from '@/shell/shell'
 import { TagDot, TagPill } from '@/todos/properties'
 import { saveSketch, useCreateSketch, useSketch, useSketches, useUpdateSketch, type Sketch, type SketchListing } from './api'
@@ -145,6 +146,7 @@ function SketchRow({ sketch, active, onOpen }: { sketch: SketchListing; active: 
  */
 function SketchDetail({ id, mode, onMode }: { id: string; mode: SketchMode; onMode: (mode: SketchMode) => void }) {
   const query = useSketch(id)
+  useRememberOpened('sketch', id, query.data?.title)
   const update = useUpdateSketch(id)
   // What the editor shows: the text it was loaded with, from which version; a new `loaded` remounts it.
   const [loaded, setLoaded] = useState<{ text: string; version: string; count: number }>()
