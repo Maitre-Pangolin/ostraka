@@ -242,6 +242,8 @@ export type MonthReview = {
   samples: string[]
   /** What the month's agent session used, once it has run; an error when its result can't be read. */
   usage?: MigrationUsage | { error: string }
+  /** What stops approval, one reason each; none when the month is ready to move into `devlogs/`. */
+  blockers: string[]
 }
 
 export type MonthFolders = { raw: string; staged: string; usage: string }
@@ -396,7 +398,7 @@ export async function reviewMigratedMonth(month: string, options: ContentRootOpt
   const longest = rawDays.toSorted((a, b) => rawLength.get(b)! - rawLength.get(a)! || a.localeCompare(b))
   const usage = await readOptional(folders.usage)
 
-  return {
+  const review = {
     month,
     folders,
     source: split.source,
@@ -414,6 +416,19 @@ export async function reviewMigratedMonth(month: string, options: ContentRootOpt
     samples: [...new Set([...unsure, ...longest])].slice(0, SAMPLES).toSorted(),
     ...(usage !== undefined && { usage: readUsage(usage) }),
   }
+  return { ...review, blockers: approvalBlockers(review) }
+}
+
+/** What stops a month from moving in: every reason, one per line. */
+function approvalBlockers(review: Omit<MonthReview, 'blockers'>): string[] {
+  const { month } = review
+  if (!review.stagedDays.length) return [`Nothing staged for ${month}: run its agent session first`]
+  return [
+    ...review.unstaged.map((date) => `${date} is not staged: the session skipped it`),
+    ...review.unexpected.filter((date) => !date.startsWith(`${month}-`)).map((date) => `${date} is not in ${month}`),
+    ...review.problems.flatMap(({ date, problems }) => problems.map((problem) => `${date}: ${problem}`)),
+    ...review.conflicts.map((date) => `${date} already has a Dev log: it is never overwritten`),
+  ]
 }
 
 /**
@@ -459,18 +474,6 @@ export async function migrationStatus(options: ContentRootOptions = {}): Promise
 /** An approved month: the days moved into `devlogs/`, and its Snapshot (none when nothing changed). */
 export type ApprovedMonth = { month: string; moved: string[]; snapshot?: Snapshot }
 
-/** What stops a month from moving in: every reason, one per line. */
-function approvalBlockers(review: MonthReview): string[] {
-  const { month } = review
-  if (!review.stagedDays.length) return [`Nothing staged for ${month}: run its agent session first`]
-  return [
-    ...review.unstaged.map((date) => `${date} is not staged: the session skipped it`),
-    ...review.unexpected.filter((date) => !date.startsWith(`${month}-`)).map((date) => `${date} is not in ${month}`),
-    ...review.problems.flatMap(({ date, problems }) => problems.map((problem) => `${date}: ${problem}`)),
-    ...review.conflicts.map((date) => `${date} already has a Dev log: it is never overwritten`),
-  ]
-}
-
 /**
  * Moves an approved month's staged days into `devlogs/` and makes one Snapshot, `migrate: <YYYY-MM>`. Refuses,
  * moving nothing, while a raw day is unstaged, a staged day wouldn't read as a valid Dev log, or a day already has
@@ -478,7 +481,7 @@ function approvalBlockers(review: MonthReview): string[] {
  */
 export async function approveMigratedMonth(month: string, options: ContentRootOptions = {}): Promise<ApprovedMonth> {
   const review = await reviewMigratedMonth(month, options)
-  const blockers = approvalBlockers(review)
+  const { blockers } = review
   if (blockers.length) throw new Error(`${month} can’t be approved yet:\n${blockers.map((line) => `- ${line}`).join('\n')}`)
   const devlogs = await contentPath('devlogs', options)
   await mkdir(devlogs, { recursive: true })

@@ -207,6 +207,12 @@ describe('reviewMigratedMonth', () => {
     ])
     // The days the session was unsure of first, then the longest.
     expect(review.samples).toEqual(['2026-02-02', '2026-02-03', '2026-02-05'])
+    expect(review.blockers).toEqual([
+      '2026-02-06 is not staged: the session skipped it',
+      expect.stringMatching(/^2026-02-04: Invalid header/),
+      '2026-02-04: Todo is not a Dev log section: use Done, Meetings & discussions or Notes.',
+      '2026-02-03 already has a Dev log: it is never overwritten',
+    ])
   })
 
   it('says when a month was never split', async () => {
