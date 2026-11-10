@@ -24,8 +24,8 @@ export type StartOptions = {
   warn?: (message: string) => void
   /** Calls to GitLab and Jira; tests pass a fake so nothing reaches a real instance. */
   fetch?: Fetch
-  /** When automatic Snapshots commit; tests shorten the wait. */
-  snapshots?: Pick<AutoSnapshotOptions, 'quietMs' | 'maxWaitMs'>
+  /** When automatic Snapshots commit (an hour after the first change); tests shorten the wait. */
+  snapshots?: Pick<AutoSnapshotOptions, 'intervalMs'>
 }
 
 export type RunningServer = {
@@ -54,7 +54,7 @@ export async function startServer({
   const content = { env, homeDir }
   // Checks the remote now, in the background; pushes after each automatic Snapshot, at most every 15 min.
   const backups = startBackups({ content, token: () => credentials.push?.reveal() })
-  const snapshots = await startAutoSnapshots({ ...content, ...snapshotTiming, onSnapshot: backups.snapshotted })
+  const snapshots = await startAutoSnapshots({ ...content, ...snapshotTiming })
   // Every change on disk, the CLI's and agents' included, is snapshotted; the same watcher feeds live updates.
   const events = contentEvents(content)
   const unwatch = await events.subscribe(() => snapshots.changed())

@@ -64,7 +64,7 @@ describe('startServer', { timeout: 30_000 }, () => {
     await stop()
   })
 
-  it('snapshots a change made outside the app (CLI or agent) once it settles', async () => {
+  it('snapshots a change made outside the app (CLI or agent) when its timer fires', async () => {
     await writeFile(join(contentRoot, 'people.json'), '[]\n')
     const { stop } = await startServer({
       port: 0,
@@ -72,7 +72,7 @@ describe('startServer', { timeout: 30_000 }, () => {
       keychain: fakeKeychain({}).keychain,
       env: { OSTRAKA_HOME: contentRoot },
       homeDir: home,
-      snapshots: { quietMs: 100 },
+      snapshots: { intervalMs: 100 },
     })
     try {
       // The Snapshot taken at start, of what was already there.

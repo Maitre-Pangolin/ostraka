@@ -3,13 +3,13 @@ import { mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { startAutoSnapshots, type AutoSnapshots, type Snapshot } from '../src/index.ts'
+import { startAutoSnapshots, type AutoSnapshots } from '../src/index.ts'
 
 let contentRoot: string
 let auto: AutoSnapshots | undefined
 
-const SECOND = 1000
-const MINUTE = 60 * SECOND
+const MINUTE = 60_000
+const HOUR = 60 * MINUTE
 
 beforeEach(async () => {
   contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))
@@ -41,11 +41,11 @@ async function edit() {
 
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
 describe('startAutoSnapshots', { timeout: 60_000 }, () => {
-  it('commits once the content has been quiet for 60 s', async () => {
+  it('commits an hour after the first change', async () => {
     await start()
     await edit()
 
-    await wait(60 * SECOND - 1)
+    await wait(HOUR - 1)
     expect(commitCount()).toBe(0)
 
     await wait(1)
@@ -59,12 +59,46 @@ describe('startAutoSnapshots', { timeout: 60_000 }, () => {
     expect(commitCount()).toBe(0)
   })
 
-  it('commits changes made while it was not running, once the content has been quiet for 60 s', async () => {
+  it('commits changes made while it was not running, an hour after it starts', async () => {
     await writeFile(join(contentRoot, 'todos.json'), '{"todos":[]}\n')
     await start()
 
-    await wait(60 * SECOND)
+    await wait(HOUR - 1)
+    expect(commitCount()).toBe(0)
+    await wait(1)
     expect(commitCount()).toBe(1)
+  })
+
+  it('commits everything changed during the hour as one Snapshot, however often it changed', async () => {
+    await start()
+    await edit()
+    // A change every 5 minutes: later changes never push the hour back.
+    for (let elapsed = 5 * MINUTE; elapsed < HOUR; elapsed += 5 * MINUTE) {
+      await wait(5 * MINUTE)
+      await edit()
+    }
+    expect(commitCount()).toBe(0)
+
+    await wait(5 * MINUTE)
+    expect(commitCount()).toBe(1)
+    expect(git('status', '--porcelain')).toBe('')
+  })
+
+  it('starts the next hour at the first change after a Snapshot', async () => {
+    await start()
+    await edit()
+    await wait(HOUR)
+    expect(commitCount()).toBe(1)
+
+    // Three quiet hours: nothing to commit.
+    await wait(3 * HOUR)
+    expect(commitCount()).toBe(1)
+
+    await edit()
+    await wait(HOUR - 1)
+    expect(commitCount()).toBe(1)
+    await wait(1)
+    expect(commitCount()).toBe(2)
   })
 
   it('commits pending changes right away on stop, then schedules nothing more', async () => {
@@ -74,31 +108,20 @@ describe('startAutoSnapshots', { timeout: 60_000 }, () => {
     await auto!.stop()
     expect(commitCount()).toBe(1)
 
-    await wait(10 * MINUTE)
+    await wait(2 * HOUR)
     expect(commitCount()).toBe(1)
   })
 
-  it('makes no commit on stop, or after a quiet period, when the files did not change', async () => {
+  it('makes no commit on stop, or when the hour is up, when the files did not change', async () => {
     await start()
     await edit()
-    await wait(60 * SECOND)
+    await wait(HOUR)
 
     auto!.changed()
-    await wait(60 * SECOND)
+    await wait(HOUR)
     await auto!.stop()
 
     expect(commitCount()).toBe(1)
-  })
-
-  it('tells the server about each Snapshot it makes (the backup trigger), and only those', async () => {
-    const made: Snapshot[] = []
-    auto = await startAutoSnapshots({ env: { OSTRAKA_HOME: contentRoot }, onSnapshot: (snapshot) => made.push(snapshot) })
-    await edit()
-    await wait(60 * SECOND)
-    auto.changed()
-    await wait(60 * SECOND)
-
-    expect(made).toEqual([{ commit: git('rev-parse', 'HEAD'), message: 'Automatic snapshot' }])
   })
 
   it('reports a failed commit and keeps snapshotting afterwards', async () => {
@@ -107,41 +130,12 @@ describe('startAutoSnapshots', { timeout: 60_000 }, () => {
     const indexLock = join(contentRoot, '.git', 'index.lock')
     await writeFile(indexLock, '')
     await edit()
-    await wait(60 * SECOND)
+    await wait(HOUR)
     expect(errors).toEqual([expect.objectContaining({ message: expect.stringContaining('index.lock') })])
 
     await rm(indexLock)
     await edit()
-    await wait(60 * SECOND)
+    await wait(HOUR)
     expect(commitCount()).toBe(1)
-  })
-
-  it('waits for a fresh 60 s of quiet after each change', async () => {
-    await start()
-    await edit()
-    await wait(45 * SECOND)
-    await edit()
-
-    await wait(45 * SECOND)
-    expect(commitCount()).toBe(0)
-
-    await wait(15 * SECOND)
-    expect(commitCount()).toBe(1)
-  })
-
-  it('commits at most once every 10 minutes while changes keep coming', async () => {
-    await start()
-    const commitTimes: number[] = []
-    let commits = 0
-    // A change every 50 s: never 60 s of quiet.
-    for (let elapsed = 50 * SECOND; elapsed <= 25 * MINUTE; elapsed += 50 * SECOND) {
-      await edit()
-      await wait(50 * SECOND)
-      const count = commitCount()
-      if (count > commits) commitTimes.push(elapsed)
-      commits = count
-    }
-
-    expect(commitTimes).toEqual([10 * MINUTE, 20 * MINUTE])
   })
 })

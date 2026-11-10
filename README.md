@@ -53,7 +53,7 @@ sequenceDiagram
 ```
 ````
 
-The content folder is its own git repo (created when missing, no remote). While it runs, the server commits the whole folder as one Snapshot once changes settle: 60 s after the last change, at most every 10 min during steady activity, and on stop. `pnpm ostraka snapshot "<message>"` commits now with that message; skills run it after they write.
+The content folder is its own git repo (created when missing, no remote). While it runs, the server commits the whole folder as one Snapshot at most once an hour: the first change after a Snapshot starts a one-hour timer, and when it fires everything pending is committed together. It also commits on stop. `pnpm ostraka snapshot "<message>"` commits now with that message; skills run it after they write. Snapshots stay on this machine: nothing in the app talks to the remote ([Back it up](#back-it-up)).
 
 History in a Note's or a Sketch's header (and on the Todos view, for `todos.json`) lists the file's Snapshots and shows any of them. Restore writes that version as the current file and commits it as a new Snapshot, `restore: <path> as of <date>`, after committing any changes not yet in a Snapshot; nothing rewrites history, so a restore is undone by restoring the Snapshot before it (the Undo on its toast). The API is `GET /api/history?path=<file>`, `GET /api/history/<commit>?path=<file>` and `POST /api/history/restore {path, commit}`, for any content file.
 

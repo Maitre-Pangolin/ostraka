@@ -48,7 +48,7 @@ A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that c
 _Avoid_: Drawing, diagram, whiteboard
 
 **Snapshot**:
-A commit of the content folder's history, made after changes settle or by a skill; what the app restores to.
+A commit of the content folder's history: made by the server an hour after the first change since the last one, when it stops, or on demand (a skill, a restore, a Tag change); what the app restores to.
 _Avoid_: Backup, version, save
 
 **Backup**:
