@@ -52,7 +52,7 @@ A commit of the content folder's history: made by the server an hour after the f
 _Avoid_: Backup, version, save
 
 **Backup**:
-A push of the content folder's Snapshots to its private remote on the work gitlab.com; the content is backed up when its latest Snapshot is on that remote.
+A push of the content folder's Snapshots to its private remote on the work gitlab.com, made by `ostraka backup` outside the app (the app never pushes); the content is backed up when its latest Snapshot is on that remote.
 _Avoid_: Sync, upload, Snapshot
 
 ## People
