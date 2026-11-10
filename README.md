@@ -85,6 +85,19 @@ Run it again after moving the repo or changing Node versions. To remove it: `lau
 
 Then open http://127.0.0.1:4747 and install it as an app, so it gets its own window and Dock icon: in Chrome, ⋮ › Cast, save and share › Install page as app; in Safari, File › Add to Dock.
 
+The LaunchAgent runs the checked-out code, so keep this checkout on `main`. It ignores `OSTRAKA_HOME`: set `contentDir` in `config.yml` ([Configure it](#configure-it)) to use another content folder.
+
+### Start, stop and restart
+
+Once installed, the app runs in the background, with no terminal. These drive the LaunchAgent:
+
+- `ostraka stop` stops it cleanly: pending changes are committed as a Snapshot, then it exits and stays stopped until the next login or `ostraka start`. It waits up to 15 s for that.
+- `ostraka start` starts it (and loads the LaunchAgent again if it was turned off).
+- `ostraka restart` restarts it, Snapshot first, after an update (`git pull`, `pnpm install && pnpm build`) or a changed Keychain item or `config.yml`.
+- `ostraka status` says whether it runs in the background and its pid, or whether an `ostraka serve` in a terminal answers instead; it exits 1 when nothing runs.
+
+A crash restarts it on its own. `ostraka serve` in a terminal stops the same clean way on Ctrl+C.
+
 ### Colleagues in every project
 
 The `people` skill, linked by `install`, is what both editors pick on their own when an agent looks a colleague up. It runs `ostraka people find` first and calls the Slack, Jira or GitLab MCP server only for someone missing; it looks a new colleague's IDs up once by email in all three and offers to cache them, refreshing them only when you ask. At the end of a run it offers, in one question, to add the people who ended up in what it wrote, and `ignore` keeps someone from being offered again. The Dev log skill goes through it, so Dev logs name people as `@<person id>` Mentions. Asked to fill Stub Persons, it searches Slack by name and aliases (then Jira by name), shows every stub with up to 3 candidates in one question answered in one line (`1a 2 skip 3 ignore`), then renames or merges each one with its Mentions and makes one Snapshot.
@@ -162,7 +175,7 @@ Paste each token at the silent `read` prompt. Don't let `security` prompt for it
 
       read -rs TOKEN && security add-generic-password -U -a "$USER" -s ostraka-jira -T "" -w "$TOKEN"; unset TOKEN
 
-`-U` replaces an existing item. Restart the server after changing one: `launchctl kickstart -k gui/$(id -u)/com.ostraka.server`. Never put tokens in `.env`, `~/.zshrc` or `config.yml`.
+`-U` replaces an existing item. Restart the server after changing one: `ostraka restart`. Never put tokens in `.env`, `~/.zshrc` or `config.yml`.
 
 ## Back it up
 

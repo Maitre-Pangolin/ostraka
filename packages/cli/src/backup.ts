@@ -120,7 +120,7 @@ export async function initCommand(args: string[], io: Io): Promise<number> {
     io.stdout(`3. Wrote ${file}: fill in the Jira settings (see README, Configure it).\n`)
   }
 
-  io.stdout(`Done. Next: pnpm ostraka install (or restart the server: launchctl kickstart -k gui/$(id -u)/com.ostraka.server).\n`)
+  io.stdout(`Done. Next: pnpm ostraka install (or, if it is installed already, ostraka restart).\n`)
   return 0
 }
 

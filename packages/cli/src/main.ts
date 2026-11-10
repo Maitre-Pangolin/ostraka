@@ -9,6 +9,7 @@ import { PATH_USAGE, pathCommand } from './path.ts'
 import { PEOPLE_USAGE, peopleCommand } from './people.ts'
 import { SEARCH_USAGE, searchCommand } from './search.ts'
 import { serveCommand } from './serve.ts'
+import { SERVICE_USAGE, serviceCommand } from './service.ts'
 import { SNAPSHOT_USAGE, snapshotCommand } from './snapshot.ts'
 import { TAG_USAGE, tagCommand } from './tag.ts'
 import { TODO_USAGE, todoCommand } from './todo.ts'
@@ -34,7 +35,7 @@ const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
   ostraka install               Start the app at login (LaunchAgent), put \`ostraka\` in ~/.local/bin
                                 and link the repo's skills into ~/.claude/skills
-${PATH_USAGE}${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${MIGRATE_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${SERVICE_USAGE}${PATH_USAGE}${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${MIGRATE_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -47,6 +48,11 @@ export async function run(argv: string[], io: Io): Promise<number> {
         return await serveCommand(io)
       case 'install':
         return await installCommand(io)
+      case 'start':
+      case 'stop':
+      case 'restart':
+      case 'status':
+        return await serviceCommand(command, io)
       case 'snapshot':
         return await snapshotCommand(rest, io)
       case 'todo':

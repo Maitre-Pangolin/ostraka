@@ -6,8 +6,16 @@ export async function serveCommand(io: Io): Promise<number> {
   // macOS may prompt once per Keychain item here: they are created with `-T ""` so every read asks.
   const server = await startServer({ keychain: macKeychain(), warn: (message) => io.stderr(`${message}\n`) })
   io.stdout(`Ostraka is running on http://${HOSTNAME}:${PORT}\n`)
-  // Stopping commits pending content changes as a Snapshot before the process exits.
-  const stop = () => void server.stop()
+  // Stopping commits pending content changes as a Snapshot, then exits 0, so launchd (which restarts the app only
+  // after a crash) leaves it stopped after `ostraka stop`.
+  const stop = () =>
+    void server.stop().then(
+      () => process.exit(0),
+      (error: unknown) => {
+        io.stderr(`Stopping failed: ${error instanceof Error ? error.message : String(error)}\n`)
+        process.exit(1)
+      },
+    )
   process.once('SIGINT', stop)
   process.once('SIGTERM', stop)
   return 0

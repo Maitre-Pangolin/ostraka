@@ -11,7 +11,7 @@ export type System = {
   /** Absolute path to the node binary the LaunchAgent and the shim run. */
   nodePath: string
   uid: number
-  launchctl: (args: string[]) => Promise<{ code: number; stderr: string }>
+  launchctl: (args: string[]) => Promise<{ code: number; stdout?: string; stderr: string }>
 }
 
 export const realSystem = (): System => ({
@@ -20,13 +20,15 @@ export const realSystem = (): System => ({
   uid: process.getuid?.() ?? 0,
   launchctl: (args) =>
     new Promise((resolve) => {
-      execFile('/bin/launchctl', args, { encoding: 'utf8' }, (error, _stdout, stderr) => {
-        resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stderr })
+      execFile('/bin/launchctl', args, { encoding: 'utf8' }, (error, stdout, stderr) => {
+        resolve({ code: error ? (typeof error.code === 'number' ? error.code : 1) : 0, stdout, stderr })
       })
     }),
 })
 
 export const LAUNCH_AGENT_LABEL = 'com.ostraka.server'
+export const launchAgentPath = (homeDir: string) => join(homeDir, 'Library', 'LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`)
+export const launchAgentLogs = (homeDir: string) => join(homeDir, 'Library', 'Logs', 'ostraka')
 
 const REPO_DIR = fileURLToPath(new URL('../../..', import.meta.url)).replace(/\/$/, '')
 const BIN = join(REPO_DIR, 'packages', 'cli', 'bin', 'ostraka.ts')
@@ -57,8 +59,8 @@ export type InstallResult = {
 export async function install(homeDir: string, system: System): Promise<InstallResult> {
   if (system.platform !== 'darwin') throw new Error('ostraka install sets up a LaunchAgent, so it only runs on macOS.')
 
-  const logs = join(homeDir, 'Library', 'Logs', 'ostraka')
-  const plist = join(homeDir, 'Library', 'LaunchAgents', `${LAUNCH_AGENT_LABEL}.plist`)
+  const logs = launchAgentLogs(homeDir)
+  const plist = launchAgentPath(homeDir)
   const shim = join(homeDir, '.local', 'bin', 'ostraka')
 
   await mkdir(logs, { recursive: true })
