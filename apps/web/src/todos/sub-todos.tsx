@@ -1,5 +1,5 @@
-// A Todo's Sub-todos, shown under it when expanded: in creation order, finished ones in place, an entry to add one,
-// and the offer to finish the parent once its last open Sub-todo is finished.
+// A Todo's Sub-todos, shown under it when expanded: in creation order, finished ones in place, the entry to add one
+// once asked for, and the offer to finish the parent once its last open Sub-todo is finished.
 import { dueAfterParent } from '@ostraka/core/sub-todos'
 import type { TokenProps } from '@ostraka/core/todo-tokens'
 import { Ban, Plus } from 'lucide-react'
@@ -17,8 +17,10 @@ export type SubTodosProps = {
   parent: Todo
   /** The Sub-todos to list, in creation order: all of them, or those a filter matched. */
   shown: SubTodo[]
-  /** Whether to end with the entry for a new Sub-todo (the parent is expanded). */
+  /** Whether to end with the entry for a new Sub-todo, asked for from the parent's Add a Sub-todo action. */
   entry: boolean
+  /** Esc, or leaving the entry empty, closes it. */
+  onEntryClose: () => void
   tags: string[]
   today: string
   /** An open Sub-todo's row, as a `TodoRow` given its warning. */
@@ -30,7 +32,7 @@ export type SubTodosProps = {
 
 const dueAfterWarning = (parent: Todo) => (parent.due ? `Due after its parent, due ${longDate(parent.due)}` : undefined)
 
-export function SubTodos({ parent, shown, entry, tags, today, renderOpen, onReopen, offer }: SubTodosProps) {
+export function SubTodos({ parent, shown, entry, onEntryClose, tags, today, renderOpen, onReopen, offer }: SubTodosProps) {
   const allFinished = parent.subTodos.length > 0 && parent.subTodos.every((sub) => sub.status !== 'open')
   return (
     <div className="flex flex-col pl-10">
@@ -56,7 +58,7 @@ export function SubTodos({ parent, shown, entry, tags, today, renderOpen, onReop
           </Button>
         </div>
       )}
-      {entry && <SubTodoEntry parentId={parent.id} tags={tags} today={today} />}
+      {entry && <SubTodoEntry parentId={parent.id} tags={tags} today={today} onClose={onEntryClose} />}
     </div>
   )
 }
@@ -92,10 +94,10 @@ function FinishedSubTodo({ sub, onReopen }: { sub: SubTodo; onReopen: () => void
 }
 
 /**
- * Type a Sub-todo, ↵ adds it and the field stays ready for the next. Completed `#tag`, `*prio` and `^date` wait as
- * chips beside it, as in quick entry. A failed add puts the text back.
+ * Opens focused. Type a Sub-todo, ↵ adds it and the field stays ready for the next; Esc, or leaving it empty, closes
+ * it. Completed `#tag`, `*prio` and `^date` wait as chips beside it, as in quick entry. A failed add puts the text back.
  */
-function SubTodoEntry({ parentId, tags, today }: { parentId: string; tags: string[]; today: string }) {
+function SubTodoEntry({ parentId, tags, today, onClose }: { parentId: string; tags: string[]; today: string; onClose: () => void }) {
   const [title, setTitle] = useState('')
   const [props, setProps] = useState(NO_PROPS)
   const add = useAddSubTodo()
@@ -124,6 +126,9 @@ function SubTodoEntry({ parentId, tags, today }: { parentId: string; tags: strin
         <Plus aria-hidden className="text-muted-foreground mx-0.5 size-4 shrink-0" />
         <div className="min-w-0 flex-1">
           <TokenField
+            autoFocus
+            onBlur={() => !title.trim() && !props.tags.length && !props.priority && !props.due && onClose()}
+            onEscape={onClose}
             value={title}
             onChange={setTitle}
             onTokens={addProps}
