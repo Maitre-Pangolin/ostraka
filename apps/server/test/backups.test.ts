@@ -2,19 +2,18 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { backup, snapshot, type BackupStatus } from '@ostraka/core'
-import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { snapshot, type BackupState } from '@ostraka/core'
+import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { startHttpRemote } from '../../../packages/core/test/http-remote.ts'
-import { CONTENT_ROOT_HEADER, createApp, readCredentials, startBackups, startServer, type Backups } from '../src/index.ts'
+import { createApp, startServer } from '../src/index.ts'
 import { fakeKeychain, TOKENS } from './fake-keychain.ts'
 
-const MINUTE = 60_000
+const HOUR = 60 * 60_000
+const NOW = new Date('2026-11-02T12:00:00Z')
 
 let dir: string
 let content: string
 let remote: string
-let backups: Backups | undefined
-let edits = 0
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ostraka-backups-'))
@@ -24,256 +23,90 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  backups?.stop()
-  await backups?.idle()
-  backups = undefined
-  vi.useRealTimers()
   await rm(dir, { recursive: true, force: true })
 })
 
 const options = () => ({ env: { OSTRAKA_HOME: content } })
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
-const head = () => git(content, 'rev-parse', 'HEAD')
-const remoteHead = () => git(remote, 'for-each-ref', '--format=%(objectname)')
+const headers = { host: '127.0.0.1:4747' }
 
-/** Changes todos.json and commits it, as an automatic Snapshot would. */
-async function snapshotAnEdit(text = `{"todos":[],"edit":${++edits}}\n`) {
+/** A Snapshot-like commit of todos.json dated `hoursAgo` before NOW. */
+async function commitHoursAgo(hoursAgo: number) {
   await mkdir(content, { recursive: true })
-  await writeFile(join(content, 'todos.json'), text)
-  await snapshot('Automatic snapshot', options())
+  await writeFile(join(content, 'todos.json'), `{"todos":[],"at":${hoursAgo}}\n`)
+  const date = new Date(NOW.getTime() - hoursAgo * HOUR).toISOString()
+  if ((await snapshot('Automatic snapshot', options())) === undefined) throw new Error('nothing to commit')
+  execFileSync('git', ['-C', content, 'commit', '--quiet', '--amend', '--no-edit', `--date=${date}`], {
+    env: { ...process.env, GIT_COMMITTER_DATE: date },
+  })
 }
 
-/** A content repo with one Snapshot and the bare repo as its `origin`; pushed when `pushed`. */
-async function contentWithRemote({ pushed }: { pushed: boolean }) {
-  await snapshotAnEdit()
-  git(content, 'remote', 'add', 'origin', remote)
-  if (pushed) await backup(options())
-}
-
-/** Moves the fake clock on, then waits for any backup it started to finish. */
-async function wait(ms: number) {
-  await vi.advanceTimersByTimeAsync(ms)
-  await backups!.idle()
-}
-
-async function start() {
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  backups = startBackups({ content: options() })
-  await backups.idle()
-  return backups
+const getBackup = async () => {
+  const app = createApp({ webDist: '/nonexistent', content: { ...options(), now: () => NOW } })
+  return app.request('/api/backup', { headers })
 }
 
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
-describe('startBackups', { timeout: 90_000 }, () => {
-  it('checks the remote at start and pushes what it is missing', async () => {
-    await contentWithRemote({ pushed: false })
-
-    await start()
-    await wait(0)
-    const status = await backups!.status()
-
-    expect(remoteHead()).toBe(head())
-    expect(status).toMatchObject({ remote: true, backedUp: true, stopped: false })
-    expect(status.problem).toBeUndefined()
-  })
-
-  it('pushes after a Snapshot, at most once every 15 minutes', async () => {
-    await contentWithRemote({ pushed: true })
-    await start()
-
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(0)
-    expect(remoteHead()).toBe(head())
-
-    await wait(5 * MINUTE)
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(0)
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(10 * MINUTE - 1)
-    expect(remoteHead()).not.toBe(head())
-
-    await wait(1)
-    expect(remoteHead()).toBe(head())
-  })
-
-  it('stops pushing after a rejected push and shows why, until HEAD is backed up again', async () => {
-    await contentWithRemote({ pushed: true })
-    const ours = head()
-    await start()
-    const other = join(dir, 'other')
-    execFileSync('git', ['clone', '--quiet', remote, other])
-    await writeFile(join(other, 'todos.json'), '{"todos":[],"other":true}\n')
-    git(other, '-c', 'user.name=O', '-c', 'user.email=o@localhost', 'commit', '--quiet', '-am', 'other machine')
-    git(other, 'push', '--quiet', 'origin', 'HEAD')
-
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(0)
-    expect(await backups!.status()).toMatchObject({
-      backedUp: false,
-      stopped: true,
-      problem: { status: 'rejected', reason: expect.stringMatching(/rejected/) },
-    })
-
-    // The remote is put back by hand: an automatic push would now go through, but pushing has stopped.
-    git(remote, 'update-ref', `refs/heads/${git(content, 'symbolic-ref', '--short', 'HEAD')}`, ours)
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(30 * MINUTE)
-    expect(remoteHead()).toBe(ours)
-
-    // `ostraka backup` succeeds, and automatic pushes resume.
-    await backup(options())
-    expect(await backups!.status()).toMatchObject({ backedUp: true, stopped: false })
-    expect((await backups!.status()).problem).toBeUndefined()
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(15 * MINUTE)
-    expect(remoteHead()).toBe(head())
-  })
-
-  it('blocks a push holding a secret and names the file, then pushes once it is gone from history', async () => {
-    await contentWithRemote({ pushed: true })
-    await start()
-    const base = head()
-    await snapshotAnEdit(`{"todos":[{"title":"${['glpat', 'Ab12Cd34Ef56Gh78Ij90'].join('-')}"}]}\n`)
-    backups!.snapshotted()
-    await wait(0)
-
-    const status = await backups!.status()
-    expect(status).toMatchObject({
-      stopped: false,
-      problem: { status: 'secrets', files: [{ file: 'todos.json', kinds: ['GitLab token'] }] },
-    })
-    expect(remoteHead()).toBe(base)
-
-    git(content, 'reset', '--quiet', '--hard', base)
-    await snapshotAnEdit()
-    backups!.snapshotted()
-    await wait(15 * MINUTE)
-    expect(remoteHead()).toBe(head())
-    expect((await backups!.status()).problem).toBeUndefined()
-  })
-})
-
 describe('GET /api/backup', { timeout: 60_000 }, () => {
-  it('answers the backup status for the top bar', async () => {
-    await contentWithRemote({ pushed: true })
-    const status: BackupStatus = { remote: true, backedUp: true, stale: false, largeFiles: [], stopped: false }
-    const app = createApp({ webDist: '/nonexistent', content: options(), backups: { status: async () => status } })
+  it('warns from the repo alone once Snapshots have waited 24 h for origin/<branch>', async () => {
+    await commitHoursAgo(30)
+    git(content, 'remote', 'add', 'origin', remote)
+    // The remote is unreachable: the answer never depended on it.
+    git(content, 'remote', 'set-url', 'origin', join(dir, 'missing.git'))
 
-    const res = await app.request('/api/backup', { headers: { host: '127.0.0.1:4747' } })
+    const res = await getBackup()
 
     expect(res.status).toBe(200)
-    expect(await res.json()).toEqual(status)
+    expect(await res.json()).toEqual({
+      remote: true,
+      backedUp: false,
+      unbackedSince: new Date(NOW.getTime() - 30 * HOUR).toISOString(),
+      stale: true,
+      largeFiles: [],
+    } satisfies BackupState)
   })
 
-  it('reads the repo when the server runs no backups', async () => {
+  it('is backed up once the branch was pushed, by ostraka backup or by hand', async () => {
+    await commitHoursAgo(30)
+    git(content, 'remote', 'add', 'origin', remote)
+    git(content, 'push', '--quiet', 'origin', 'HEAD')
+
+    expect(await (await getBackup()).json()).toEqual({ remote: true, backedUp: true, stale: false, largeFiles: [] })
+  })
+
+  it('says there is no remote', async () => {
+    await commitHoursAgo(30)
+    expect(await (await getBackup()).json()).toMatchObject({ remote: false, stale: true })
+  })
+
+  it('no longer pushes on request', async () => {
+    await commitHoursAgo(1)
+    git(content, 'remote', 'add', 'origin', remote)
     const app = createApp({ webDist: '/nonexistent', content: options() })
-    await snapshotAnEdit()
 
-    const res = await app.request('/api/backup', { headers: { host: '127.0.0.1:4747' } })
+    const res = await app.request('/api/backup', { method: 'POST', headers })
 
-    expect(await res.json()).toMatchObject({ remote: false, backedUp: false, stopped: false })
+    expect(res.status).toBe(404)
+    expect(git(remote, 'for-each-ref')).toBe('')
   })
 })
 
-/**
- * The server's backups, with the push token read from a fake Keychain as `startServer` reads it. Its clock stands
- * still, so the push its check at start schedules never runs: only the request pushes.
- */
-async function serverWithBackups(onContentChange = () => {}) {
-  const credentials = await readCredentials(fakeKeychain(TOKENS).keychain)
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout', 'Date'] })
-  backups = startBackups({ content: options(), token: () => credentials.push?.reveal() })
-  await backups.idle()
-  return createApp({ webDist: '/nonexistent', content: options(), credentials, backups, onContentChange })
-}
-const postBackup = (app: ReturnType<typeof createApp>, headers: Record<string, string> = {}) =>
-  app.request('/api/backup', { method: 'POST', headers: { host: '127.0.0.1:4747', ...headers } })
-const getStatus = async (app: ReturnType<typeof createApp>) =>
-  (await app.request('/api/backup', { headers: { host: '127.0.0.1:4747' } })).text()
-
-const UNPUSHED: BackupStatus = { remote: true, backedUp: false, stale: false, largeFiles: [], stopped: false }
-
-describe('POST /api/backup', { timeout: 60_000 }, () => {
-  it("pushes now with the server's own push token, answering the result and never the token", async () => {
-    const remoteServer = await startHttpRemote(dir, TOKENS['ostraka-push'])
+describe('startServer', { timeout: 60_000 }, () => {
+  it('never contacts the remote, starting, snapshotting or stopping', async () => {
+    const server = await startHttpRemote(dir, 'any-token-value')
     try {
-      await contentWithRemote({ pushed: false })
-      git(content, 'remote', 'set-url', 'origin', `${remoteServer.url}/remote.git`)
-      const changed = vi.fn<() => void>()
-      const app = await serverWithBackups(changed)
-
-      const res = await postBackup(app)
-      const text = await res.text()
-
-      expect(res.status).toBe(200)
-      expect(JSON.parse(text)).toEqual({ status: 'backed-up', commit: head(), pushed: true, largeFiles: [] })
-      expect(decodeURIComponent(res.headers.get(CONTENT_ROOT_HEADER) ?? '')).toBe(content)
-      expect(remoteHead()).toBe(head())
-      expect(remoteServer.authorizations).toContain(`Basic ${Buffer.from(`oauth2:${TOKENS['ostraka-push']}`).toString('base64')}`)
-      const status = await getStatus(app)
-      for (const token of Object.values(TOKENS)) {
-        expect(text).not.toContain(token)
-        expect(status).not.toContain(token)
-        expect([...res.headers.values()].join('\n')).not.toContain(token)
-      }
-      // A push changes no content: no Snapshot is scheduled for it.
-      expect(changed).not.toHaveBeenCalled()
-    } finally {
-      await remoteServer.close()
-    }
-  })
-
-  it('answers why nothing was pushed, and shows it in the status', async () => {
-    await contentWithRemote({ pushed: true })
-    await snapshotAnEdit(`{"todos":[{"title":"${['glpat', 'Ab12Cd34Ef56Gh78Ij90'].join('-')}"}]}\n`)
-    const app = await serverWithBackups()
-
-    const res = await postBackup(app)
-
-    expect(res.status).toBe(200)
-    expect(await res.json()).toMatchObject({ status: 'secrets', files: [{ file: 'todos.json' }] })
-    expect(remoteHead()).not.toBe(head())
-    expect(JSON.parse(await getStatus(app))).toMatchObject({ problem: { status: 'secrets' } })
-  })
-
-  it('refuses a request from a web page of another origin, pushing nothing', async () => {
-    const backupNow = vi.fn<Backups['backupNow']>()
-    const app = createApp({ webDist: '/nonexistent', content: options(), backups: { status: async () => UNPUSHED, backupNow } })
-
-    const res = await postBackup(app, { origin: 'https://evil.example' })
-
-    expect(res.status).toBe(403)
-    expect(backupNow).not.toHaveBeenCalled()
-  })
-
-  it('says so when the server runs no backups', async () => {
-    const app = createApp({ webDist: '/nonexistent', content: options() })
-    const res = await postBackup(app)
-    expect(res.status).toBe(503)
-    expect(await res.json()).toEqual({ error: expect.stringMatching(/runs no backups/) })
-  })
-})
-
-describe('startServer backups', { timeout: 60_000 }, () => {
-  it('push with the token from the Keychain item ostraka-push', async () => {
-    const server = await startHttpRemote(dir, TOKENS['ostraka-push'])
-    try {
-      await contentWithRemote({ pushed: false })
-      git(content, 'remote', 'set-url', 'origin', `${server.url}/remote.git`)
+      await commitHoursAgo(1)
+      git(content, 'remote', 'add', 'origin', `${server.url}/remote.git`)
+      // A change for the Snapshot on stop.
+      await writeFile(join(content, 'todos.json'), '{"todos":[],"changed":true}\n')
       const { keychain } = fakeKeychain(TOKENS)
 
       const running = await startServer({ port: 0, webDist: '/nonexistent', keychain, env: { OSTRAKA_HOME: content }, homeDir: dir })
-      await running.backups.idle()
       await running.stop()
 
-      expect(remoteHead()).toBe(head())
-      expect(server.authorizations).toContain(`Basic ${Buffer.from(`oauth2:${TOKENS['ostraka-push']}`).toString('base64')}`)
+      expect(git(content, 'log', '-1', '--format=%s')).toBe('Automatic snapshot')
+      expect(git(content, 'status', '--porcelain')).toBe('')
+      expect(server.requests).toEqual([])
     } finally {
       await server.close()
     }

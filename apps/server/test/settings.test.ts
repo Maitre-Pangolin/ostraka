@@ -72,7 +72,6 @@ jira:
     expect(JSON.parse(body).keychain).toEqual([
       { name: 'gitlab', item: 'ostraka-gitlab', found: true },
       { name: 'jira', item: 'ostraka-jira', found: false },
-      { name: 'push', item: 'ostraka-push', found: false },
     ])
     expect(body).not.toContain(TOKENS['ostraka-gitlab'])
   })

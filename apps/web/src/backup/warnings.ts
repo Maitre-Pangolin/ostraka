@@ -1,5 +1,5 @@
 // What the top bar says about the Backup, from GET /api/backup. No imports from '@/': tests run it as is.
-import type { BackupStatus } from '@ostraka/core/backup-types'
+import type { BackupState } from '@ostraka/core/backup-types'
 
 export type BackupWarning = {
   /** One line for the top bar. */
@@ -19,29 +19,19 @@ function waited(since: string, now: Date): string {
 
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 
-/** The warnings to show, most serious first; none while the content is backed up or has waited less than 24 h. */
-export function backupWarnings(status: BackupStatus, now: Date): BackupWarning[] {
+/**
+ * The warnings to show, most serious first, all known locally with no network: Snapshots not on the remote's branch
+ * for over 24 h (only when the content folder has a remote), and files over 10 MB.
+ */
+export function backupWarnings(status: BackupState, now: Date): BackupWarning[] {
   const warnings: BackupWarning[] = []
-  const { problem } = status
-  if (problem?.status === 'secrets') {
-    const [first] = problem.files
+  if (status.remote && status.stale && status.unbackedSince !== undefined) {
     warnings.push({
-      title: `Backup blocked: secret in ${problem.files.length === 1 ? first!.file : `${problem.files.length} files`}`,
+      title: `Not backed up for ${waited(status.unbackedSince, now)}`,
       detail:
-        'Nothing was pushed. Take the secret out of every Snapshot not backed up yet (a removed secret stays in history), then run ostraka backup.',
-      files: problem.files.map(({ file, kinds }) => `${file}: ${kinds.join(', ')}`),
+        'Snapshots older than 24 hours are not on the remote yet, as of the last push. The app never pushes: run ostraka backup in a terminal.',
+      files: [],
     })
-  }
-  if (problem?.status === 'rejected') {
-    warnings.push({ title: 'Backup stopped: push rejected', detail: problem.reason, files: [] })
-  }
-  if (status.stale && status.unbackedSince !== undefined && problem?.status !== 'rejected') {
-    const detail = !status.remote
-      ? 'The content folder has no remote: see Back it up in the README.'
-      : problem?.status === 'failed'
-        ? problem.reason
-        : 'Snapshots are waiting for the next push. Run ostraka backup to push now.'
-    warnings.push({ title: `Not backed up for ${waited(status.unbackedSince, now)}`, detail, files: [] })
   }
   if (status.largeFiles.length > 0) {
     warnings.push({

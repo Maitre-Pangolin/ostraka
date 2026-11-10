@@ -5,7 +5,6 @@ import { systemClock } from './activity/clock.ts'
 import type { Fetch } from './activity/http.ts'
 import { workOverview } from './activity/work-overview.ts'
 import { createApp, HOSTNAME, PORT } from './app.ts'
-import { startBackups, type Backups } from './backups.ts'
 import { contentEvents } from './content-events.ts'
 import { referenceLookup } from './references.ts'
 import { startSearch } from './search.ts'
@@ -30,8 +29,6 @@ export type StartOptions = {
 
 export type RunningServer = {
   server: ServerType
-  /** Backup pushes, scheduled after each automatic Snapshot. */
-  backups: Backups
   /** Stops listening, then commits any pending content changes as a Snapshot. */
   stop(): Promise<void>
 }
@@ -52,8 +49,7 @@ export async function startServer({
 }: StartOptions): Promise<RunningServer> {
   const credentials = await readCredentials(keychain, warn)
   const content = { env, homeDir }
-  // Checks the remote now, in the background; pushes after each automatic Snapshot, at most every 15 min.
-  const backups = startBackups({ content, token: () => credentials.push?.reveal() })
+  // Snapshots stay on this machine: nothing in the server talks to the remote (`ostraka backup` pushes).
   const snapshots = await startAutoSnapshots({ ...content, ...snapshotTiming })
   // Every change on disk, the CLI's and agents' included, is snapshotted; the same watcher feeds live updates.
   const events = contentEvents(content)
@@ -71,7 +67,6 @@ export async function startServer({
     onContentChange: snapshots.changed,
     events,
     activity,
-    backups,
     references,
     search,
   })
@@ -83,7 +78,6 @@ export async function startServer({
     })
     return {
       server,
-      backups,
       async stop() {
         const closed = new Promise((resolve) => server.close(resolve))
         // Open live-update streams never end on their own; a browser reconnects once the server is back.
@@ -93,8 +87,6 @@ export async function startServer({
         unwatch()
         await search.stop()
         await snapshots.stop()
-        backups.stop()
-        await backups.idle()
       },
     }
   } catch (error) {
@@ -102,7 +94,6 @@ export async function startServer({
     unwatch()
     await search.stop()
     await snapshots.stop()
-    backups.stop()
     throw error
   }
 }

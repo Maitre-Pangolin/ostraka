@@ -30,7 +30,7 @@ const pathOf = (c: Context) => {
  * `/api/history`: any content file's Snapshots (`?path=`), one version's text (`/:commit?path=`), and a restore of
  * one version as a new Snapshot (`POST /restore { path, commit }`). Nothing rewrites history. All through core.
  */
-export function historyRoutes(options: ContentRootOptions, { onSnapshot }: { onSnapshot?: () => void } = {}) {
+export function historyRoutes(options: ContentRootOptions) {
   const routes = new Hono()
   routes.onError(onHistoryError)
 
@@ -45,10 +45,7 @@ export function historyRoutes(options: ContentRootOptions, { onSnapshot }: { onS
   routes.post('/restore', async (c) => {
     const body = await readBody(c, RestoreFileSchema)
     if (!body.ok) return body.response
-    const restore = await restoreFile(body.data.path, body.data.commit, options)
-    // Restoring commits outside the automatic Snapshots, so it reports its own for the backup to push.
-    onSnapshot?.()
-    return c.json(restore)
+    return c.json(await restoreFile(body.data.path, body.data.commit, options))
   })
 
   return routes

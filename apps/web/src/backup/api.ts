@@ -1,12 +1,12 @@
-// The Backup status over the server API, as a TanStack Query hook.
-import type { BackupStatus } from '@ostraka/core/backup-types'
+// The Backup state over the server API, as a TanStack Query hook.
+import type { BackupState } from '@ostraka/core/backup-types'
 import { useQuery } from '@tanstack/react-query'
 import { request } from '@/lib/api'
 
 /**
- * GET /api/backup (apps/server/src/app.ts). Not content, so no live update reaches it: pushes happen on the
- * server's own schedule, and the status is fetched again every minute.
+ * GET /api/backup (apps/server/src/backups.ts), read from the content repo with no network. Not content, so no live
+ * update reaches it: Snapshots age and `ostraka backup` pushes from a terminal, so it is fetched again every minute.
  */
 export function useBackupStatus() {
-  return useQuery({ queryKey: ['backup'], queryFn: () => request<BackupStatus>('/backup'), refetchInterval: 60_000 })
+  return useQuery({ queryKey: ['backup'], queryFn: () => request<BackupState>('/backup'), refetchInterval: 60_000 })
 }

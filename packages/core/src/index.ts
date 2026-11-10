@@ -226,7 +226,6 @@ export {
   BACKUP_REMOTE,
   backup,
   backupState,
-  checkBackup,
   cloneContent,
   LARGE_FILE_BYTES,
   STALE_AFTER_MS,
@@ -234,7 +233,7 @@ export {
   type CloneOptions,
   type CloneResult,
 } from './backup.ts'
-export type { BackupCheck, BackupResult, BackupState, BackupStatus, LargeFile, SecretFile } from './backup-types.ts'
+export type { BackupResult, BackupState, LargeFile, SecretFile } from './backup-types.ts'
 export {
   openSearchIndex,
   parseSearchParams,

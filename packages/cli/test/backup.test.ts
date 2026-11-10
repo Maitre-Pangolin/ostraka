@@ -2,14 +2,13 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { loadConfig, snapshot } from '@ostraka/core'
-import { createApp, macKeychain, readCredentials, startBackups, type Backups } from '@ostraka/server'
+import { backupState, loadConfig, snapshot } from '@ostraka/core'
+import { macKeychain } from '@ostraka/server'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { fakeKeychain } from '../../../apps/server/test/fake-keychain.ts'
 import { startHttpRemote } from '../../../packages/core/test/http-remote.ts'
 import { run, type Io } from '../src/main.ts'
 
-// Only the server reads the Keychain: the CLI calling it at all fails the test that catches it.
+// Nothing in the CLI reads the Keychain: the CLI calling it at all fails the test that catches it.
 vi.mock('@ostraka/server', async (original) => ({
   ...(await original<typeof import('@ostraka/server')>()),
   macKeychain: vi.fn<typeof import('@ostraka/server').macKeychain>(() => {
@@ -21,7 +20,6 @@ let dir: string
 let home: string
 let content: string
 let remote: string
-let backups: Backups | undefined
 
 beforeEach(async () => {
   dir = await mkdtemp(join(tmpdir(), 'ostraka-cli-backup-'))
@@ -33,31 +31,18 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
-  backups?.stop()
-  await backups?.idle()
-  backups = undefined
-  vi.useRealTimers()
   vi.unstubAllEnvs()
   await rm(dir, { recursive: true, force: true })
 })
 
-const PUSH_TOKEN = `test-push-token-${'z'.repeat(12)}`
+const USER_TOKEN = `test-user-token-${'z'.repeat(12)}`
 
-/**
- * The running server for a content folder, its push token from a fake Keychain, reached as the CLI reaches it. Its
- * clock stands still, so only the CLI's request pushes, never its own schedule.
- */
-async function runningServer(folder = content): Promise<Io['fetch']> {
-  const options = { env: { OSTRAKA_HOME: folder } }
-  const credentials = await readCredentials(fakeKeychain({ 'ostraka-push': PUSH_TOKEN }).keychain)
-  vi.useFakeTimers({ toFake: ['setTimeout', 'clearTimeout'] })
-  backups = startBackups({ content: options, token: () => credentials.push?.reveal() })
-  await backups.idle()
-  const app = createApp({ webDist: '/nonexistent', content: options, credentials, backups })
-  return (url, init) => Promise.resolve(app.request(String(url), { ...init, headers: { host: '127.0.0.1:4747' } }))
+/** No server is running: `ostraka backup` must not need one. Each call is recorded. */
+const serverCalls: string[] = []
+const serverDown: Io['fetch'] = (url) => {
+  serverCalls.push(String(url))
+  return Promise.reject(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }))
 }
-
-const serverDown: Io['fetch'] = () => Promise.reject(new TypeError('fetch failed', { cause: { code: 'ECONNREFUSED' } }))
 
 async function ostraka(argv: string[], io: Partial<Io> = {}) {
   let stdout = ''
@@ -72,10 +57,11 @@ async function ostraka(argv: string[], io: Partial<Io> = {}) {
   })
   return { code, stdout, stderr }
 }
-const backupViaServer = async (...args: string[]) => ostraka(['backup', ...args], { fetch: await runningServer() })
+const backup = (...args: string[]) => ostraka(['backup', ...args])
 
 const git = (cwd: string, ...args: string[]) => execFileSync('git', ['-C', cwd, ...args], { encoding: 'utf8' }).trim()
 const head = () => git(content, 'rev-parse', 'HEAD')
+const branch = () => git(content, 'symbolic-ref', '--short', 'HEAD')
 const remoteHead = () => git(remote, 'for-each-ref', '--format=%(objectname)')
 
 async function contentWithRemote() {
@@ -85,55 +71,87 @@ async function contentWithRemote() {
   git(content, 'remote', 'add', 'origin', remote)
 }
 
+/** The user's own credential helper, as their git config would set it; prompts off so a missing one fails at once. */
+function userCredentialHelper(token: string) {
+  vi.stubEnv('GIT_TERMINAL_PROMPT', '0')
+  vi.stubEnv('GIT_CONFIG_COUNT', '2')
+  vi.stubEnv('GIT_CONFIG_KEY_0', 'credential.helper')
+  vi.stubEnv('GIT_CONFIG_VALUE_0', '')
+  vi.stubEnv('GIT_CONFIG_KEY_1', 'credential.helper')
+  vi.stubEnv('GIT_CONFIG_VALUE_1', `!f() { test "$1" = get && printf "username=oauth2\\npassword=${token}\\n"; }; f`)
+}
+
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
 describe('ostraka backup', { timeout: 60_000 }, () => {
-  it('asks the running server to push now', async () => {
+  it('pushes the branch itself, with no server running and without asking one', async () => {
     await contentWithRemote()
+    serverCalls.length = 0
 
-    const result = await backupViaServer()
+    const result = await backup()
 
     expect(result).toEqual({ code: 0, stdout: `Backed up ${head().slice(0, 7)} to origin.\n`, stderr: '' })
     expect(remoteHead()).toBe(head())
+    expect(serverCalls).toEqual([])
+    // The app's warning, read offline, now sees it backed up.
+    expect(await backupState({ env: { OSTRAKA_HOME: content } })).toMatchObject({ backedUp: true })
   })
 
   it('says when there was nothing new', async () => {
     await contentWithRemote()
-    await backupViaServer()
-    expect(await ostraka(['backup'], { fetch: await runningServer() })).toEqual({
-      code: 0,
-      stdout: `Already backed up (${head().slice(0, 7)}).\n`,
-      stderr: '',
-    })
+    await backup()
+    expect(await backup()).toEqual({ code: 0, stdout: `Already backed up (${head().slice(0, 7)}).\n`, stderr: '' })
   })
 
-  it('names the files holding a secret and pushes nothing', async () => {
+  it("signs in with git's own credentials (the user's credential helper)", async () => {
+    const server = await startHttpRemote(dir, USER_TOKEN)
+    try {
+      await contentWithRemote()
+      git(content, 'remote', 'set-url', 'origin', `${server.url}/remote.git`)
+      userCredentialHelper(USER_TOKEN)
+
+      expect(await backup()).toMatchObject({ code: 0, stderr: '' })
+      expect(remoteHead()).toBe(head())
+      expect(server.authorizations).toContain(`Basic ${Buffer.from(`oauth2:${USER_TOKEN}`).toString('base64')}`)
+    } finally {
+      await server.close()
+    }
+  })
+
+  it('names the files holding a secret, never the secret, and pushes nothing', async () => {
     await contentWithRemote()
     await mkdir(join(content, 'notes'))
-    await writeFile(join(content, 'notes', 'setup.md'), `---\ntags: []\n---\n${['xoxb', '1234567890', 'abcdefghij'].join('-')}\n`)
+    const token = ['xoxb', '1234567890', 'abcdefghij'].join('-')
+    await writeFile(join(content, 'notes', 'setup.md'), `---\ntags: []\n---\n${token}\n`)
     await snapshot('setup', { env: { OSTRAKA_HOME: content } })
 
-    const result = await backupViaServer()
+    const result = await backup()
 
     expect(result.code).toBe(1)
     expect(result.stderr).toMatch(/Backup blocked: nothing was pushed/)
     expect(result.stderr).toContain('notes/setup.md (Slack token)')
+    expect(result.stderr + result.stdout).not.toContain(token)
     expect(remoteHead()).toBe('')
   })
 
-  it('shows why a push was rejected', async () => {
+  it("shows git's reason for a rejected push and how to bring the remote's commits in, never forcing or merging", async () => {
     await contentWithRemote()
     const other = join(dir, 'other')
     execFileSync('git', ['clone', '--quiet', remote, other])
     await writeFile(join(other, 'x.md'), 'other\n')
     git(other, 'add', 'x.md')
     git(other, '-c', 'user.name=O', '-c', 'user.email=o@localhost', 'commit', '--quiet', '-m', 'other')
-    git(other, 'push', '--quiet', 'origin', `HEAD:${git(content, 'symbolic-ref', '--short', 'HEAD')}`)
+    git(other, 'push', '--quiet', 'origin', `HEAD:${branch()}`)
+    const theirs = remoteHead()
+    const mine = head()
 
-    const result = await backupViaServer()
+    const result = await backup()
 
     expect(result.code).toBe(1)
     expect(result.stderr).toMatch(/^Push rejected/)
+    expect(result.stderr).toContain(`git -C ${content} pull --rebase`)
     expect(result.stderr).toMatch(/never merges or force-pushes/)
+    expect(remoteHead()).toBe(theirs)
+    expect(head()).toBe(mine)
   })
 
   it('explains how to add the remote when there is none', async () => {
@@ -141,10 +159,20 @@ describe('ostraka backup', { timeout: 60_000 }, () => {
     await writeFile(join(content, 'todos.json'), '{"todos":[]}\n')
     await snapshot('first', { env: { OSTRAKA_HOME: content } })
 
-    const result = await backupViaServer()
+    const result = await backup()
 
     expect(result.code).toBe(1)
     expect(result.stderr).toContain(`git -C ${content} remote add origin <url>`)
+  })
+
+  it("says why when git can't reach the remote", async () => {
+    await contentWithRemote()
+    git(content, 'remote', 'set-url', 'origin', join(dir, 'missing.git'))
+
+    const result = await backup()
+
+    expect(result.code).toBe(1)
+    expect(result.stderr).toMatch(/^Backup failed: .*missing\.git/)
   })
 
   it('warns about content files over 10 MB', async () => {
@@ -152,7 +180,7 @@ describe('ostraka backup', { timeout: 60_000 }, () => {
     await writeFile(join(content, 'big.png'), Buffer.alloc(11 * 1024 * 1024))
     await snapshot('image', { env: { OSTRAKA_HOME: content } })
 
-    const result = await backupViaServer()
+    const result = await backup()
 
     expect(result.code).toBe(0)
     expect(result.stderr).toBe('Warning: big.png is 11.0 MB; keep content files under 10 MB.\n')
@@ -160,30 +188,8 @@ describe('ostraka backup', { timeout: 60_000 }, () => {
 
   it('prints the result as JSON for agents', async () => {
     await contentWithRemote()
-    const result = await backupViaServer('--json')
+    const result = await backup('--json')
     expect(JSON.parse(result.stdout)).toEqual({ status: 'backed-up', commit: head(), pushed: true, largeFiles: [] })
-  })
-
-  it('says to start the server when none is running, pushing nothing', async () => {
-    await contentWithRemote()
-
-    const result = await ostraka(['backup'])
-
-    expect(result.code).toBe(1)
-    expect(result.stdout).toBe('')
-    expect(result.stderr).toMatch(/No Ostraka server is running/)
-    expect(result.stderr).toContain('ostraka serve')
-    expect(remoteHead()).toBe('')
-  })
-
-  it('refuses a running server that serves another content folder', async () => {
-    await contentWithRemote()
-
-    const result = await ostraka(['backup'], { fetch: await runningServer(join(dir, 'elsewhere')) })
-
-    expect(result.code).toBe(1)
-    expect(result.stderr).toContain(join(dir, 'elsewhere'))
-    expect(remoteHead()).toBe('')
   })
 })
 
@@ -203,15 +209,16 @@ describe('ostraka init --from', { timeout: 60_000 }, () => {
     // The user creates each item in another tab, then presses Enter; the last one is skipped.
     const readLine = async (prompt: string) => {
       prompts.push(prompt)
-      return prompts.length === 3 ? 'skip' : ''
+      return prompts.length === 2 ? 'skip' : ''
     }
 
     const result = await ostraka(['init', '--from', remote], { readLine })
 
     expect(result.stderr).toBe('')
     expect(result.code).toBe(0)
-    expect(prompts).toHaveLength(3)
-    for (const item of ['ostraka-push', 'ostraka-gitlab', 'ostraka-jira']) expect(result.stdout).toContain(ADD_ITEM(item))
+    expect(prompts).toHaveLength(2)
+    for (const item of ['ostraka-gitlab', 'ostraka-jira']) expect(result.stdout).toContain(ADD_ITEM(item))
+    expect(result.stdout).not.toContain('ostraka-push')
     expect(result.stdout).toContain('ostraka-jira: skipped')
     expect(git(content, 'remote', 'get-url', 'origin')).toBe(remote)
     expect(await readFile(join(content, 'todos.json'), 'utf8')).toBe('{"todos":[]}\n')
@@ -219,16 +226,10 @@ describe('ostraka init --from', { timeout: 60_000 }, () => {
   })
 
   it("lets git authenticate the clone with the user's own setup, and takes the GitLab URL from the remote", async () => {
-    const server = await startHttpRemote(dir, PUSH_TOKEN)
+    const server = await startHttpRemote(dir, USER_TOKEN)
     try {
       await backedUpContent()
-      // The user's own credential helper (in their git config), in place of any helper on this machine.
-      vi.stubEnv('GIT_TERMINAL_PROMPT', '0')
-      vi.stubEnv('GIT_CONFIG_COUNT', '2')
-      vi.stubEnv('GIT_CONFIG_KEY_0', 'credential.helper')
-      vi.stubEnv('GIT_CONFIG_VALUE_0', '')
-      vi.stubEnv('GIT_CONFIG_KEY_1', 'credential.helper')
-      vi.stubEnv('GIT_CONFIG_VALUE_1', `!f() { test "$1" = get && printf "username=oauth2\\npassword=${PUSH_TOKEN}\\n"; }; f`)
+      userCredentialHelper(USER_TOKEN)
 
       const result = await ostraka(['init', '--from', `${server.url}/remote.git`])
 
@@ -277,8 +278,7 @@ describe('ostraka init --from', { timeout: 60_000 }, () => {
 describe('the Keychain', { timeout: 60_000 }, () => {
   it('is never read by ostraka backup or ostraka init', async () => {
     await contentWithRemote()
-    await backupViaServer()
-    await ostraka(['backup'])
+    await backup()
     await rm(content, { recursive: true })
     await ostraka(['init', '--from', remote], { readLine: async () => '' })
 

@@ -4,7 +4,6 @@ import { execFile } from 'node:child_process'
 export const KEYCHAIN_ITEMS = {
   gitlab: 'ostraka-gitlab',
   jira: 'ostraka-jira',
-  push: 'ostraka-push',
 } as const
 
 export type CredentialName = keyof typeof KEYCHAIN_ITEMS

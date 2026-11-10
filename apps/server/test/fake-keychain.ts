@@ -19,5 +19,4 @@ export function fakeKeychain(items: Record<string, string>) {
 export const TOKENS = {
   'ostraka-gitlab': 'glpat-FAKEgitlabTOKEN0123456789',
   'ostraka-jira': `ATATT3xFAKEjiraTOKEN${'x'.repeat(170)}`,
-  'ostraka-push': 'glpat-FAKEpushTOKEN9876543210',
 }

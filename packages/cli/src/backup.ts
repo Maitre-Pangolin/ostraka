@@ -1,22 +1,19 @@
 // `ostraka backup` and `ostraka init --from <remote-url>`: back up now, and set up a new machine from the backup.
-// Neither reads the Keychain: only the app server holds the push token, so `backup` asks the running server to push,
-// and `init` lets git authenticate the clone as it would for the user.
+// Both run outside the app, with or without the server, and neither reads the Keychain: git signs in as it does for
+// the user (their SSH key or credential helper).
 import { access, mkdir, readdir, writeFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { dirname, join, relative } from 'node:path'
 import { parseArgs } from 'node:util'
-import { cloneContent, configPath, loadConfig, resolveContentRoot, type BackupResult, type LargeFile } from '@ostraka/core'
-import { HOSTNAME, KEYCHAIN_ITEMS, PORT, type CredentialName } from '@ostraka/server'
+import { backup, backupState, cloneContent, configPath, loadConfig, resolveContentRoot, type LargeFile } from '@ostraka/core'
+import { KEYCHAIN_ITEMS, type CredentialName } from '@ostraka/server'
 import type { Io } from './main.ts'
-import { askServer } from './server.ts'
 
-export const BACKUP_USAGE = `  ostraka backup [--json]       Ask the running app server to push the content folder to its remote now
+export const BACKUP_USAGE = `  ostraka backup [--json]       Push the content folder's Snapshots to its remote now (git push, never forced);
+                                works with or without the app running, and from cron
   ostraka init --from <remote-url>
                                 Set up a new machine: Keychain items, content, config.yml
 `
-
-/** A push scans, pushes and checks the remote, each git step allowed 2 minutes. */
-const PUSH_TIMEOUT_MS = 6 * 60_000
 
 const megabytes = (bytes: number) => `${(bytes / 1024 / 1024).toFixed(1)} MB`
 const warnLarge = (io: Io, files: LargeFile[]) =>
@@ -28,29 +25,13 @@ export async function backupCommand(args: string[], io: Io): Promise<number> {
     io.stderr(`Usage:\n${BACKUP_USAGE}`)
     return 1
   }
-  const root = await resolveContentRoot({ env: io.env, homeDir: io.homeDir ?? homedir() })
-  const answer = await askServer('/backup', root, io, { method: 'POST', timeoutMs: PUSH_TIMEOUT_MS })
-  if (answer.kind === 'down') {
-    io.stderr(
-      `No Ostraka server is running on http://${HOSTNAME}:${PORT}, and only the server pushes (it holds the push token).\nStart it with ostraka serve, or check its LaunchAgent: launchctl print gui/$(id -u)/com.ostraka.server\n`,
-    )
-    return 1
-  }
-  if (answer.kind === 'elsewhere') {
-    io.stderr(
-      `The server on http://${HOSTNAME}:${PORT} serves ${answer.root ?? 'another content folder'}, not ${root}: it was not asked to push.\n`,
-    )
-    return 1
-  }
-  const body = (await answer.res.json()) as (BackupResult & { largeFiles: LargeFile[] }) | { error: string }
-  if ('error' in body) {
-    io.stderr(`Backup failed: ${body.error}\n`)
-    return 1
-  }
-  const { largeFiles, ...result } = body
+  const options = { env: io.env, homeDir: io.homeDir ?? homedir() }
+  const root = await resolveContentRoot(options)
+  const result = await backup(options)
+  const { largeFiles } = await backupState(options)
   const ok = result.status === 'backed-up' || result.status === 'empty'
   if (values.json) {
-    io.stdout(`${JSON.stringify(body, null, 2)}\n`)
+    io.stdout(`${JSON.stringify({ ...result, largeFiles }, null, 2)}\n`)
     return ok ? 0 : 1
   }
   switch (result.status) {
@@ -79,7 +60,7 @@ export async function backupCommand(args: string[], io: Io): Promise<number> {
       break
     case 'failed':
       io.stderr(
-        `Backup failed: ${result.reason}\n(The server pushes with Keychain item ${KEYCHAIN_ITEMS.push}: see README, Credentials.)\n`,
+        `Backup failed: ${result.reason}\n(git signs in with your own setup, an SSH key or a credential helper: see README, Back it up.)\n`,
       )
       break
   }
@@ -89,7 +70,6 @@ export async function backupCommand(args: string[], io: Io): Promise<number> {
 
 /** What each Keychain item holds, in the order the walkthrough asks for them. */
 const ITEM_PURPOSES: [CredentialName, string][] = [
-  ['push', 'backup push, a GitLab token with write_repository on the content project'],
   ['gitlab', 'GitLab, a fine-grained personal access token with read_api'],
   ['jira', 'Jira, a scoped API token with read:jira-work'],
 ]
@@ -123,8 +103,8 @@ export async function initCommand(args: string[], io: Io): Promise<number> {
   }
 
   // git authenticates as it would for the user (their SSH key or credential helper, or by asking): no token here.
-  io.stdout(`2. Content: cloning ${values.from} into ${root}\n`)
-  const cloned = await cloneContent(values.from, { ...options, interactive: true })
+  io.stdout(`2. Content: cloning ${values.from} into ${root}, signing in as git does for you (later backups do the same)\n`)
+  const cloned = await cloneContent(values.from, options)
   if (cloned.status === 'failed') {
     io.stderr(`Could not clone ${values.from}: ${cloned.reason}\n`)
     return 1

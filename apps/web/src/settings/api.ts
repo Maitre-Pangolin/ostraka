@@ -9,7 +9,7 @@ export type Settings = {
   content: { path: string; source: 'env' | 'config' | 'default' }
   gitlab: NonNullable<Config['gitlab']>
   jira: NonNullable<Config['jira']>
-  keychain: { name: 'gitlab' | 'jira' | 'push'; item: string; found: boolean }[]
+  keychain: { name: 'gitlab' | 'jira'; item: string; found: boolean }[]
 }
 
 export function useSettings() {

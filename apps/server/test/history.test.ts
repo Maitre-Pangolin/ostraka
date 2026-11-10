@@ -9,20 +9,14 @@ import { createApp } from '../src/index.ts'
 let contentRoot: string
 let app: ReturnType<typeof createApp>
 let changes: number
-let backupsScheduled: number
 
 beforeEach(async () => {
   contentRoot = await mkdtemp(join(tmpdir(), 'ostraka-content-'))
   changes = 0
-  backupsScheduled = 0
   app = createApp({
     webDist: '/nonexistent',
     content: { env: { OSTRAKA_HOME: contentRoot } },
     onContentChange: () => changes++,
-    backups: {
-      status: () => Promise.reject(new Error('not used here')),
-      snapshotted: () => backupsScheduled++,
-    },
   })
 })
 
@@ -91,7 +85,6 @@ describe('History routes', { timeout: 30_000 }, () => {
     expect(await readFile(join(contentRoot, 'notes/plan.md'), 'utf8')).toBe(V1)
     expect(git('rev-list', '--count', 'HEAD')).toBe('3')
     expect(changes).toBe(1)
-    expect(backupsScheduled).toBe(1)
   })
 
   it('refuses a path that is not a content file (400) and a version that does not exist (404)', async () => {
@@ -107,6 +100,5 @@ describe('History routes', { timeout: 30_000 }, () => {
     expect(missing.status).toBe(404)
     expect(await missing.json()).toEqual({ error: expect.stringContaining('notes/plan.md') })
     expect(changes).toBe(0)
-    expect(backupsScheduled).toBe(0)
   })
 })

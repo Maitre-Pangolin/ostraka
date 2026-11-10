@@ -1,12 +1,12 @@
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import { serveStatic } from '@hono/node-server/serve-static'
-import { backupState, type ContentOptions } from '@ostraka/core'
+import type { ContentOptions } from '@ostraka/core'
 import { Hono } from 'hono'
 import { streamSSE } from 'hono/streaming'
 import { activityPoller, type Activity } from './activity/poller.ts'
 import { activityRoutes } from './activity/routes.ts'
-import { backupRoutes, type Backups } from './backups.ts'
+import { backupRoutes } from './backups.ts'
 import { contentEvents, type ContentEvents } from './content-events.ts'
 import type { Credentials } from './keychain.ts'
 import { devlogRoutes } from './devlogs.ts'
@@ -36,11 +36,6 @@ export type AppOptions = {
   events?: ContentEvents
   /** The work overview's pollers (`workOverview()`), started by the caller. None by default, so nothing is polled. */
   activity?: Activity
-  /**
-   * The server's backup schedule, for the top bar's warning and to push a restore's Snapshot. Without one, the
-   * status comes from the repo alone and nothing is pushed.
-   */
-  backups?: Pick<Backups, 'status'> & Partial<Pick<Backups, 'snapshotted' | 'backupNow'>>
   /** Hover details for References the work overview didn't poll (`referenceLookup()`). None by default: nothing is fetched. */
   references?: ReferenceLookup
   /** The server's search index (`startSearch()`). Without one, each search builds a throwaway index in memory. */
@@ -51,7 +46,7 @@ const ALLOWED_HOSTS = new Set([`${HOSTNAME}:${PORT}`, `localhost:${PORT}`])
 const ALLOWED_ORIGINS = new Set([...ALLOWED_HOSTS].map((host) => `http://${host}`))
 const SAFE_METHODS = new Set(['GET', 'HEAD', 'OPTIONS'])
 /** API writes that change no content, so schedule no Snapshot. */
-const changesNoContent = (path: string) => path.startsWith('/api/activity/') || path === '/api/backup'
+const changesNoContent = (path: string) => path.startsWith('/api/activity/')
 
 export function createApp({
   webDist,
@@ -60,7 +55,6 @@ export function createApp({
   onContentChange,
   events = contentEvents(content),
   activity = activityPoller({ sources: [], clock: { now: Date.now, setTimeout: () => () => {} } }),
-  backups = { status: async () => ({ ...(await backupState(content)), stopped: false }) },
   references = noReferenceLookup,
   search = throwawaySearch(content),
 }: AppOptions) {
@@ -82,7 +76,7 @@ export function createApp({
   })
 
   // Every API write goes through core to the content folder, so a successful one means the content changed;
-  // except the work overview's, which only report a window's visibility, and a backup, which only pushes.
+  // except the work overview's, which only report a window's visibility.
   app.use('/api/*', async (c, next) => {
     await next()
     if (!SAFE_METHODS.has(c.req.method) && c.res.ok && !changesNoContent(c.req.path)) onContentChange?.()
@@ -94,7 +88,7 @@ export function createApp({
   app.route('/api/notes', noteRoutes(content))
   app.route('/api/devlogs', devlogRoutes(content))
   app.route('/api/sketches', sketchRoutes(content))
-  app.route('/api/history', historyRoutes(content, { onSnapshot: () => backups.snapshotted?.() }))
+  app.route('/api/history', historyRoutes(content))
   app.route('/api/references', referenceRoutes(references))
   app.route('/api/people', peopleRoutes(content))
   app.route('/api/search', searchRoutes(search, content))
@@ -121,7 +115,7 @@ export function createApp({
     }),
   )
 
-  app.route('/api/backup', backupRoutes(backups, content))
+  app.route('/api/backup', backupRoutes(content))
   app.route('/api/activity', activityRoutes(activity))
   app.route('/api/settings', settingsRoutes(content, credentials))
   app.all('/api/*', (c) => c.json({ error: 'Not found' }, 404))

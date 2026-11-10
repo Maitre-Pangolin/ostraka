@@ -2,8 +2,8 @@ import { execFileSync } from 'node:child_process'
 import { mkdir, mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
-import { backup, backupState, checkBackup, cloneContent, snapshot, type ContentRootOptions } from '../src/index.ts'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { backup, backupState, cloneContent, snapshot, type ContentRootOptions } from '../src/index.ts'
 import { startHttpRemote } from './http-remote.ts'
 
 let dir: string
@@ -20,6 +20,7 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.unstubAllEnvs()
   await rm(dir, { recursive: true, force: true })
 })
 
@@ -42,9 +43,23 @@ async function contentWithRemote() {
 const head = () => git(content, 'rev-parse', 'HEAD')
 const branch = () => git(content, 'symbolic-ref', '--short', 'HEAD')
 
+/**
+ * The user's own credential helper, as their git config would set it, answering `oauth2:<token>`; prompts are off
+ * so a missing credential fails rather than waits.
+ */
+function userCredentialHelper(token: string | undefined) {
+  vi.stubEnv('GIT_TERMINAL_PROMPT', '0')
+  vi.stubEnv('GIT_CONFIG_COUNT', token === undefined ? '1' : '2')
+  vi.stubEnv('GIT_CONFIG_KEY_0', 'credential.helper')
+  vi.stubEnv('GIT_CONFIG_VALUE_0', '')
+  if (token === undefined) return
+  vi.stubEnv('GIT_CONFIG_KEY_1', 'credential.helper')
+  vi.stubEnv('GIT_CONFIG_VALUE_1', `!f() { test "$1" = get && printf "username=oauth2\\npassword=${token}\\n"; }; f`)
+}
+
 // Each git process takes a few hundred ms to spawn under the test runner on macOS.
 describe('backup', { timeout: 60_000 }, () => {
-  it('pushes the current branch and checks that HEAD is on the remote', async () => {
+  it('pushes the current branch', async () => {
     await contentWithRemote()
 
     const result = await backup(options)
@@ -64,7 +79,7 @@ describe('backup', { timeout: 60_000 }, () => {
     expect(remoteHas(head())).toBe(true)
   })
 
-  it('never force-pushes or merges when the remote has moved on, and says why', async () => {
+  it('never force-pushes or merges when the remote has moved on, and says how to bring its commits in', async () => {
     await contentWithRemote()
     await backup(options)
     // Another machine pushes first.
@@ -80,7 +95,7 @@ describe('backup', { timeout: 60_000 }, () => {
 
     const result = await backup(options)
 
-    expect(result).toEqual({ status: 'rejected', reason: expect.stringMatching(/rejected/) })
+    expect(result).toEqual({ status: 'rejected', reason: expect.stringMatching(/rejected[\s\S]*git -C .* pull --rebase/) })
     expect(remoteBranches()).toBe(`${branch()} ${theirs}`)
     expect(head()).toBe(mine)
     expect(git(content, 'log', '--format=%s')).toBe('mine\nfirst')
@@ -107,37 +122,36 @@ describe('backup', { timeout: 60_000 }, () => {
   })
 })
 
-describe('backup over HTTP with the push token', { timeout: 60_000 }, () => {
-  const token = `test-push-token-${'x'.repeat(12)}`
+describe("backup with git's own credentials", { timeout: 60_000 }, () => {
+  const token = `test-user-token-${'x'.repeat(12)}`
 
-  it('authenticates with the token, from the environment only', async () => {
+  it("signs in as git does for the user (their credential helper), writing nothing to the repo's config", async () => {
     const server = await startHttpRemote(dir, token)
     try {
       await contentWithRemote()
       git(content, 'remote', 'set-url', 'origin', `${server.url}/remote.git`)
+      userCredentialHelper(token)
 
-      expect(await backup({ ...options, token })).toMatchObject({ status: 'backed-up', commit: head() })
+      expect(await backup(options)).toMatchObject({ status: 'backed-up', commit: head() })
       expect(remoteHas(head())).toBe(true)
       expect(server.authorizations).toContain(`Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`)
-      // Nothing about the token was written into the content repo's config.
       expect(await readFile(join(content, '.git', 'config'), 'utf8')).not.toContain(token)
     } finally {
       await server.close()
     }
   })
 
-  it('fails without prompting when the token is missing or wrong, never echoing it', async () => {
+  it('says why when git has no credentials for the remote', async () => {
     const server = await startHttpRemote(dir, token)
     try {
       await contentWithRemote()
       git(content, 'remote', 'set-url', 'origin', `${server.url}/remote.git`)
+      userCredentialHelper(undefined)
 
-      const missing = await backup(options)
-      const wrong = await backup({ ...options, token: 'wrong-token-value' })
-
-      expect(missing).toEqual({ status: 'failed', reason: expect.stringMatching(/Authentication failed|could not read Username/) })
-      expect(wrong).toEqual({ status: 'failed', reason: expect.stringMatching(/Authentication failed/) })
-      expect(JSON.stringify(wrong)).not.toContain('wrong-token-value')
+      expect(await backup(options)).toEqual({
+        status: 'failed',
+        reason: expect.stringMatching(/Authentication failed|could not read Username/),
+      })
       expect(remoteBranches()).toBe('')
     } finally {
       await server.close()
@@ -228,12 +242,22 @@ describe('backupState', { timeout: 60_000 }, () => {
     })
   })
 
-  it('is backed up, however long ago, while HEAD is on the remote', async () => {
+  it('is backed up, however long ago, while HEAD is on the remote, without asking the remote', async () => {
     await contentWithRemote()
     await commitHoursAgo(72)
     await backup(options)
+    // The remote is gone: only the repo's own record of the last push counts.
+    await rm(remote, { recursive: true })
 
     expect(await backupState({ ...options, now: () => NOW })).toEqual({ remote: true, backedUp: true, stale: false, largeFiles: [] })
+  })
+
+  it("counts only the remote's copy of the current branch", async () => {
+    await contentWithRemote()
+    await commitHoursAgo(48)
+    git(content, 'push', '--quiet', 'origin', 'HEAD:refs/heads/elsewhere')
+
+    expect(await backupState({ ...options, now: () => NOW })).toMatchObject({ backedUp: false, stale: true })
   })
 
   it('has nothing to warn about before the first Snapshot', async () => {
@@ -250,35 +274,6 @@ describe('backupState', { timeout: 60_000 }, () => {
   })
 })
 
-describe('checkBackup', { timeout: 60_000 }, () => {
-  it('finds a freshly cloned content repo backed up, by asking the remote', async () => {
-    await contentWithRemote()
-    await backup(options)
-    const restored = join(dir, 'restored')
-    execFileSync('git', ['clone', '--quiet', remote, restored])
-
-    expect(await checkBackup({ env: { OSTRAKA_HOME: restored } })).toEqual({
-      status: 'backed-up',
-      commit: git(restored, 'rev-parse', 'HEAD'),
-      pushed: false,
-    })
-  })
-
-  it('finds a Snapshot not pushed yet', async () => {
-    await contentWithRemote()
-    await backup(options)
-    await commitHoursAgo(1)
-
-    expect(await checkBackup(options)).toEqual({ status: 'not-backed-up' })
-  })
-
-  it('reports no remote without contacting anything', async () => {
-    await write('todos.json', '{"todos":[]}\n')
-    await snapshot('first', options)
-    expect(await checkBackup(options)).toEqual({ status: 'no-remote' })
-  })
-})
-
 describe('cloneContent', { timeout: 60_000 }, () => {
   it('clones the backup into the content folder, with the remote as origin', async () => {
     await contentWithRemote()
@@ -290,17 +285,22 @@ describe('cloneContent', { timeout: 60_000 }, () => {
     expect(result).toEqual({ status: 'cloned', path: restored, commit: head() })
     expect(git(restored, 'remote', 'get-url', 'origin')).toBe(remote)
     expect(await readFile(join(restored, 'todos.json'), 'utf8')).toBe('{"todos":[]}\n')
+    // A fresh clone is backed up: the remote's branch came with it.
+    expect(await backupState({ env: { OSTRAKA_HOME: restored } })).toMatchObject({ remote: true, backedUp: true })
   })
 
-  it('clones over HTTP with the push token', async () => {
-    const token = `test-push-token-${'y'.repeat(12)}`
+  it("clones over HTTP with git's own credentials", async () => {
+    const token = `test-user-token-${'y'.repeat(12)}`
     const server = await startHttpRemote(dir, token)
     try {
       await contentWithRemote()
       await backup(options)
-      const restored = join(dir, 'restored')
 
-      expect(await cloneContent(`${server.url}/remote.git`, { env: { OSTRAKA_HOME: restored }, token })).toMatchObject({ status: 'cloned' })
+      userCredentialHelper(token)
+      expect(await cloneContent(`${server.url}/remote.git`, { env: { OSTRAKA_HOME: join(dir, 'restored') } })).toMatchObject({
+        status: 'cloned',
+      })
+      userCredentialHelper(undefined)
       expect(await cloneContent(`${server.url}/remote.git`, { env: { OSTRAKA_HOME: join(dir, 'other') } })).toEqual({
         status: 'failed',
         reason: expect.stringMatching(/Authentication failed|could not read Username/),

@@ -24,7 +24,7 @@ export type Io = {
   now?: () => Date
   /** Asks the user one line, for the `init` walkthrough. */
   readLine?: (prompt: string) => Promise<string>
-  /** Calls to the running server (`ostraka search`, `ostraka backup`); tests pass a fake. */
+  /** Calls to the running server (`ostraka search`); tests pass a fake. */
   fetch?: (url: string, init?: RequestInit) => Promise<Response>
   stdout: (text: string) => void
   stderr: (text: string) => void

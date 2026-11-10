@@ -1,5 +1,5 @@
 // A git remote over HTTP on 127.0.0.1 that wants a token, as gitlab.com does: `git http-backend` behind Basic auth.
-// Tests use it to check that the push token reaches git; nothing here talks to a real remote.
+// Tests use it to check that git's own credentials (the user's helper) reach it; nothing here talks to a real remote.
 import { spawn } from 'node:child_process'
 import { createServer, type Server } from 'node:http'
 import type { AddressInfo } from 'node:net'
@@ -9,14 +9,18 @@ export type HttpRemote = {
   url: string
   /** Authorization headers received, to check the token went over the wire. */
   authorizations: string[]
+  /** Every request's path, to check that nothing contacted the remote at all. */
+  requests: string[]
   close(): Promise<void>
 }
 
 /** Serves the bare repos under `root`, accepting only `oauth2:<token>`. */
 export async function startHttpRemote(root: string, token: string): Promise<HttpRemote> {
   const authorizations: string[] = []
+  const requests: string[] = []
   const expected = `Basic ${Buffer.from(`oauth2:${token}`).toString('base64')}`
   const server: Server = createServer((req, res) => {
+    requests.push(req.url ?? '/')
     const authorization = req.headers.authorization
     if (authorization !== undefined) authorizations.push(authorization)
     if (authorization !== expected) {
@@ -60,6 +64,7 @@ export async function startHttpRemote(root: string, token: string): Promise<Http
   return {
     url: `http://127.0.0.1:${port}`,
     authorizations,
+    requests,
     close: () => new Promise((resolve) => server.close(() => resolve())),
   }
 }

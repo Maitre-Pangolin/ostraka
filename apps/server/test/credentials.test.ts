@@ -35,10 +35,10 @@ describe('startServer', () => {
     const { keychain, reads } = fakeKeychain(TOKENS)
     const { server, stop } = await startServer({ port: 0, webDist: '/nonexistent', keychain, env: {}, homeDir: home })
     try {
-      expect(reads).toEqual(['ostraka-gitlab', 'ostraka-jira', 'ostraka-push'])
+      expect(reads).toEqual(['ostraka-gitlab', 'ostraka-jira'])
       const { port } = server.address() as AddressInfo
       for (let i = 0; i < 3; i++) expect(await httpGet(port, '/api/settings')).toBe(200)
-      expect(reads).toHaveLength(3)
+      expect(reads).toHaveLength(2)
     } finally {
       await stop()
     }
@@ -108,7 +108,7 @@ describe('macKeychain', () => {
   })
 
   it('treats a missing item as no credential', async () => {
-    expect(await macKeychain(security(44).run).read('ostraka-push')).toBeUndefined()
+    expect(await macKeychain(security(44).run).read('ostraka-jira')).toBeUndefined()
   })
 
   it('fails on a denied read without echoing the output', async () => {
@@ -119,9 +119,9 @@ describe('macKeychain', () => {
 
   it('says whether an item exists without reading its secret (so without a prompt)', async () => {
     const found = security(0, 'keychain: "login.keychain-db"\n')
-    expect(await macKeychain(found.run).has('ostraka-push')).toBe(true)
-    expect(found.calls).toEqual([['find-generic-password', '-s', 'ostraka-push']])
-    expect(await macKeychain(security(44).run).has('ostraka-push')).toBe(false)
-    await expect(macKeychain(security(51).run).has('ostraka-push')).rejects.toThrow(/security exited with 51/)
+    expect(await macKeychain(found.run).has('ostraka-jira')).toBe(true)
+    expect(found.calls).toEqual([['find-generic-password', '-s', 'ostraka-jira']])
+    expect(await macKeychain(security(44).run).has('ostraka-jira')).toBe(false)
+    await expect(macKeychain(security(51).run).has('ostraka-jira')).rejects.toThrow(/security exited with 51/)
   })
 })

@@ -13,7 +13,6 @@ const SOURCE = {
 const TOKEN_LABEL = {
   gitlab: 'GitLab token',
   jira: 'Jira token',
-  push: 'Push token',
 } as const
 
 /** Settings: what the app reads from config.yml, and which Keychain items the server found at startup. Read-only. */
