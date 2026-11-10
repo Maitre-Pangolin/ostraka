@@ -81,9 +81,9 @@
   --today: oklch(0.68 0.14 70);
   --warning: oklch(0.62 0.15 60);
   --success: oklch(0.55 0.12 145);
-  --prio-high: oklch(0.58 0.19 30);
-  --prio-med: oklch(0.7 0.14 70);
-  --prio-low: oklch(0.6 0.08 240);
+  --prio-high: oklch(0.53 0.2 29);
+  --prio-med: oklch(0.62 0.14 65);
+  --prio-low: oklch(0.52 0.11 248);
   --tag-1: oklch(0.58 0.12 40);
   --tag-2: oklch(0.62 0.12 80);
   --tag-3: oklch(0.58 0.11 130);
@@ -116,9 +116,9 @@
   --today: oklch(0.78 0.13 75);
   --warning: oklch(0.78 0.15 65);
   --success: oklch(0.74 0.12 145);
-  --prio-high: oklch(0.7 0.17 30);
-  --prio-med: oklch(0.8 0.13 75);
-  --prio-low: oklch(0.72 0.08 240);
+  --prio-high: oklch(0.7 0.18 30);
+  --prio-med: oklch(0.8 0.14 72);
+  --prio-low: oklch(0.72 0.1 245);
   --tag-1: oklch(0.75 0.11 40);
   --tag-2: oklch(0.8 0.11 80);
   --tag-3: oklch(0.76 0.1 130);
