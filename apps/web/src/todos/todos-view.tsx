@@ -1,6 +1,6 @@
 import { filterTodos, isFiltering, type TodoFilter, type TodosView as ViewState } from '@ostraka/core/todo-filter'
 import { useNavigate, useSearch } from '@tanstack/react-router'
-import { Ban, ChevronRight, ChevronsDownUp, ChevronsUpDown, Trash2 } from 'lucide-react'
+import { Ban, ChevronRight, ChevronsDownUp, ChevronsUpDown, ListPlus, Trash2 } from 'lucide-react'
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import { toast } from 'sonner'
 import { Button } from '@/components/ui/button'
@@ -31,6 +31,7 @@ import {
   type TodoItem,
 } from './api'
 import { useToday } from './due'
+import { expandAll, isExpandable } from './expansion'
 import { TodoFilters } from './filters'
 import { QuickEntry } from './quick-entry'
 import { SubTodos } from './sub-todos'
@@ -146,6 +147,8 @@ function OpenTodos({ filter, found, target }: ListProps) {
   const restore = useRestoreTodo()
   const update = useUpdateTodo()
   const [openIds, setOpenIds] = useState<ReadonlySet<string>>(new Set())
+  // Todos showing the entry for a new Sub-todo, asked for from their Add a Sub-todo action.
+  const [adding, setAdding] = useState<ReadonlySet<string>>(new Set())
   // Parents whose last open Sub-todo was just finished: they offer to be marked done.
   const [offers, setOffers] = useState<ReadonlySet<string>>(new Set())
   const [pending, setPending] = useState<PendingFinish | null>(null)
@@ -202,18 +205,36 @@ function OpenTodos({ filter, found, target }: ListProps) {
       todo={item}
       dimmed={dimmed}
       open={openIds.has(item.id)}
-      onToggle={() => setOpenIds((ids) => toggled(ids, item.id))}
+      onOpenChange={(open) => {
+        setOpenIds((ids) => toggled(ids, item.id, open))
+        if (!open) setAdding((ids) => toggled(ids, item.id, false))
+      }}
+      adding={adding.has(item.id)}
       onDone={() => finish(item, { status: 'done' }, parent)}
       onChange={(change) => update.mutate({ todo: item, change })}
       tags={tags}
       today={today}
       warning={warning}
       actions={
-        <DropOrDelete
-          todo={item}
-          onDrop={(reason) => finish(item, { status: 'dropped', reason }, parent)}
-          onDelete={() => deleteForGood(item, parent)}
-        />
+        <>
+          {/* Sub-todos are one level deep: only Todos get the action; Sub-todos keep its place, lining up dates and flags. */}
+          {parent ? (
+            <span aria-hidden className="size-6 shrink-0" />
+          ) : (
+            <AddSubTodo
+              todo={item}
+              onClick={() => {
+                setOpenIds((ids) => toggled(ids, item.id, true))
+                setAdding((ids) => toggled(ids, item.id, true))
+              }}
+            />
+          )}
+          <DropOrDelete
+            todo={item}
+            onDrop={(reason) => finish(item, { status: 'dropped', reason }, parent)}
+            onDelete={() => deleteForGood(item, parent)}
+          />
+        </>
       }
     >
       {children}
@@ -221,11 +242,12 @@ function OpenTodos({ filter, found, target }: ListProps) {
   )
 
   /**
-   * Under an expanded Todo: all its Sub-todos and the entry for a new one. While filtering, the Sub-todos the filter
-   * matched show even when it is collapsed.
+   * Under an expanded Todo: all its Sub-todos, and the entry for a new one once asked for. While filtering, the
+   * Sub-todos the filter matched show even when it is collapsed.
    */
   const subTodosOf = (todo: Todo, matchedIds: ReadonlySet<string>) => {
-    const expanded = openIds.has(todo.id)
+    const entry = adding.has(todo.id)
+    const expanded = entry || (openIds.has(todo.id) && isExpandable(todo))
     const matched = todo.subTodos.filter((sub) => matchedIds.has(sub.id))
     if (!expanded && !(filtering && matched.length)) return undefined
     const dismissOffer = () => setOffers((ids) => toggled(ids, todo.id, false))
@@ -233,7 +255,8 @@ function OpenTodos({ filter, found, target }: ListProps) {
       <SubTodos
         parent={todo}
         shown={filtering ? matched : todo.subTodos}
-        entry={expanded}
+        entry={entry}
+        onEntryClose={() => setAdding((ids) => toggled(ids, todo.id, false))}
         tags={tags}
         today={today}
         renderOpen={(sub, warning) => row(sub, { parent: todo, warning })}
@@ -254,19 +277,28 @@ function OpenTodos({ filter, found, target }: ListProps) {
   }
 
   const changeError = complete.error ?? drop.error ?? remove.error ?? reopen.error ?? restore.error ?? update.error
+  const all = expandAll(
+    shown.map(({ todo }) => todo),
+    openIds,
+  )
   return (
     <>
-      <div className="flex items-center justify-end">
-        <Button
-          size="xs"
-          variant="ghost"
-          className="text-muted-foreground"
-          onClick={() => setOpenIds(openIds.size ? new Set() : new Set(shown.map(({ todo }) => todo.id)))}
-        >
-          {openIds.size ? <ChevronsDownUp /> : <ChevronsUpDown />}
-          {openIds.size ? 'Collapse all' : 'Expand all'}
-        </Button>
-      </div>
+      {all && (
+        <div className="flex items-center justify-end">
+          <Button
+            size="xs"
+            variant="ghost"
+            className="text-muted-foreground"
+            onClick={() => {
+              setOpenIds(all.next)
+              if (!all.next.size) setAdding(new Set())
+            }}
+          >
+            {all.next.size ? <ChevronsUpDown /> : <ChevronsDownUp />}
+            {all.label}
+          </Button>
+        </div>
+      )}
       {changeError && (
         <p className="text-destructive px-1 text-xs">
           {changeError.message}
@@ -328,6 +360,18 @@ function FinishParentDialog({
   )
 }
 
+const ROW_ACTION =
+  'text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 aria-expanded:bg-muted grid size-6 shrink-0 place-items-center rounded-md opacity-0 outline-none group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:ring-3 aria-expanded:opacity-100'
+
+/** The row's Add a Sub-todo action: expands the Todo and opens the Sub-todo entry under it, focused. */
+function AddSubTodo({ todo, onClick }: { todo: TodoItem; onClick: () => void }) {
+  return (
+    <button type="button" onClick={onClick} aria-label={`Add a Sub-todo to “${todo.title}”`} title="Add a Sub-todo" className={ROW_ACTION}>
+      <ListPlus className="size-3.5" />
+    </button>
+  )
+}
+
 /** The row's Drop or delete Popover: an optional reason, ↵ or Drop to Drop it, Delete to remove a mistake. */
 function DropOrDelete({ todo, onDrop, onDelete }: { todo: TodoItem; onDrop: (reason: string) => void; onDelete: () => void }) {
   const [open, setOpen] = useState(false)
@@ -341,10 +385,7 @@ function DropOrDelete({ todo, onDrop, onDelete }: { todo: TodoItem; onDrop: (rea
 
   return (
     <Popover open={open} onOpenChange={setOpen}>
-      <PopoverTrigger
-        aria-label={`Drop or delete “${todo.title}”`}
-        className="text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 aria-expanded:bg-muted grid size-6 shrink-0 place-items-center rounded-md opacity-0 outline-none group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:ring-3 aria-expanded:opacity-100"
-      >
+      <PopoverTrigger aria-label={`Drop or delete “${todo.title}”`} className={ROW_ACTION}>
         <Ban className="size-3.5" />
       </PopoverTrigger>
       <PopoverContent align="end" className="w-64 gap-2">

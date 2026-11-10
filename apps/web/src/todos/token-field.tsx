@@ -35,6 +35,8 @@ export type TokenFieldProps = {
   /** ↵ (`shift: false`) or ⇧↵ (`shift: true`). Return true when handled; an unhandled ⇧↵ in a multiline field is a new line. */
   onEnter?: (key: { shift: boolean }) => boolean
   onBlur?: () => void
+  /** Esc with no suggestions open, after the field is left. */
+  onEscape?: () => void
   /** Tags in use, for `#` suggestions; `exclude` those the Todo already has. */
   tags: string[]
   exclude?: string[]
@@ -65,6 +67,7 @@ export function TokenField({
   onTokens,
   onEnter,
   onBlur,
+  onEscape,
   tags,
   exclude,
   multiline,
@@ -109,9 +112,9 @@ export function TokenField({
   const active = Math.min(selected, suggestions.length - 1)
 
   // The editor is made once; its handlers read the latest props and state through this ref.
-  const latest = useRef({ onChange, onTokens, onEnter, onBlur, today, index, sites, isPerson, suggestions, active, multiline })
+  const latest = useRef({ onChange, onTokens, onEnter, onBlur, onEscape, today, index, sites, isPerson, suggestions, active, multiline })
   useLayoutEffect(() => {
-    latest.current = { onChange, onTokens, onEnter, onBlur, today, index, sites, isPerson, suggestions, active, multiline }
+    latest.current = { onChange, onTokens, onEnter, onBlur, onEscape, today, index, sites, isPerson, suggestions, active, multiline }
   })
 
   const pick = (suggestion: Suggestion) => {
@@ -161,7 +164,10 @@ export function TokenField({
       },
       Escape: (_state, _dispatch, editor) => {
         if (popupOpen()) setDismissed(true)
-        else (editor?.dom as HTMLElement | undefined)?.blur()
+        else {
+          ;(editor?.dom as HTMLElement | undefined)?.blur()
+          latest.current.onEscape?.()
+        }
         return true
       },
       'Mod-z': undo,

@@ -6,20 +6,25 @@ import { Checkbox } from '@/components/ui/checkbox'
 import { cn } from '@/lib/utils'
 import { ReferenceText } from '@/references/reference-chip'
 import type { TodoChange, TodoItem } from './api'
+import { isExpandable } from './expansion'
+import { PRIORITY_RING } from './priority'
 import { DuePicker, DueText, PriorityFlag, PriorityPicker, TagDot, TagPill } from './properties'
 import { TokenField } from './token-field'
 
 export type TodoRowProps = {
   /** A Todo, or a Sub-todo: they look and edit the same. */
   todo: TodoItem
+  /** Asked to show expanded. A row without a description or Sub-todos stays collapsed anyway (`isExpandable`). */
   open: boolean
-  onToggle: () => void
+  onOpenChange: (open: boolean) => void
+  /** A Sub-todo is being added under it: it shows expanded, with the entry among its children. */
+  adding?: boolean
   onDone: () => void
   onChange: (change: TodoChange) => void
   /** Tags in use, for `#` suggestions. */
   tags: string[]
   today: string
-  /** Row actions at the end, such as Drop or delete. */
+  /** Row actions at the end, such as Add a Sub-todo and Drop or delete. */
   actions?: ReactNode
   /** A warning shown before the due date, such as a Sub-todo due after its parent. */
   warning?: string
@@ -32,13 +37,6 @@ export type TodoRowProps = {
 /** A row shown only for context around what a filter matched. */
 export const DIMMED = 'opacity-50 hover:opacity-100 focus-within:opacity-100'
 
-const PRIORITY_RING: Record<StoredSubTodo['priority'], string> = {
-  high: 'border-prio-high',
-  medium: 'border-prio-med',
-  low: 'border-prio-low',
-  none: '',
-}
-
 /** Tokens typed in an open Todo change it straight away. */
 function tokenChange(tags: string[], props: TokenProps): TodoChange {
   const change: TodoChange = {}
@@ -49,53 +47,108 @@ function tokenChange(tags: string[], props: TokenProps): TodoChange {
 }
 
 /**
- * One open Todo or Sub-todo. Collapsed, it shows indicators for Sub-todos, description, due date, priority and Tags.
- * Expanded, its title and description are edited in place, its Tags can be removed, and its Sub-todos show under it
- * along a guide line from its checkbox. The date and the flag open their pickers either way.
+ * One open Todo or Sub-todo: `▸ ○ Title [indicators] #tags [warning] date flag [actions]`. Tags, date and priority
+ * always sit on the row. Only a row with a description or Sub-todos expands (chevron); expanded, its title and
+ * description are edited in place, its Tags get ×, and its Sub-todos show under it along a guide line from its
+ * checkbox. A row with neither has no chevron, and its title is edited in place by clicking it.
  */
-export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, actions, warning, dimmed, children }: TodoRowProps) {
+export function TodoRow({
+  todo,
+  open,
+  onOpenChange,
+  adding,
+  onDone,
+  onChange,
+  tags,
+  today,
+  actions,
+  warning,
+  dimmed,
+  children,
+}: TodoRowProps) {
   const [describing, setDescribing] = useState(false)
-  const showDescription = open && (todo.description !== undefined || describing)
+  const [editingTitle, setEditingTitle] = useState(false)
+  const expandable = isExpandable(todo)
+  const expanded = Boolean(adding) || (open && (expandable || describing))
+  const showDescription = expanded && (todo.description !== undefined || describing)
   // The Tags as last sent, so tokens typed in quick succession add up before the list has caught up.
   const latestTags = useRef(todo.tags)
   useEffect(() => {
     latestTags.current = todo.tags
   }, [todo.tags])
-  const setTags = (next: string[]) => {
-    latestTags.current = next
-    onChange({ tags: next })
+  const removeTag = (tag: string) => {
+    latestTags.current = latestTags.current.filter((other) => other !== tag)
+    onChange({ tags: latestTags.current })
   }
   const onTokens = (props: TokenProps) => {
     const change = tokenChange(latestTags.current, props)
     if (change.tags) latestTags.current = change.tags
     onChange(change)
   }
+  const toggle = () => {
+    if (expanded) setDescribing(false)
+    onOpenChange(!expanded)
+  }
   return (
     <li data-todo={todo.id} className="flex flex-col">
       <div className={cn('group/row hover:bg-muted/70 flex min-h-8 items-center gap-1.5 rounded-md px-1', dimmed && DIMMED)}>
-        <button
-          type="button"
-          onClick={onToggle}
-          aria-expanded={open}
-          aria-label={`${open ? 'Collapse' : 'Expand'} “${todo.title}”`}
-          className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 grid size-5 shrink-0 place-items-center rounded outline-none focus-visible:ring-3"
-        >
-          <ChevronRight aria-hidden className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
-        </button>
+        {expandable ? (
+          <button
+            type="button"
+            onClick={toggle}
+            aria-expanded={expanded}
+            aria-label={`${expanded ? 'Collapse' : 'Expand'} “${todo.title}”`}
+            className="text-muted-foreground hover:text-foreground focus-visible:ring-ring/50 grid size-5 shrink-0 place-items-center rounded outline-none focus-visible:ring-3"
+          >
+            <ChevronRight aria-hidden className={cn('size-3.5 transition-transform', expanded && 'rotate-90')} />
+          </button>
+        ) : (
+          // Keeps the checkbox lined up with the rows that expand.
+          <span aria-hidden className="size-5 shrink-0" />
+        )}
         <Checkbox
           checked={false}
           onCheckedChange={onDone}
           aria-label={`Mark “${todo.title}” done`}
           className={cn('rounded-full', PRIORITY_RING[todo.priority])}
         />
-        {open ? (
-          <TitleEditor todo={todo} onChange={onChange} onTokens={onTokens} tags={tags} onDescribe={() => setDescribing(true)} />
+        {expanded || editingTitle ? (
+          <div className="flex min-w-1/4 flex-1">
+            <TitleEditor
+              todo={todo}
+              onChange={onChange}
+              onTokens={onTokens}
+              tags={tags}
+              autoFocus={editingTitle}
+              onLeave={() => setEditingTitle(false)}
+              onDescribe={() => {
+                setDescribing(true)
+                onOpenChange(true)
+              }}
+            />
+          </div>
+        ) : expandable ? (
+          <span onClick={toggle} className="min-w-0 flex-1 cursor-default truncate py-1 pl-1 text-sm">
+            <ReferenceText text={todo.title} />
+          </span>
         ) : (
-          <span onClick={onToggle} className="min-w-0 flex-1 cursor-default truncate py-1 pl-1 text-sm">
+          <span
+            role="button"
+            tabIndex={0}
+            aria-label={`Edit “${todo.title}”`}
+            onClick={() => setEditingTitle(true)}
+            onKeyDown={(event) => {
+              if (event.key !== 'Enter' || event.target !== event.currentTarget) return
+              event.preventDefault()
+              setEditingTitle(true)
+            }}
+            className="focus-visible:ring-ring/50 min-w-0 flex-1 cursor-text truncate rounded py-1 pl-1 text-sm outline-none focus-visible:ring-3"
+          >
             <ReferenceText text={todo.title} />
           </span>
         )}
-        {!open && <Indicators todo={todo} />}
+        {!expanded && <Indicators todo={todo} />}
+        <RowTags tags={todo.tags} onRemove={expanded ? removeTag : undefined} />
         {warning && (
           <span className="text-warning shrink-0" title={warning}>
             <TriangleAlert aria-hidden className="size-3.5" />
@@ -106,27 +159,18 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
         <PriorityPicker priority={todo.priority} quiet onChange={(priority) => onChange({ priority })} />
         {actions}
       </div>
-      {((open && (showDescription || todo.tags.length > 0)) || children) && (
+      {(showDescription || children) && (
         <div className={cn('relative flex flex-col', children && GUIDE_LINE)}>
-          {open && (showDescription || todo.tags.length > 0) && (
+          {showDescription && (
             <div className="mb-1 ml-11 flex flex-col gap-1 pr-2">
-              {showDescription && (
-                <DescriptionEditor
-                  todo={todo}
-                  onChange={onChange}
-                  onTokens={onTokens}
-                  tags={tags}
-                  autoFocus={describing}
-                  onClose={() => setDescribing(false)}
-                />
-              )}
-              {todo.tags.length > 0 && (
-                <div className="flex flex-wrap items-center gap-1">
-                  {todo.tags.map((tag) => (
-                    <TagPill key={tag} tag={tag} onRemove={() => setTags(latestTags.current.filter((other) => other !== tag))} />
-                  ))}
-                </div>
-              )}
+              <DescriptionEditor
+                todo={todo}
+                onChange={onChange}
+                onTokens={onTokens}
+                tags={tags}
+                autoFocus={describing}
+                onClose={() => setDescribing(false)}
+              />
             </div>
           )}
           {children}
@@ -138,8 +182,6 @@ export function TodoRow({ todo, open, onToggle, onDone, onChange, tags, today, a
 
 // A vertical line from the centre of the row's checkbox (padding, chevron, gap, half the checkbox) down its Sub-todos.
 const GUIDE_LINE = 'before:bg-border before:absolute before:top-0 before:bottom-4 before:left-[calc(var(--spacing)*9.5)] before:w-px'
-
-const PRIORITY_DOT: Record<StoredSubTodo['priority'], string> = { ...PRIORITY_RING, none: 'border-input' }
 
 /**
  * Sub-todos of a finished Todo, as a filter matched them in Done & Dropped: read-only lines with a guide from the
@@ -158,16 +200,12 @@ export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; t
             ) : subTodo.status === 'dropped' ? (
               <Ban aria-label="Dropped" className="text-muted-foreground size-3.5 shrink-0" />
             ) : (
-              <span aria-hidden className={cn('size-3.5 shrink-0 rounded-full border', PRIORITY_DOT[subTodo.priority])} />
+              <span aria-hidden className={cn('size-3.5 shrink-0 rounded-full', PRIORITY_RING[subTodo.priority])} />
             )}
             <span className={cn('min-w-0 flex-1 truncate text-sm', finished && 'text-muted-foreground line-through')}>
               <ReferenceText text={subTodo.title} />
             </span>
-            <span className="hidden shrink-0 items-center gap-1 @md:flex">
-              {subTodo.tags.map((tag) => (
-                <TagPill key={tag} tag={tag} />
-              ))}
-            </span>
+            <RowTags tags={subTodo.tags} />
             {subTodo.due && !finished && <DueText due={subTodo.due} today={today} />}
             {subTodo.priority !== 'none' && <PriorityFlag priority={subTodo.priority} className="shrink-0" />}
           </li>
@@ -177,6 +215,7 @@ export function SubTodoLines({ subTodos, today }: { subTodos: StoredSubTodo[]; t
   )
 }
 
+/** A collapsed row's Sub-todo count and description mark. */
 function Indicators({ todo }: { todo: TodoItem }) {
   const subTodos = 'subTodos' in todo ? todo.subTodos : []
   const finished = subTodos.filter((sub) => sub.status !== 'open').length
@@ -202,22 +241,39 @@ function Indicators({ todo }: { todo: TodoItem }) {
           <span className="sr-only">Has a description</span>
         </span>
       )}
-      {todo.tags.length > 0 && (
-        <>
-          <span className="hidden shrink-0 items-center gap-1 @md:flex">
-            {todo.tags.slice(0, 3).map((tag) => (
-              <TagPill key={tag} tag={tag} />
-            ))}
-            {todo.tags.length > 3 && <span className="text-muted-foreground text-[11px]">+{todo.tags.length - 3}</span>}
-          </span>
-          <span className="flex shrink-0 pl-1 @md:hidden" title={todo.tags.map((tag) => `#${tag}`).join(' ')}>
-            {todo.tags.map((tag) => (
-              <TagDot key={tag} tag={tag} />
-            ))}
-            <span className="sr-only">{todo.tags.map((tag) => `#${tag}`).join(' ')}</span>
-          </span>
-        </>
-      )}
+    </>
+  )
+}
+
+/**
+ * A row's Tags, on the row after its title. Expanded (`onRemove`): every Tag as a pill with ×, wrapping within half
+ * the row rather than squeezing the title or scrolling sideways. Collapsed: up to three pills, below `@md` dots.
+ */
+function RowTags({ tags, onRemove }: { tags: string[]; onRemove?: (tag: string) => void }) {
+  if (!tags.length) return null
+  if (onRemove)
+    return (
+      <span className="flex max-w-1/2 min-w-0 flex-wrap items-center justify-end gap-1">
+        {tags.map((tag) => (
+          <TagPill key={tag} tag={tag} onRemove={() => onRemove(tag)} />
+        ))}
+      </span>
+    )
+  const label = tags.map((tag) => `#${tag}`).join(' ')
+  return (
+    <>
+      <span className="hidden shrink-0 items-center gap-1 @md:flex">
+        {tags.slice(0, 3).map((tag) => (
+          <TagPill key={tag} tag={tag} />
+        ))}
+        {tags.length > 3 && <span className="text-muted-foreground text-[11px]">+{tags.length - 3}</span>}
+      </span>
+      <span className="flex shrink-0 pl-1 @md:hidden" title={label}>
+        {tags.map((tag) => (
+          <TagDot key={tag} tag={tag} />
+        ))}
+        <span className="sr-only">{label}</span>
+      </span>
     </>
   )
 }
@@ -244,16 +300,29 @@ function useDraft(stored: string) {
   }
 }
 
-/** ↵ or leaving the field saves the title; ⇧↵ opens the description. An emptied title goes back to what it was. */
-function TitleEditor({ todo, onChange, onTokens, tags, onDescribe }: EditorProps & { onDescribe: () => void }) {
+/**
+ * ↵ or leaving the field saves the title; ⇧↵ opens the description. An emptied title goes back to what it was.
+ * `onLeave` follows leaving it, which ends editing in place on a row that doesn't expand.
+ */
+function TitleEditor({
+  todo,
+  onChange,
+  onTokens,
+  tags,
+  autoFocus,
+  onLeave,
+  onDescribe,
+}: EditorProps & { autoFocus: boolean; onLeave: () => void; onDescribe: () => void }) {
   const { draft, setDraft, done, reset } = useDraft(todo.title)
   const save = () => {
     done()
     if (!draft.trim()) reset()
     else if (draft.trim() !== todo.title) onChange({ title: draft })
+    onLeave()
   }
   return (
     <TokenField
+      autoFocus={autoFocus}
       value={draft}
       onChange={setDraft}
       onTokens={onTokens}
