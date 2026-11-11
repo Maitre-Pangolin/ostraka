@@ -36,7 +36,8 @@ function mrNode({ iid, title, project = 'pay/api', projectId = 7, pipeline, appr
     headPipeline: pipeline && {
       id: `gid://gitlab/Ci::Pipeline/${pipeline.id}`,
       status: pipeline.status,
-      webUrl: `${BASE_URL}/${project}/-/pipelines/${pipeline.id}`,
+      // GitLab's Pipeline type has no webUrl, only this path relative to the instance.
+      path: `/${project}/-/pipelines/${pipeline.id}`,
     },
   }
 }
