@@ -2,10 +2,11 @@
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import { run } from '../src/main.ts'
 
-const SAMPLE = new URL('../../core/test/fixtures/old-devlogs/2026-02.md', import.meta.url).pathname
+const SAMPLE = fileURLToPath(new URL('../../core/test/fixtures/old-devlogs/2026-02.md', import.meta.url))
 
 let contentRoot: string
 let originals: string

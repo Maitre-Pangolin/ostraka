@@ -14,7 +14,8 @@ describe('README', () => {
     const restore = readme.slice(readme.indexOf('## Restore on a new machine'))
     expect(readme).toContain('## Back it up')
     expect(readme).toContain('pnpm ostraka backup')
-    const steps = ['pnpm install', 'pnpm build', 'pnpm ostraka init --from', 'pnpm ostraka install']
+    // `install` builds its own copy, so a restore needs no `pnpm build` of the checkout.
+    const steps = ['pnpm install', 'pnpm ostraka init --from', 'pnpm ostraka install']
     const at = steps.map((step) => restore.indexOf(step))
     expect(at.every((index) => index >= 0)).toBe(true)
     expect(at).toEqual(at.toSorted((a, b) => a - b))

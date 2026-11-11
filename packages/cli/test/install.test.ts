@@ -1,5 +1,5 @@
 import { execFile } from 'node:child_process'
-import { lstat, mkdir, mkdtemp, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
+import { lstat, mkdir, mkdtemp, readdir, readFile, readlink, rm, stat, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
@@ -13,11 +13,35 @@ const UID = 501
 
 let home: string
 let launchctl: string[][]
+let runs: { command: string; args: string[]; cwd: string }[]
 
 beforeEach(async () => {
   home = await mkdtemp(join(tmpdir(), 'ostraka-install-'))
   launchctl = []
+  runs = []
 })
+
+async function cloneByLinks(dest: string) {
+  await mkdir(dest)
+  for (const entry of await readdir(REPO)) if (entry !== '.git') await symlink(join(REPO, entry), join(dest, entry))
+}
+
+/** The installed copy, under the temp home. */
+const appPath = () => join(home, 'Library', 'Application Support', 'ostraka', 'app')
+
+/**
+ * git and pnpm are faked: `git clone` makes a folder whose entries link into this repo, so the installed copy runs
+ * this repo's real code (the shim test runs it), and the rest succeed unless `fail` names the pnpm script that breaks.
+ */
+const fakeRun =
+  (fail?: string): System['run'] =>
+  async (command, args, { cwd }) => {
+    runs.push({ command, args, cwd })
+    if (command === 'pnpm' && args[0] === fail) return { code: 1, stdout: '', stderr: `${fail} broke` }
+    if (command === 'git' && args[0] === 'clone') await cloneByLinks(args.at(-1)!)
+    if (command === 'git' && args[0] === 'log') return { code: 0, stdout: 'abc1234 Latest change\n', stderr: '' }
+    return { code: 0, stdout: '', stderr: '' }
+  }
 
 afterEach(async () => {
   await rm(home, { recursive: true, force: true })
@@ -28,8 +52,10 @@ function fakeSystem(overrides: Partial<System> = {}): System {
   return {
     platform: 'darwin',
     nodePath: process.execPath,
+    nodeVersion: '24.11.0',
     uid: UID,
     launchctl: async (args) => (launchctl.push(args), { code: args[0] === 'bootout' ? 3 : 0, stderr: '' }),
+    run: fakeRun(),
     ...overrides,
   }
 }
@@ -57,7 +83,7 @@ describe('ostraka install', () => {
     expect(plist).toContain(`<key>Label</key>\n  <string>${LABEL}</string>`)
     expect(plist).toMatch(
       new RegExp(
-        `<key>ProgramArguments</key>\\s*<array>\\s*<string>${process.execPath}</string>\\s*<string>${REPO}/packages/cli/bin/ostraka.ts</string>\\s*<string>serve</string>\\s*</array>`,
+        `<key>ProgramArguments</key>\\s*<array>\\s*<string>${process.execPath}</string>\\s*<string>${appPath()}/packages/cli/bin/ostraka.ts</string>\\s*<string>serve</string>\\s*</array>`,
       ),
     )
     expect(plist).toMatch(/<key>RunAtLoad<\/key>\s*<true\/>/)
@@ -79,11 +105,11 @@ describe('ostraka install', () => {
     ])
   })
 
-  it('writes an executable shim with absolute paths to node and the repo', async () => {
+  it('writes an executable shim with absolute paths to node and the installed copy', async () => {
     await ostraka(['install'])
     expect((await stat(shimPath())).mode & 0o111).toBe(0o111)
     const shim = await readFile(shimPath(), 'utf8')
-    expect(shim).toContain(`'${process.execPath}' '${REPO}/packages/cli/bin/ostraka.ts' "$@"`)
+    expect(shim).toContain(`'${process.execPath}' '${appPath()}/packages/cli/bin/ostraka.ts' "$@"`)
   })
 
   it('writes a shim that runs ostraka with no PATH at all', async () => {
@@ -109,11 +135,11 @@ describe('ostraka install', () => {
     expect(stdout).not.toMatch(/PATH/)
   })
 
-  it('links each of the repo’s skills into ~/.claude/skills, where Claude Code and Cursor both find them', async () => {
+  it('links each of the installed copy’s skills into ~/.claude/skills, where Claude Code and Cursor both find them', async () => {
     const { stdout } = await ostraka(['install'])
     const skill = join(home, '.claude', 'skills', 'devlog')
     expect((await lstat(skill)).isSymbolicLink()).toBe(true)
-    expect(await readlink(skill)).toBe(`${REPO}/.claude/skills/devlog`)
+    expect(await readlink(skill)).toBe(`${appPath()}/.claude/skills/devlog`)
     expect(stdout).toContain(skill)
   })
 
@@ -122,7 +148,7 @@ describe('ostraka install', () => {
     await mkdir(dirname(skill), { recursive: true })
     await symlink('/moved/repo/.claude/skills/devlog', skill)
     expect((await ostraka(['install'])).code).toBe(0)
-    expect(await readlink(skill)).toBe(`${REPO}/.claude/skills/devlog`)
+    expect(await readlink(skill)).toBe(`${appPath()}/.claude/skills/devlog`)
   })
 
   it('leaves a skill of the same name that it did not install alone, and says so', async () => {
@@ -146,7 +172,7 @@ describe('ostraka install', () => {
   })
 
   it('points to the global People instruction for ~/.claude/CLAUDE.md and Cursor User Rules, writing neither', async () => {
-    const instruction = `${REPO}/.claude/skills/people/global-instruction.md`
+    const instruction = `${appPath()}/.claude/skills/people/global-instruction.md`
     const { stdout } = await ostraka(['install'])
     expect(stdout).toMatch(new RegExp(`${instruction}.*~/\\.claude/CLAUDE\\.md.*Cursor.*User Rules`))
     await expect(stat(join(home, '.claude', 'CLAUDE.md'))).rejects.toThrow(/ENOENT/)
@@ -179,5 +205,76 @@ describe('ostraka install', () => {
     expect(code).toBe(1)
     expect(stderr).toMatch(/macOS/)
     expect(launchctl).toEqual([])
+  })
+
+  it('builds and tests the copy beside the installed one, from main, then swaps it in', async () => {
+    expect((await ostraka(['install'])).code).toBe(0)
+    const next = `${appPath()}.next`
+    expect(runs.map(({ command, args }) => [command, ...args])).toEqual([
+      ['git', 'clone', '--quiet', '--branch', 'main', REPO, next],
+      ['git', 'log', '-1', '--format=%h %s'],
+      ['pnpm', 'install', '--frozen-lockfile'],
+      ['pnpm', 'build'],
+      ['pnpm', 'test'],
+    ])
+    expect(runs.slice(1).every(({ cwd }) => cwd === next)).toBe(true)
+    expect((await lstat(appPath())).isDirectory()).toBe(true)
+    await expect(lstat(next)).rejects.toThrow(/ENOENT/)
+  })
+
+  it('installs another branch with --ref, and skips the tests with --skip-tests', async () => {
+    const { stdout } = await ostraka(['install', '--ref', 'integration/28-ostraka-v1', '--skip-tests'])
+    expect(runs[0]?.args).toContain('integration/28-ostraka-v1')
+    expect(runs.some(({ args }) => args[0] === 'test')).toBe(false)
+    expect(stdout).toContain('integration/28-ostraka-v1 at abc1234 Latest change')
+  })
+
+  it('keeps the previous copy as app.prev', async () => {
+    await ostraka(['install'])
+    await ostraka(['install'])
+    expect((await lstat(`${appPath()}.prev`)).isDirectory()).toBe(true)
+  })
+
+  it('leaves the installed copy and the running app alone when a step fails', async () => {
+    await ostraka(['install'])
+    launchctl = []
+    const before = await readFile(plistPath(), 'utf8')
+    const { code, stderr } = await ostraka(['install'], { system: fakeSystem({ run: fakeRun('build') }) })
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/pnpm build failed.*unchanged.*build broke/s)
+    expect(await readFile(plistPath(), 'utf8')).toBe(before)
+    await expect(lstat(`${appPath()}.next`)).rejects.toThrow(/ENOENT/)
+    await expect(lstat(`${appPath()}.prev`)).rejects.toThrow(/ENOENT/)
+    expect(launchctl).toEqual([])
+  })
+
+  it('refuses a Node older than 24, which cannot run the TypeScript sources', async () => {
+    const { code, stderr } = await ostraka(['install'], { system: fakeSystem({ nodeVersion: '20.18.0' }) })
+    expect(code).toBe(1)
+    expect(stderr).toMatch(/Node 20\.18\.0.*24 or newer/s)
+    expect(runs).toEqual([])
+  })
+})
+
+describe('ostraka update', () => {
+  it('asks for install first', async () => {
+    const { code, stderr } = await ostraka(['update'])
+    expect(code).toBe(1)
+    expect(stderr).toContain('ostraka install')
+    expect(runs).toEqual([])
+  })
+
+  it('rebuilds the copy and restarts the app', async () => {
+    await ostraka(['install'])
+    runs = []
+    launchctl = []
+    const { code, stdout } = await ostraka(['update'])
+    expect(code).toBe(0)
+    expect(runs.map(({ args }) => args[0])).toEqual(['clone', 'log', 'install', 'build', 'test'])
+    expect(launchctl).toEqual([
+      ['bootout', `gui/${UID}/${LABEL}`],
+      ['bootstrap', `gui/${UID}`, plistPath()],
+    ])
+    expect(stdout).toMatch(/Updated .* to main at abc1234/)
   })
 })

@@ -2,7 +2,7 @@
 import { HOSTNAME, PORT } from '@ostraka/server'
 import { BACKUP_USAGE, backupCommand, initCommand } from './backup.ts'
 import { DEVLOG_USAGE, devlogCommand } from './devlog.ts'
-import { installCommand, type System } from './install.ts'
+import { INSTALL_USAGE, installCommand, updateCommand, type System } from './install.ts'
 import { MIGRATE_USAGE, migrateCommand } from './migrate.ts'
 import { NOTE_USAGE, noteCommand } from './note.ts'
 import { PATH_USAGE, pathCommand } from './path.ts'
@@ -19,7 +19,7 @@ export type { System } from './install.ts'
 export type Io = {
   env: Record<string, string | undefined>
   homeDir?: string
-  /** launchd, node and the platform, for `install`. Tests pass a fake. */
+  /** launchd, git, pnpm, node and the platform, for `install`, `update` and the service commands. Tests pass a fake. */
   system?: System
   /** The current moment, for "today"; tests pass a fixed one. */
   now?: () => Date
@@ -33,9 +33,7 @@ export type Io = {
 
 const USAGE = `Usage:
   ostraka serve                 Start the app on http://${HOSTNAME}:${PORT}
-  ostraka install               Start the app at login (LaunchAgent), put \`ostraka\` in ~/.local/bin
-                                and link the repo's skills into ~/.claude/skills
-${SERVICE_USAGE}${PATH_USAGE}${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${MIGRATE_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
+${INSTALL_USAGE}${SERVICE_USAGE}${PATH_USAGE}${TODO_USAGE}${NOTE_USAGE}${DEVLOG_USAGE}${MIGRATE_USAGE}${TAG_USAGE}${PEOPLE_USAGE}${SEARCH_USAGE}${SNAPSHOT_USAGE}${BACKUP_USAGE}`
 
 /** Runs one `ostraka` command and returns its exit code. */
 export async function run(argv: string[], io: Io): Promise<number> {
@@ -47,7 +45,9 @@ export async function run(argv: string[], io: Io): Promise<number> {
       case 'serve':
         return await serveCommand(io)
       case 'install':
-        return await installCommand(io)
+        return await installCommand(rest, io)
+      case 'update':
+        return await updateCommand(rest, io)
       case 'start':
       case 'stop':
       case 'restart':

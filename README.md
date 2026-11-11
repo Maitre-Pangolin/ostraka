@@ -70,22 +70,30 @@ The app's Tags view (the tag icon at the bottom of the rail) lists every Tag in 
 
 ## Install it
 
-From the main checkout (not a worktree: the paths written point at this repo):
+The app runs from a copy of its own, never from your checkout, so switching branches or editing here doesn't touch what runs. From your checkout, with Node 24 or newer active (`nvm use 24`):
 
-    pnpm install && pnpm build
+    pnpm install
     pnpm ostraka install
 
-This writes:
+This takes a few minutes. It copies `main` (`--ref <branch>` for another) into `~/Library/Application Support/ostraka/app`, then installs, builds and tests that copy (`--skip-tests` skips the tests). Only if every step passes does it become the installed copy; the previous one stays as `app.prev`. Then it writes:
 
-- a LaunchAgent, `~/Library/LaunchAgents/com.ostraka.server.plist`, that runs `ostraka serve` at login and restarts it after a crash. Logs go to `~/Library/Logs/ostraka/server.log`.
-- a shim, `~/.local/bin/ostraka`, with absolute paths to node and this repo, so skills and Dock-launched editors find `ostraka` by name. Put `~/.local/bin` on your `PATH` if it isn't.
-- a link `~/.claude/skills/<name>` to each skill in this repo's `.claude/skills/`, so the skills work from any project, in Claude Code and in Cursor (which reads `~/.claude/skills/` too). The repo stays their single source: an edit here applies at once. A skill folder of the same name that isn't such a link is left alone, and `install` says so. It also points out the old Cursor `/devlog` command (`~/.cursor/commands/devlog.md`) if it is still there: the `devlog` skill replaces it and its dictation mode.
+- a LaunchAgent, `~/Library/LaunchAgents/com.ostraka.server.plist`, that runs the copy's `ostraka serve` at login and restarts it after a crash. Logs go to `~/Library/Logs/ostraka/server.log`.
+- a shim, `~/.local/bin/ostraka`, with absolute paths to node and the copy, so you, skills and Dock-launched editors run `ostraka` by name from anywhere. Put `~/.local/bin` on your `PATH` if it isn't (`install` says so).
+- a link `~/.claude/skills/<name>` to each of the copy's skills, so the skills work from any project, in Claude Code and in Cursor (which reads `~/.claude/skills/` too). A skill folder of the same name that isn't such a link is left alone, and `install` says so. It also points out the old Cursor `/devlog` command (`~/.cursor/commands/devlog.md`) if it is still there: the `devlog` skill replaces it and its dictation mode.
 
-Run it again after moving the repo or changing Node versions. To remove it: `launchctl bootout gui/$(id -u)/com.ostraka.server`, then delete the files and the skill links.
+Both point at the node `install` ran with. `install` refuses a Node older than 24, and `ostraka status` warns if that node has since been removed (an `nvm uninstall`): run `ostraka update` with Node 24 or newer active to point at another. To remove everything: `launchctl bootout gui/$(id -u)/com.ostraka.server`, then delete the LaunchAgent, the shim, the skill links and `~/Library/Application Support/ostraka`.
 
 Then open http://127.0.0.1:4747 and install it as an app, so it gets its own window and Dock icon: in Chrome, ⋮ › Cast, save and share › Install page as app; in Safari, File › Add to Dock.
 
-The LaunchAgent runs the checked-out code, so keep this checkout on `main`. It ignores `OSTRAKA_HOME`: set `contentDir` in `config.yml` ([Configure it](#configure-it)) to use another content folder.
+The installed app ignores `OSTRAKA_HOME`: set `contentDir` in `config.yml` ([Configure it](#configure-it)) to use another content folder.
+
+### Update it
+
+Merge into `main`, then:
+
+    ostraka update
+
+It copies the latest `main` from the checkout you installed from, installs, builds and tests it beside the installed copy, and only then swaps it in and restarts the app (Snapshot first). A failing step leaves the installed copy and the running app as they were. `--ref` and `--skip-tests` work as for `install`. To go back, stop the app, swap `app` and `app.prev` in `~/Library/Application Support/ostraka`, and start it.
 
 ### Start, stop and restart
 
@@ -93,8 +101,8 @@ Once installed, the app runs in the background, with no terminal. These drive th
 
 - `ostraka stop` stops it cleanly: pending changes are committed as a Snapshot, then it exits and stays stopped until the next login or `ostraka start`. It waits up to 15 s for that.
 - `ostraka start` starts it (and loads the LaunchAgent again if it was turned off).
-- `ostraka restart` restarts it, Snapshot first, after an update (`git pull`, `pnpm install && pnpm build`) or a changed Keychain item or `config.yml`.
-- `ostraka status` says whether it runs in the background and its pid, or whether an `ostraka serve` in a terminal answers instead; it exits 1 when nothing runs.
+- `ostraka restart` restarts it, Snapshot first, after a changed Keychain item or `config.yml`.
+- `ostraka status` says which copy is installed, whether it runs in the background and its pid, or whether an `ostraka serve` in a terminal answers instead; it exits 1 when nothing runs.
 
 A crash restarts it on its own. `ostraka serve` in a terminal stops the same clean way on Ctrl+C.
 
@@ -191,6 +199,6 @@ The content repo is backed up by a plain `git push` of its whole history to a pr
 
 ## Restore on a new machine
 
-1. Clone this repo, then `pnpm install && pnpm build` (Node 24+ and pnpm 10, as in [Run it](#run-it)).
+1. Clone this repo, then `pnpm install` (Node 24+ and pnpm 10, as in [Run it](#run-it)).
 2. `pnpm ostraka init --from https://gitlab.com/<you>/ostraka-content.git`. It walks through recreating the GitLab and Jira Keychain items ([Credentials](#credentials)), waiting while you run each command in another terminal tab (it never reads them: only the server does); then it clones the content into `~/ostraka-content` (or `OSTRAKA_HOME`) with `origin` set, signing in with git's own credentials (your SSH key or credential helper, or a prompt: over HTTPS, user `oauth2` and a GitLab token as password), as every later `ostraka backup` does, and writes `~/.config/ostraka/config.yml` with `contentDir` and `gitlab.base_url`, keeping a file that is already there. Fill in the Jira settings ([Configure it](#configure-it)).
-3. `pnpm ostraka install` for the LaunchAgent and the CLI shim ([Install it](#install-it)). The server starts on the cloned content, already backed up; carry on backing up with `ostraka backup`.
+3. `pnpm ostraka install` for the installed copy, the LaunchAgent and the CLI shim ([Install it](#install-it)). The server starts on the cloned content, already backed up; carry on backing up with `ostraka backup`.

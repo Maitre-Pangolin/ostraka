@@ -22,9 +22,12 @@ afterEach(async () => {
 
 const plistPath = () => join(home, 'Library', 'LaunchAgents', `${LABEL}.plist`)
 
-async function installed() {
+async function installed(node = process.execPath) {
   await mkdir(join(home, 'Library', 'LaunchAgents'), { recursive: true })
-  await writeFile(plistPath(), '<plist/>')
+  await writeFile(
+    plistPath(),
+    `<plist><dict><key>ProgramArguments</key>\n  <array>\n    <string>${node}</string>\n  </array></dict></plist>`,
+  )
 }
 
 /** What `launchctl print` shows for the service: not loaded, loaded and stopped, or running with a pid. */
@@ -36,7 +39,12 @@ function fakeSystem(state: Launchd, after: (args: string[]) => Launchd | void = 
   return {
     platform: 'darwin',
     nodePath: process.execPath,
+    nodeVersion: '24.11.0',
     uid: UID,
+    run: async (command, args) =>
+      command === 'git' && args[0] === 'log'
+        ? { code: 0, stdout: 'abc1234 Latest change\n', stderr: '' }
+        : { code: 0, stdout: '', stderr: '' },
     launchctl: async (args) => {
       calls.push(args)
       if (args[0] === 'print') {
@@ -157,6 +165,19 @@ describe('ostraka status', () => {
     const { code, stdout } = await ostraka(['status'], fakeSystem('stopped'), healthy)
     expect(code).toBe(0)
     expect(stdout).toMatch(/ostraka serve/)
+  })
+
+  it('says which copy is installed', async () => {
+    await installed()
+    const { stdout } = await ostraka(['status'], fakeSystem({ pid: 4242 }), healthy)
+    expect(stdout).toContain('at abc1234 Latest change')
+    expect(stdout).not.toMatch(/no longer exists/)
+  })
+
+  it('warns when the node binary the LaunchAgent runs has gone', async () => {
+    await installed('/nowhere/node')
+    const { stdout } = await ostraka(['status'], fakeSystem('stopped'))
+    expect(stdout).toMatch(/\/nowhere\/node, which no longer exists.*ostraka update/)
   })
 
   it('says when it is not installed', async () => {

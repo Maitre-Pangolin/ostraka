@@ -1,10 +1,10 @@
 // `ostraka start | stop | restart | status`: the LaunchAgent `install` wrote, through launchctl, so the app runs
 // in the background rather than in a terminal.
-import { access } from 'node:fs/promises'
+import { access, readFile } from 'node:fs/promises'
 import { homedir } from 'node:os'
 import { join } from 'node:path'
 import { HOSTNAME, PORT } from '@ostraka/server'
-import { LAUNCH_AGENT_LABEL, launchAgentLogs, launchAgentPath, realSystem, type System } from './install.ts'
+import { appDir, LAUNCH_AGENT_LABEL, launchAgentLogs, launchAgentNode, launchAgentPath, realSystem, type System } from './install.ts'
 import type { Io } from './main.ts'
 
 export const SERVICE_USAGE = `  ostraka start | stop | restart
@@ -39,7 +39,7 @@ export async function serviceCommand(action: 'start' | 'stop' | 'restart' | 'sta
     () => true,
     () => false,
   )
-  if (action === 'status') return status(service, isInstalled, io)
+  if (action === 'status') return status(service, isInstalled, homeDir, io)
   if (!isInstalled) throw new Error(`Ostraka isn't installed as a background app yet: run \`ostraka install\` first.`)
   if (action === 'start') return start(service, io)
   if (action === 'stop') return stop(service, io)
@@ -101,8 +101,9 @@ async function restart(service: Service, io: Io): Promise<number> {
   return 0
 }
 
-async function status(service: Service, isInstalled: boolean, io: Io): Promise<number> {
+async function status(service: Service, isInstalled: boolean, homeDir: string, io: Io): Promise<number> {
   const now: State = isInstalled ? await state(service) : { loaded: false }
+  if (isInstalled) await describeInstall(service, homeDir, io)
   if (now.loaded && now.pid) {
     io.stdout(`Running in the background (pid ${now.pid}) on ${URL}\n`)
     return 0
@@ -115,6 +116,23 @@ async function status(service: Service, isInstalled: boolean, io: Io): Promise<n
   else if (now.loaded) io.stdout(`Stopped. It starts at login, or now with \`ostraka start\`.\n`)
   else io.stdout(`Turned off (the LaunchAgent isn't loaded). \`ostraka start\` loads and starts it.\n`)
   return 1
+}
+
+/** Which copy is installed, and a warning when the node binary the LaunchAgent runs has gone (an nvm uninstall). */
+async function describeInstall(service: Service, homeDir: string, io: Io) {
+  const app = appDir(homeDir)
+  const { code, stdout } = await service.system.run('git', ['log', '-1', '--format=%h %s'], { cwd: app })
+  if (code === 0 && stdout.trim()) io.stdout(`Installed: ${app} at ${stdout.trim()}\n`)
+  const node = launchAgentNode(await readFile(service.plist, 'utf8'))
+  if (
+    node &&
+    !(await access(node).then(
+      () => true,
+      () => false,
+    ))
+  ) {
+    io.stdout(`The LaunchAgent runs ${node}, which no longer exists: run \`ostraka update\` with Node 24 or newer.\n`)
+  }
 }
 
 /** Whether something answers `GET /api/health` on the app's address. */

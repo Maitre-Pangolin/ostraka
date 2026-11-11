@@ -5,6 +5,7 @@ import { execFileSync } from 'node:child_process'
 import { copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { fileURLToPath } from 'node:url'
 import { afterEach, beforeEach, describe, expect, it } from 'vitest'
 import {
   approveMigratedMonth,
@@ -16,7 +17,8 @@ import {
   type ContentRootOptions,
 } from '../src/index.ts'
 
-const FIXTURES = new URL('./fixtures/old-devlogs/', import.meta.url).pathname
+// fileURLToPath, not .pathname, which keeps a space in the path (the installed copy's Application Support) as %20.
+const FIXTURES = fileURLToPath(new URL('./fixtures/old-devlogs/', import.meta.url))
 
 let contentRoot: string
 let originals: string
