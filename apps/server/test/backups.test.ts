@@ -36,9 +36,14 @@ async function commitHoursAgo(hoursAgo: number) {
   await writeFile(join(content, 'todos.json'), `{"todos":[],"at":${hoursAgo}}\n`)
   const date = new Date(NOW.getTime() - hoursAgo * HOUR).toISOString()
   if ((await snapshot('Automatic snapshot', options())) === undefined) throw new Error('nothing to commit')
-  execFileSync('git', ['-C', content, 'commit', '--quiet', '--amend', '--no-edit', `--date=${date}`], {
-    env: { ...process.env, GIT_COMMITTER_DATE: date },
-  })
+  // An identity of its own, as CI has none configured.
+  execFileSync(
+    'git',
+    ['-C', content, '-c', 'user.name=T', '-c', 'user.email=t@localhost', 'commit', '--quiet', '--amend', '--no-edit', `--date=${date}`],
+    {
+      env: { ...process.env, GIT_COMMITTER_DATE: date },
+    },
+  )
 }
 
 const getBackup = async () => {
