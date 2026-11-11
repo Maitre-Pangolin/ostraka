@@ -48,7 +48,7 @@ const MR_FIELDS = `
   iid title webUrl draft updatedAt reference(full: true) projectId
   author { name username }
   approvedBy { nodes { username } }
-  headPipeline { id status webUrl }`
+  headPipeline { id status path }`
 
 const QUERY = `query WorkOverview {
   currentUser {
@@ -67,7 +67,8 @@ type MrNode = {
   projectId: number
   author: { name: string; username: string } | null
   approvedBy: { nodes: { username: string }[] } | null
-  headPipeline: { id: string; status: string; webUrl: string } | null
+  /** Pipeline has no webUrl: `path` is its page, relative to the instance. */
+  headPipeline: { id: string; status: string; path: string } | null
 }
 
 type QueryAnswer = {
@@ -93,7 +94,7 @@ function overview(reviewing: MergeRequest[], authored: MergeRequest[]): GitLabOv
   }
 }
 
-function mergeRequest(node: MrNode, me: string): MergeRequest {
+function mergeRequest(node: MrNode, me: string, base: string): MergeRequest {
   const pipeline = node.headPipeline
   return {
     reference: node.reference,
@@ -107,7 +108,7 @@ function mergeRequest(node: MrNode, me: string): MergeRequest {
     projectId: Number(node.projectId),
     ...(pipeline && {
       // The GraphQL id is a global id, `gid://gitlab/Ci::Pipeline/123`; REST wants the number.
-      pipeline: { id: Number(pipeline.id.split('/').pop()), status: pipeline.status.toLowerCase(), url: pipeline.webUrl },
+      pipeline: { id: Number(pipeline.id.split('/').pop()), status: pipeline.status.toLowerCase(), url: `${base}${pipeline.path}` },
     }),
   }
 }
@@ -142,8 +143,8 @@ export function gitlabSource({ fetch, token, baseUrl }: GitLabOptions): Activity
       if (answer.errors?.length) throw new Error(`GitLab: ${answer.errors[0]!.message}`)
       if (!user) throw new Error('GitLab did not recognise the token as a user.')
       const fresh = overview(
-        user.reviewRequestedMergeRequests.nodes.map((node) => mergeRequest(node, user.username)),
-        user.authoredMergeRequests.nodes.map((node) => mergeRequest(node, user.username)),
+        user.reviewRequestedMergeRequests.nodes.map((node) => mergeRequest(node, user.username, base)),
+        user.authoredMergeRequests.nodes.map((node) => mergeRequest(node, user.username, base)),
       )
       return () => fresh
     },
