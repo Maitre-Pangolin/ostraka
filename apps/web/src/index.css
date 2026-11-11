@@ -1,0 +1,325 @@
+@import 'tailwindcss';
+@import 'tw-animate-css';
+@import 'shadcn/tailwind.css';
+@import '@fontsource-variable/geist';
+
+@custom-variant dark (&:is(.dark *));
+
+@theme inline {
+  --color-today: var(--today);
+  --color-warning: var(--warning);
+  --color-success: var(--success);
+  --color-prio-high: var(--prio-high);
+  --color-prio-med: var(--prio-med);
+  --color-prio-low: var(--prio-low);
+  --color-tag-1: var(--tag-1);
+  --color-tag-2: var(--tag-2);
+  --color-tag-3: var(--tag-3);
+  --color-tag-4: var(--tag-4);
+  --color-tag-5: var(--tag-5);
+  --color-tag-6: var(--tag-6);
+  --color-tag-7: var(--tag-7);
+  --color-tag-8: var(--tag-8);
+  --font-heading: var(--font-sans);
+  --font-sans: 'Geist Variable', sans-serif;
+  --color-ring: var(--ring);
+  --color-input: var(--input);
+  --color-border: var(--border);
+  --color-destructive: var(--destructive);
+  --color-accent-foreground: var(--accent-foreground);
+  --color-accent: var(--accent);
+  --color-muted-foreground: var(--muted-foreground);
+  --color-muted: var(--muted);
+  --color-secondary-foreground: var(--secondary-foreground);
+  --color-secondary: var(--secondary);
+  --color-primary-foreground: var(--primary-foreground);
+  --color-primary: var(--primary);
+  --color-popover-foreground: var(--popover-foreground);
+  --color-popover: var(--popover);
+  --color-card-foreground: var(--card-foreground);
+  --color-card: var(--card);
+  --color-foreground: var(--foreground);
+  --color-background: var(--background);
+  --radius-sm: calc(var(--radius) * 0.6);
+  --radius-md: calc(var(--radius) * 0.8);
+  --radius-lg: var(--radius);
+  --radius-xl: calc(var(--radius) * 1.4);
+  --radius-2xl: calc(var(--radius) * 1.8);
+  --radius-3xl: calc(var(--radius) * 2.2);
+  --radius-4xl: calc(var(--radius) * 2.6);
+}
+
+/* Density is this one knob: every spacing utility derives from --spacing. Compact is the default. */
+:root {
+  --spacing: 0.21rem;
+}
+:root[data-density='comfy'] {
+  --spacing: 0.25rem;
+}
+
+/* Clay palette: warm paper and terracotta (ostraka are pottery shards). */
+:root {
+  --background: oklch(0.985 0.006 75);
+  --foreground: oklch(0.24 0.02 50);
+  --card: oklch(0.995 0.004 75);
+  --card-foreground: oklch(0.24 0.02 50);
+  --popover: oklch(0.995 0.004 75);
+  --popover-foreground: oklch(0.24 0.02 50);
+  --primary: oklch(0.58 0.14 40);
+  --primary-foreground: oklch(0.985 0.01 75);
+  --secondary: oklch(0.95 0.012 70);
+  --secondary-foreground: oklch(0.3 0.02 50);
+  --muted: oklch(0.95 0.012 70);
+  --muted-foreground: oklch(0.52 0.02 55);
+  --accent: oklch(0.94 0.02 60);
+  --accent-foreground: oklch(0.3 0.02 50);
+  --destructive: oklch(0.56 0.2 27);
+  --border: oklch(0.9 0.012 70);
+  --input: oklch(0.88 0.014 70);
+  --ring: oklch(0.58 0.14 40);
+  --radius: 0.5rem;
+  --today: oklch(0.68 0.14 70);
+  --warning: oklch(0.62 0.15 60);
+  --success: oklch(0.55 0.12 145);
+  --prio-high: oklch(0.53 0.2 29);
+  --prio-med: oklch(0.62 0.14 65);
+  --prio-low: oklch(0.52 0.11 248);
+  --tag-1: oklch(0.58 0.12 40);
+  --tag-2: oklch(0.62 0.12 80);
+  --tag-3: oklch(0.58 0.11 130);
+  --tag-4: oklch(0.57 0.09 180);
+  --tag-5: oklch(0.57 0.11 235);
+  --tag-6: oklch(0.55 0.13 275);
+  --tag-7: oklch(0.56 0.13 320);
+  --tag-8: oklch(0.58 0.14 10);
+}
+
+.dark {
+  --background: oklch(0.19 0.012 55);
+  --foreground: oklch(0.93 0.01 75);
+  --card: oklch(0.23 0.014 55);
+  --card-foreground: oklch(0.93 0.01 75);
+  --popover: oklch(0.23 0.014 55);
+  --popover-foreground: oklch(0.93 0.01 75);
+  --primary: oklch(0.7 0.13 42);
+  --primary-foreground: oklch(0.2 0.02 50);
+  --secondary: oklch(0.27 0.014 55);
+  --secondary-foreground: oklch(0.93 0.01 75);
+  --muted: oklch(0.27 0.014 55);
+  --muted-foreground: oklch(0.7 0.02 70);
+  --accent: oklch(0.3 0.02 50);
+  --accent-foreground: oklch(0.93 0.01 75);
+  --destructive: oklch(0.68 0.18 25);
+  --border: oklch(1 0 0 / 10%);
+  --input: oklch(1 0 0 / 15%);
+  --ring: oklch(0.7 0.13 42);
+  --today: oklch(0.78 0.13 75);
+  --warning: oklch(0.78 0.15 65);
+  --success: oklch(0.74 0.12 145);
+  --prio-high: oklch(0.7 0.18 30);
+  --prio-med: oklch(0.8 0.14 72);
+  --prio-low: oklch(0.72 0.1 245);
+  --tag-1: oklch(0.75 0.11 40);
+  --tag-2: oklch(0.8 0.11 80);
+  --tag-3: oklch(0.76 0.1 130);
+  --tag-4: oklch(0.76 0.08 180);
+  --tag-5: oklch(0.75 0.1 235);
+  --tag-6: oklch(0.74 0.11 275);
+  --tag-7: oklch(0.75 0.11 320);
+  --tag-8: oklch(0.75 0.12 10);
+}
+
+@layer base {
+  * {
+    @apply border-border outline-ring/50;
+  }
+  html {
+    @apply font-sans;
+    color-scheme: light;
+  }
+  html.dark {
+    color-scheme: dark;
+  }
+  body {
+    @apply bg-background text-foreground;
+  }
+}
+
+/* The Notes editor (Milkdown Crepe) on the app's tokens, in both themes. Crepe's own themes are not loaded. */
+.ostraka-md .milkdown {
+  --crepe-color-background: var(--background);
+  --crepe-color-on-background: var(--foreground);
+  --crepe-color-surface: var(--card);
+  --crepe-color-surface-low: var(--muted);
+  --crepe-color-on-surface: var(--foreground);
+  --crepe-color-on-surface-variant: var(--muted-foreground);
+  --crepe-color-outline: var(--border);
+  --crepe-color-primary: var(--primary);
+  --crepe-color-secondary: var(--accent);
+  --crepe-color-on-secondary: var(--accent-foreground);
+  --crepe-color-inverse: var(--foreground);
+  --crepe-color-on-inverse: var(--background);
+  --crepe-color-inline-code: var(--primary);
+  --crepe-color-error: var(--destructive);
+  --crepe-color-hover: var(--muted);
+  --crepe-color-selected: var(--accent);
+  --crepe-color-inline-area: var(--muted);
+  --crepe-font-default: var(--font-sans);
+  --crepe-font-title: var(--font-sans);
+  --crepe-font-code: ui-monospace, 'SF Mono', Menlo, monospace;
+  --crepe-base-font-size: 15px;
+  --crepe-shadow-1: 0 1px 3px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+  --crepe-shadow-2: 0 4px 12px 0 color-mix(in oklch, var(--foreground) 15%, transparent);
+}
+.ostraka-md .milkdown .ProseMirror {
+  padding: calc(var(--spacing) * 4) calc(var(--spacing) * 5) calc(var(--spacing) * 12) calc(var(--spacing) * 12);
+}
+/* A Reference highlighted in place (src/notes/token-highlight.ts): still text, tinted like a chip, its status dot after. */
+.ostraka-md .milkdown .ProseMirror .ostraka-reference {
+  border-radius: var(--radius-sm);
+  background: var(--muted);
+  box-shadow: 0 0 0 1px var(--border);
+  font-weight: 500;
+  padding-inline: 0.15em;
+}
+.ostraka-md .milkdown .ProseMirror h1 {
+  font-size: 1.75em;
+  line-height: 1.2;
+  margin-top: 0.4em;
+}
+.ostraka-md .milkdown .ProseMirror h2 {
+  font-size: 1.3em;
+  line-height: 1.3;
+  margin-top: 0.8em;
+}
+.ostraka-md .milkdown .ProseMirror h3 {
+  font-size: 1.1em;
+}
+/* List bullets and numbers: Crepe uses the outline colour, too pale on paper. */
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+.ostraka-md .milkdown .milkdown-list-item-block li .label-wrapper svg {
+  fill: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+/* Code blocks: CodeMirror's light theme recoloured from the tokens, so dark mode reads too. */
+.ostraka-md .milkdown .milkdown-code-block .cm-editor {
+  background: var(--muted);
+  color: var(--foreground);
+}
+.ostraka-md .milkdown .milkdown-code-block .cm-gutters {
+  background: var(--muted);
+  color: var(--muted-foreground);
+  border-color: var(--border);
+}
+.ostraka-md .milkdown .milkdown-code-block .preview svg {
+  max-width: 100%;
+  height: auto;
+}
+/* A Mention of a known Person highlighted in place (src/people/highlight.ts): still `@<person id>` text, tinted like the Mention chip. */
+.ostraka-md .milkdown .ostraka-mention {
+  color: var(--primary);
+  background: color-mix(in oklch, var(--primary) 10%, transparent);
+  border-radius: 0.25rem;
+  font-weight: 500;
+}
+/* A Stub Person's Mention, or a new Person's not saved yet: underlined with dots, like its chip. */
+.ostraka-md .milkdown .ostraka-mention-stub {
+  text-decoration: underline dotted 1px;
+  text-underline-offset: 3px;
+}
+
+/* Search matches in what a view shows (src/search/find-highlight.ts): painted over the text, like ⌘K's <mark>. */
+::highlight(ostraka-search) {
+  background-color: color-mix(in oklch, var(--primary) 28%, transparent);
+  color: var(--foreground);
+}
+
+/* Markdown read, not edited (Dev logs): the editor's look, from plain elements (`MarkdownView`). */
+.devlog-prose {
+  font-size: 15px;
+  line-height: 1.6;
+  overflow-wrap: anywhere;
+}
+.devlog-prose > * + * {
+  margin-top: 0.6em;
+}
+.devlog-prose h1 {
+  font-size: 1.5em;
+  font-weight: 600;
+  line-height: 1.2;
+}
+.devlog-prose h2 {
+  font-size: 1.15em;
+  font-weight: 600;
+  margin-top: 1em;
+}
+.devlog-prose h3,
+.devlog-prose h4 {
+  font-weight: 600;
+}
+.devlog-prose ul,
+.devlog-prose ol {
+  padding-left: 1.4em;
+}
+.devlog-prose ul {
+  list-style: disc;
+}
+.devlog-prose ol {
+  list-style: decimal;
+}
+.devlog-prose li::marker {
+  color: color-mix(in oklch, var(--foreground) 70%, transparent);
+}
+.devlog-prose li > ul,
+.devlog-prose li > ol {
+  margin-top: 0.2em;
+}
+.devlog-prose a {
+  color: var(--primary);
+  text-decoration: underline;
+  text-underline-offset: 2px;
+}
+.devlog-prose code {
+  background: var(--muted);
+  border-radius: calc(var(--radius) - 4px);
+  padding: 0 0.25em;
+  font-family: ui-monospace, 'SF Mono', Menlo, monospace;
+  font-size: 0.9em;
+}
+.devlog-prose pre {
+  background: var(--muted);
+  border-radius: var(--radius);
+  padding: 0.6em 0.8em;
+  overflow-x: auto;
+}
+.devlog-prose pre code {
+  padding: 0;
+}
+.devlog-prose blockquote {
+  border-left: 3px solid var(--border);
+  padding-left: 0.8em;
+  color: var(--muted-foreground);
+}
+.devlog-prose hr {
+  border-color: var(--border);
+}
+.devlog-prose table {
+  border-collapse: collapse;
+}
+.devlog-prose th,
+.devlog-prose td {
+  border: 1px solid var(--border);
+  padding: 0.2em 0.5em;
+  text-align: left;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  ::before,
+  ::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}

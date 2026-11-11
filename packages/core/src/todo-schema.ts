@@ -1,0 +1,102 @@
+// The `todos.json` format. Imports only zod, so the web app can share these types.
+import { z } from 'zod'
+
+export const PRIORITIES = ['high', 'medium', 'low', 'none'] as const
+export const TODO_STATUSES = ['open', 'done', 'dropped'] as const
+
+const isRealDay = (day: string) => {
+  const date = new Date(`${day}T00:00:00Z`)
+  return !Number.isNaN(date.getTime()) && date.toISOString().startsWith(day)
+}
+
+/** A local calendar day: YYYY-MM-DD. */
+const day = z
+  .string()
+  .regex(/^\d{4}-\d{2}-\d{2}$/, { message: 'Expected a day as YYYY-MM-DD', abort: true })
+  .refine(isRealDay, 'Not a real day')
+
+const fields = {
+  id: z.string().regex(/^[a-z0-9]{5}$/, 'Expected a 5-character id of a-z and 0-9'),
+  title: z.string().trim().min(1, 'A Todo needs a title'),
+  description: z.string().optional(),
+  priority: z.enum(PRIORITIES),
+  /** Day only, local: YYYY-MM-DD. */
+  due: day.optional(),
+  tags: z.array(z.string().regex(/^[a-z0-9]+(-[a-z0-9]+)*$/, 'Tags are lowercase and hyphenated')),
+  status: z.enum(TODO_STATUSES),
+  dropReason: z.string().optional(),
+  createdAt: z.iso.datetime(),
+  finishedAt: z.iso.datetime().optional(),
+}
+
+export const SubTodoSchema = z.strictObject(fields)
+
+export const TodoSchema = z.strictObject({
+  ...fields,
+  /** One level only: Sub-todos have no Sub-todos of their own. Kept in creation order. */
+  subTodos: z.array(SubTodoSchema),
+})
+
+export const TodosFileSchema = z.strictObject({ todos: z.array(TodoSchema) })
+
+export type Priority = (typeof PRIORITIES)[number]
+export type TodoStatus = (typeof TODO_STATUSES)[number]
+export type SubTodo = z.infer<typeof SubTodoSchema>
+export type Todo = z.infer<typeof TodoSchema>
+export type TodosFile = z.infer<typeof TodosFileSchema>
+
+/**
+ * What adding a Todo takes. `#tag`, `*prio` and `^date` tokens in the title and description become properties on
+ * add; `tags`, `priority` and `due` are properties already pulled out while typing.
+ */
+export const NewTodoSchema = z.strictObject({
+  title: fields.title,
+  description: z.string().optional(),
+  tags: fields.tags.optional(),
+  priority: fields.priority.optional(),
+  due: fields.due,
+})
+export type NewTodo = z.infer<typeof NewTodoSchema>
+
+/**
+ * A change to a Todo: only the fields given change. Tokens in a new title or description apply as on add.
+ * `due: null` clears the date; an empty description removes it.
+ */
+export const TodoChangeSchema = z.strictObject({
+  title: fields.title.optional(),
+  description: z.string().optional(),
+  tags: fields.tags.optional(),
+  priority: fields.priority.optional(),
+  due: fields.due.unwrap().nullable().optional(),
+})
+export type TodoChange = z.infer<typeof TodoChangeSchema>
+
+/** What Dropping a Todo takes: an optional reason, which can be skipped (blank counts as skipped). */
+export const DropTodoSchema = z.strictObject({ reason: z.string().optional() })
+export type DropTodo = z.infer<typeof DropTodoSchema>
+
+/** Which done and Dropped Todos and Sub-todos to list: those finished on one local day. */
+export const FinishedQuerySchema = z.strictObject({ finishedOn: day })
+export type FinishedQuery = z.infer<typeof FinishedQuerySchema>
+
+// Every key in its place, so a write never reorders what an agent or git diff sees.
+function ordered(todo: SubTodo): SubTodo {
+  return {
+    id: todo.id,
+    title: todo.title,
+    ...(todo.description !== undefined && { description: todo.description }),
+    priority: todo.priority,
+    ...(todo.due !== undefined && { due: todo.due }),
+    tags: todo.tags,
+    status: todo.status,
+    ...(todo.dropReason !== undefined && { dropReason: todo.dropReason }),
+    createdAt: todo.createdAt,
+    ...(todo.finishedAt !== undefined && { finishedAt: todo.finishedAt }),
+  }
+}
+
+/** `todos.json` text: two-space indent, stable key order, trailing newline. */
+export function formatTodosFile(file: TodosFile): string {
+  const todos = file.todos.map((todo) => ({ ...ordered(todo), subTodos: todo.subTodos.map(ordered) }))
+  return `${JSON.stringify({ todos }, null, 2)}\n`
+}

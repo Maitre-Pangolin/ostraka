@@ -1,0 +1,99 @@
+// Narrowing the Todo list by priority, Tags and mentioned Persons. Pure and free of Node and zod, so the web app can
+// share it.
+import { mentionedPeople, parseMention } from './mentions.ts'
+import type { Priority, SubTodo, Todo } from './todo-schema.ts'
+import { normalizeTag } from './todo-tokens.ts'
+
+/** What the list is narrowed to. A missing group doesn't narrow. */
+export type TodoFilter = {
+  /** Any of these priorities. */
+  priority?: Priority[]
+  /** All of these Tags, or any of them with `match: 'any'`. */
+  tag?: string[]
+  match?: 'any'
+  /** All of these Persons mentioned, by id, in the title or description. */
+  person?: string[]
+}
+
+/**
+ * A Todo the filter keeps, with its matching Sub-todos. `dimmed` marks a parent that doesn't match itself and is
+ * there only for context around them.
+ */
+export type FilteredTodo<T extends Todo = Todo> = { todo: T; dimmed: boolean; subTodos: SubTodo[] }
+
+function matches(todo: SubTodo, { priority = [], tag = [], match, person = [] }: TodoFilter): boolean {
+  const hasTag = (name: string) => todo.tags.includes(name)
+  return (
+    (!priority.length || priority.includes(todo.priority)) &&
+    (!tag.length || (match === 'any' ? tag.some(hasTag) : tag.every(hasTag))) &&
+    (!person.length || mentionsAll(`${todo.title}\n${todo.description ?? ''}`, person))
+  )
+}
+
+/** Whether `text` mentions every one of `people` (ids). */
+export function mentionsAll(text: string, people: string[]): boolean {
+  const mentioned = mentionedPeople(text)
+  return people.every((id) => mentioned.includes(id))
+}
+
+/** Whether the filter narrows anything: a priority, a Tag or a Person is chosen. */
+export const isFiltering = (filter: TodoFilter) => Boolean(filter.priority?.length || filter.tag?.length || filter.person?.length)
+
+// The schema's PRIORITIES come with zod; this module stays free of it.
+const PRIORITIES: readonly Priority[] = ['high', 'medium', 'low', 'none']
+const isPriority = (value: unknown): value is Priority => PRIORITIES.includes(value as Priority)
+
+/** Each valid value once; a single value counts as a list of one. */
+function values<T>(raw: unknown, valid: (value: unknown) => T | undefined): T[] {
+  const list = Array.isArray(raw) ? raw : raw === undefined ? [] : [raw]
+  return [...new Set(list.map(valid).filter((value) => value !== undefined))]
+}
+
+/** Person ids from URL search params, each once; anything not an id is left out. */
+export const parsePeople = (raw: unknown) =>
+  values(raw, (value) => (typeof value === 'string' && parseMention(`@${value}`) === value ? value : undefined))
+
+/**
+ * The filter in URL search params, checked: unknown values are left out, and so are empty groups and the default
+ * all-of match, so an unfiltered list has no search params.
+ */
+export function parseTodoFilter(search: Record<string, unknown>): TodoFilter {
+  const priority = values(search.priority, (value) => (isPriority(value) ? value : undefined))
+  const tag = values(search.tag, (value) => (typeof value === 'string' ? normalizeTag(value) : undefined))
+  const person = parsePeople(search.person)
+  return {
+    ...(priority.length > 0 && { priority }),
+    ...(tag.length > 0 && { tag }),
+    ...(search.match === 'any' && { match: 'any' }),
+    ...(person.length > 0 && { person }),
+  }
+}
+
+/** A search box's text from URL search params, as typed (a trailing space is still being typed); undefined when blank. */
+export const parseSearchText = (value: unknown) => (typeof value === 'string' && value.trim() !== '' ? value : undefined)
+
+/** The Todos view's state in the URL: the filter, the search box's text, and the Todo opened at a search match. */
+export type TodosView = TodoFilter & { q?: string; todo?: string }
+
+/** Router search params → the Todos view's state, leaving out empty and default values. */
+export function parseTodosView(search: Record<string, unknown>): TodosView {
+  const q = parseSearchText(search.q)
+  return {
+    ...parseTodoFilter(search),
+    ...(q !== undefined && { q }),
+    ...(typeof search.todo === 'string' && search.todo !== '' && { todo: search.todo }),
+  }
+}
+
+/**
+ * The Todos the filter keeps, in the order given: those that match, and parents of Sub-todos that match. With `found`
+ * (the ids a search found), only those match.
+ */
+export function filterTodos<T extends Todo>(todos: T[], filter: TodoFilter, found?: ReadonlySet<string>): FilteredTodo<T>[] {
+  const keeps = (todo: SubTodo) => matches(todo, filter) && (!found || found.has(todo.id))
+  return todos.flatMap((todo) => {
+    const subTodos = todo.subTodos.filter(keeps)
+    const dimmed = !keeps(todo)
+    return dimmed && !subTodos.length ? [] : [{ todo, dimmed, subTodos }]
+  })
+}

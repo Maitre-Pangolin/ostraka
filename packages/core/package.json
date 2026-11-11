@@ -1,0 +1,45 @@
+{
+  "name": "@ostraka/core",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts",
+    "./backup-types": "./src/backup-types.ts",
+    "./config-schema": "./src/config-schema.ts",
+    "./todo-schema": "./src/todo-schema.ts",
+    "./todo-tokens": "./src/todo-tokens.ts",
+    "./references": "./src/references.ts",
+    "./mentions": "./src/mentions.ts",
+    "./person-schema": "./src/person-schema.ts",
+    "./todo-order": "./src/todo-order.ts",
+    "./markdown": "./src/markdown.ts",
+    "./note-schema": "./src/note-schema.ts",
+    "./devlog-schema": "./src/devlog-schema.ts",
+    "./devlog-days": "./src/devlog-days.ts",
+    "./history-schema": "./src/history-schema.ts",
+    "./sketch-schema": "./src/sketch-schema.ts",
+    "./search-types": "./src/search-types.ts",
+    "./search-input": "./src/search-input.ts",
+    "./search-match": "./src/search-match.ts",
+    "./sub-todos": "./src/sub-todos.ts",
+    "./todo-filter": "./src/todo-filter.ts",
+    "./tag-color": "./src/tag-color.ts",
+    "./tag-schema": "./src/tag-schema.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "remark-gfm": "^4.0.1",
+    "remark-parse": "^11.0.0",
+    "remark-stringify": "^11.0.0",
+    "unified": "^11.0.5",
+    "yaml": "^2.9.1",
+    "zod": "^4.6.7"
+  },
+  "devDependencies": {
+    "@types/mdast": "4.0.4",
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2"
+  }
+}

@@ -35,13 +35,25 @@ _Avoid_: Journal, diary, daily log, worklog
 **Backfill**:
 Writing Dev logs for past days that have none.
 
+**Off day**:
+A weekday with no work to record, such as a holiday, kept as a Dev log marked off with an optional label so it doesn't show as missing.
+_Avoid_: Day off, leave, absence
+
+**Monthly summary**:
+A month's Dev logs summed up in one file, written by the Dev log skill from that month's days.
+_Avoid_: Monthly report, recap
+
 **Sketch**:
 A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
 _Avoid_: Drawing, diagram, whiteboard
 
 **Snapshot**:
-A commit of the content folder's history, made after changes settle or by a skill; what the app restores to.
+A commit of the content folder's history: made by the server an hour after the first change since the last one, when it stops, or on demand (a skill, a restore, a Tag change); what the app restores to.
 _Avoid_: Backup, version, save
+
+**Backup**:
+A push of the content folder's Snapshots to its private remote on the work gitlab.com, made by `ostraka backup` outside the app (the app never pushes); the content is backed up when its latest Snapshot is on that remote.
+_Avoid_: Sync, upload, Snapshot
 
 ## People
 
@@ -54,7 +66,7 @@ The machine-wide list of Persons and their identities in each Activity source.
 _Avoid_: Address book, contacts, roster
 
 **Stub Person**:
-A Person created from a new Mention that has no email yet; the `people` skill fills in their identities.
+A Person with no email who isn't ignored, usually added by picking "Add Person" for a new Mention; the `people` skill fills in their identities.
 _Avoid_: Placeholder, draft person
 
 **Mention**:

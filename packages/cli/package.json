@@ -1,0 +1,22 @@
+{
+  "name": "@ostraka/cli",
+  "private": true,
+  "bin": {
+    "ostraka": "./bin/ostraka.ts"
+  },
+  "type": "module",
+  "exports": {
+    ".": "./src/main.ts"
+  },
+  "scripts": {
+    "typecheck": "tsc -p ."
+  },
+  "dependencies": {
+    "@ostraka/core": "workspace:*",
+    "@ostraka/server": "workspace:*"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "typescript": "~7.0.2"
+  }
+}

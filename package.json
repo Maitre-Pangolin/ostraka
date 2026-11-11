@@ -1,0 +1,26 @@
+{
+  "name": "ostraka",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "ostraka": "node packages/cli/bin/ostraka.ts",
+    "dev": "pnpm --filter @ostraka/web dev",
+    "build": "pnpm --filter @ostraka/web build",
+    "typecheck": "pnpm -r typecheck",
+    "lint": "oxlint --deny-warnings",
+    "fmt": "oxfmt",
+    "fmt:check": "oxfmt --check",
+    "test": "vitest run"
+  },
+  "devDependencies": {
+    "@types/node": "^24.19.2",
+    "oxfmt": "^0.75.0",
+    "oxlint": "^1.90.0",
+    "typescript": "~7.0.2",
+    "vitest": "^5.1.0"
+  },
+  "engines": {
+    "node": ">=24"
+  },
+  "packageManager": "pnpm@10.28.0"
+}
