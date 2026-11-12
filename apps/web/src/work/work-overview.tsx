@@ -8,6 +8,7 @@ import {
   CircleDashed,
   CircleSlash,
   CircleX,
+  FolderGit2,
   GitPullRequest,
   GitPullRequestArrow,
   LoaderCircle,
@@ -31,20 +32,18 @@ import {
   type PipelineStatus,
   type SourceStatus,
 } from './api'
+import { groupByRepo, type RepoGroup, type WithIid } from './repos'
 
 export const WORK_DETAILS_ID = 'work-details'
 
-/** One count with its icon; below `@md` the label hides and a Tooltip carries it. */
+/** One count with its icon; below `@md` the label hides (the button's `aria-label` says every count in full). */
 function Stat({ icon: Icon, value, label, alert }: { icon: LucideIcon; value: number; label: string; alert?: boolean }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={<span />} className={cn('flex items-center gap-1', alert ? 'text-destructive' : value === 0 && 'opacity-60')}>
-        <Icon className="size-3.5" />
-        <b className={cn('tabular-nums', !alert && 'text-foreground')}>{value}</b>
-        <span className="hidden @md:inline">{label}</span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <span className={cn('flex items-center gap-1', alert ? 'text-destructive' : value === 0 && 'opacity-60')}>
+      <Icon className="size-3.5" />
+      <b className={cn('tabular-nums', !alert && 'text-foreground')}>{value}</b>
+      <span className="hidden @md:inline">{label}</span>
+    </span>
   )
 }
 
@@ -146,6 +145,9 @@ const PIPELINE: Record<string, { icon: LucideIcon; label: string; className: str
   canceled: { icon: CircleSlash, label: 'Pipeline canceled', className: 'text-muted-foreground' },
   skipped: { icon: CircleSlash, label: 'Pipeline skipped', className: 'text-muted-foreground' },
 }
+/** A title in an MR or ticket row: one line that scrolls sideways (trackpad, ⇧ + wheel) rather than being cut short. */
+const SCROLLING_TITLE = 'min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]'
+
 const WAITING = { icon: CircleDashed, label: 'Pipeline waiting', className: 'text-muted-foreground' }
 
 function PipelineIcon({ status }: { status?: PipelineStatus }) {
@@ -161,25 +163,27 @@ function PipelineIcon({ status }: { status?: PipelineStatus }) {
   )
 }
 
-function MrRow({ mr, showAuthor }: { mr: MergeRequest; showAuthor?: boolean }) {
+/** One MR under its repo and role: head pipeline, `!iid`, title; author (when reviewing), my approval and age after. */
+function MrRow({ mr, showAuthor }: { mr: WithIid<MergeRequest>; showAuthor?: boolean }) {
   return (
     <li>
       <a
         href={mr.url}
         target="_blank"
         rel="noreferrer"
+        title={mr.reference}
         className={cn(
           'hover:bg-muted/70 focus-visible:ring-ring/50 flex min-h-8 min-w-0 items-center gap-2 rounded-md px-1.5 text-sm outline-none focus-visible:ring-3',
           mr.approvedByMe && 'opacity-60',
         )}
       >
         <PipelineIcon status={mr.pipeline?.status} />
-        <span className="text-muted-foreground hidden shrink-0 text-xs tabular-nums @md:inline">{mr.reference}</span>
-        <span className="min-w-0 flex-1 truncate">
+        <span className="text-muted-foreground shrink-0 text-xs tabular-nums">!{mr.iid}</span>
+        <span className={SCROLLING_TITLE}>
           {mr.draft && <span className="text-muted-foreground mr-1 text-xs">Draft:</span>}
-          {mr.title}
+          {mr.draft ? mr.title.replace(/^\[?draft\]?:?\s*/i, '') : mr.title}
         </span>
-        {showAuthor && <span className="text-muted-foreground hidden shrink-0 text-xs @md:inline">{mr.author}</span>}
+        {showAuthor && <span className="text-muted-foreground hidden max-w-[30%] shrink-0 truncate text-xs @md:inline">{mr.author}</span>}
         {mr.approvedByMe && <span className="text-success shrink-0 text-xs">approved</span>}
         <span className="text-muted-foreground hidden w-8 shrink-0 text-right text-xs @md:inline">
           {formatDistanceToNowStrict(mr.updatedAt).replace(/ (\w)\w*$/, '$1')}
@@ -189,26 +193,41 @@ function MrRow({ mr, showAuthor }: { mr: MergeRequest; showAuthor?: boolean }) {
   )
 }
 
-function MrGroup({ title, items, empty, showAuthor }: { title: string; items: MergeRequest[]; empty: string; showAuthor?: boolean }) {
+/** A repo's MRs in one role (Reviewing or Authored), indented under the repo's name. Left out when it has none. */
+function MrGroup({ title, items, showAuthor }: { title: string; items: WithIid<MergeRequest>[]; showAuthor?: boolean }) {
+  if (!items.length) return null
   return (
-    <div>
-      <h3 className="text-muted-foreground px-1.5 pt-1 pb-0.5 text-xs font-medium">
-        {title} <span className="font-normal tabular-nums">{items.length}</span>
-      </h3>
-      {items.length ? (
-        <ul>
-          {items.map((mr) => (
-            <MrRow key={mr.reference} mr={mr} showAuthor={showAuthor} />
-          ))}
-        </ul>
-      ) : (
-        <p className="text-muted-foreground px-1.5 text-sm">{empty}</p>
-      )}
+    <div className="pl-5">
+      <h4 className="text-muted-foreground px-1.5 pt-0.5 text-xs">
+        {title} <span className="tabular-nums">{items.length}</span>
+      </h4>
+      <ul>
+        {items.map((mr) => (
+          <MrRow key={mr.reference} mr={mr} showAuthor={showAuthor} />
+        ))}
+      </ul>
     </div>
   )
 }
 
-/** One source's part of the expanded bar: its title, when its data is from, then its body. */
+/** A repo by its name (its full path as the title), then the MRs I review in it, then the ones I opened. */
+function RepoMrs({ repo }: { repo: RepoGroup<MergeRequest> }) {
+  return (
+    <li className="pt-1">
+      <h3 title={repo.path} className="flex min-w-0 items-center gap-1.5 px-1.5 text-sm font-medium">
+        <FolderGit2 aria-hidden className="text-muted-foreground size-3.5 shrink-0" />
+        <span className="min-w-0 truncate">{repo.name}</span>
+      </h3>
+      <MrGroup title="Reviewing" items={repo.reviewing} showAuthor />
+      <MrGroup title="Authored" items={repo.authored} />
+    </li>
+  )
+}
+
+/**
+ * One source's panel in the expanded bar: its title and when its data is from stay put, its body scrolls on its own.
+ * Stacked below `@3xl`, side by side from it.
+ */
 function SourceSection({
   id,
   title,
@@ -221,7 +240,7 @@ function SourceSection({
   children: ReactNode
 }) {
   return (
-    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-1">
+    <section aria-labelledby={id} className="flex min-w-0 flex-col gap-1 px-1.5 py-2">
       <h2 id={id} className="flex items-baseline justify-between gap-2 px-1.5 text-xs font-semibold">
         <span className="min-w-0 truncate">{title}</span>
         {source?.updatedAt && (
@@ -230,9 +249,14 @@ function SourceSection({
           </span>
         )}
       </h2>
-      {children}
+      <div className="max-h-[30vh] min-w-0 overflow-x-hidden overflow-y-auto p-0.5 @3xl:max-h-[55vh]">{children}</div>
     </section>
   )
+}
+
+/** The line under a source's title: its numbers, `·` between them. */
+function Summary({ children }: { children: ReactNode }) {
+  return <p className="text-muted-foreground px-1.5 pb-0.5 text-xs">{children}</p>
 }
 
 /** The body of a source without data: why it is off (and how to set it up) or failing, or skeleton rows while it loads. */
@@ -254,14 +278,28 @@ function NoData({ source, label, setUp }: { source: SourceStatus | undefined; la
   )
 }
 
-/** The expanded GitLab section: MRs I review, then MRs I opened, each with its head pipeline. */
+/** The expanded GitLab section: per repo, the MRs I review, then the MRs I opened, each with its head pipeline. */
 function GitLabDetails({ gitlab }: { gitlab: SourceStatus<GitLabOverview> | undefined }) {
+  const data = gitlab?.data
+  const repos = data ? groupByRepo(data) : []
   return (
     <SourceSection id="work-gitlab" title="GitLab · open MRs" source={gitlab}>
-      {gitlab?.data ? (
+      {data ? (
         <>
-          <MrGroup title="Reviewing" items={gitlab.data.reviewing} empty="No MRs waiting for your review." showAuthor />
-          <MrGroup title="Authored" items={gitlab.data.authored} empty="No open MRs of yours." />
+          <Summary>
+            <b className="text-foreground font-medium tabular-nums">{data.counts.toReview}</b> to review
+            {' · '}
+            <b className="text-foreground font-medium tabular-nums">{data.counts.opened}</b> opened
+          </Summary>
+          {repos.length ? (
+            <ul>
+              {repos.map((repo) => (
+                <RepoMrs key={repo.path} repo={repo} />
+              ))}
+            </ul>
+          ) : (
+            <p className="text-muted-foreground px-1.5 text-sm">No MRs waiting for your review, and none of yours open.</p>
+          )}
         </>
       ) : (
         <NoData
@@ -284,7 +322,7 @@ function TicketRow({ ticket }: { ticket: JiraTicket }) {
     <>
       <span aria-hidden className={cn('size-2 shrink-0 rounded-full', CATEGORY_DOT[ticket.category])} />
       <span className="text-muted-foreground hidden shrink-0 text-xs tabular-nums @md:inline">{ticket.key}</span>
-      <span className="min-w-0 flex-1 truncate">{ticket.summary}</span>
+      <span className={SCROLLING_TITLE}>{ticket.summary}</span>
       <span className="text-muted-foreground max-w-[40%] shrink-0 truncate text-xs">{ticket.status}</span>
     </>
   )
@@ -317,7 +355,7 @@ function JiraDetails({ jira }: { jira: SourceStatus<JiraOverview> | undefined })
     <SourceSection id="work-jira" title={sprint ? `Jira · ${sprint.name}` : 'Jira · sprint'} source={jira}>
       {data ? (
         <>
-          <p className="text-muted-foreground px-1.5 pt-1 pb-0.5 text-xs">
+          <Summary>
             <b className="text-foreground font-medium tabular-nums">{data.counts.open}</b> open
             {sprint?.daysLeft !== undefined && (
               <span title={sprint.endDate && `Ends ${format(sprint.endDate, 'EEE d MMM, HH:mm')}`}>
@@ -325,7 +363,7 @@ function JiraDetails({ jira }: { jira: SourceStatus<JiraOverview> | undefined })
                 {daysLeftText(sprint.daysLeft)}
               </span>
             )}
-          </p>
+          </Summary>
           {data.tickets.length ? (
             <ul>
               {data.tickets.map((ticket) => (
@@ -347,11 +385,11 @@ function JiraDetails({ jira }: { jira: SourceStatus<JiraOverview> | undefined })
   )
 }
 
-/** What the top bar expands to, in place: one section per Activity source. */
+/** What the top bar expands to, in place: one panel per Activity source, divided by a rule, each scrolling on its own. */
 export function WorkDetails() {
   const { gitlab, jira } = useWorkSources()
   return (
-    <div id={WORK_DETAILS_ID} className="grid max-h-[60vh] gap-3 overflow-y-auto border-t p-2 @3xl:grid-cols-2">
+    <div id={WORK_DETAILS_ID} className="grid divide-y border-t @3xl:grid-cols-2 @3xl:divide-x @3xl:divide-y-0">
       <GitLabDetails gitlab={gitlab} />
       <JiraDetails jira={jira} />
     </div>
