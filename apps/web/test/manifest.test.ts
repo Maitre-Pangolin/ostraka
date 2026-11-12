@@ -40,7 +40,7 @@ describe('web-app manifest', () => {
     expect(await pngSize(icon!.src)).toBe(icon!.sizes)
   })
 
-  it('has a favicon drawn from the current mark (run `pnpm --filter @ostraka/web icons` after changing it)', async () => {
+  it('has a favicon drawn from the current mark (run `pnpm --filter @ostraka/web brand` after changing it)', async () => {
     expect(await readFile(new URL('favicon.svg', PUBLIC), 'utf8')).toBe(markSvg('rounded'))
   })
 

@@ -1,7 +1,8 @@
 /**
  * The ostraka mark: a hand-thrown ring with one shard chipped off and set apart (direction 1c in #21),
- * drawn on a 32-unit grid. The favicon, the PNG app icons and the rail's `Logo` all come from these
- * paths: after changing them, `pnpm --filter @ostraka/web icons` rewrites `public/` (commit the result).
+ * drawn on a 32-unit grid. The favicon, the PNG app icons, the README banner and the rail's `Logo` all
+ * come from these paths: after changing them, `pnpm --filter @ostraka/web brand` rewrites the files
+ * (commit the result).
  */
 
 export const MARK_SIZE = 32
