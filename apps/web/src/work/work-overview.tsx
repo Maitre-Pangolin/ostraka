@@ -36,17 +36,14 @@ import { groupByRepo, type RepoGroup, type WithIid } from './repos'
 
 export const WORK_DETAILS_ID = 'work-details'
 
-/** One count with its icon; below `@md` the label hides and a Tooltip carries it. */
+/** One count with its icon; below `@md` the label hides (the button's `aria-label` says every count in full). */
 function Stat({ icon: Icon, value, label, alert }: { icon: LucideIcon; value: number; label: string; alert?: boolean }) {
   return (
-    <Tooltip>
-      <TooltipTrigger render={<span />} className={cn('flex items-center gap-1', alert ? 'text-destructive' : value === 0 && 'opacity-60')}>
-        <Icon className="size-3.5" />
-        <b className={cn('tabular-nums', !alert && 'text-foreground')}>{value}</b>
-        <span className="hidden @md:inline">{label}</span>
-      </TooltipTrigger>
-      <TooltipContent>{label}</TooltipContent>
-    </Tooltip>
+    <span className={cn('flex items-center gap-1', alert ? 'text-destructive' : value === 0 && 'opacity-60')}>
+      <Icon className="size-3.5" />
+      <b className={cn('tabular-nums', !alert && 'text-foreground')}>{value}</b>
+      <span className="hidden @md:inline">{label}</span>
+    </span>
   )
 }
 
@@ -148,6 +145,9 @@ const PIPELINE: Record<string, { icon: LucideIcon; label: string; className: str
   canceled: { icon: CircleSlash, label: 'Pipeline canceled', className: 'text-muted-foreground' },
   skipped: { icon: CircleSlash, label: 'Pipeline skipped', className: 'text-muted-foreground' },
 }
+/** A title in an MR or ticket row: one line that scrolls sideways (trackpad, ⇧ + wheel) rather than being cut short. */
+const SCROLLING_TITLE = 'min-w-0 flex-1 overflow-x-auto whitespace-nowrap [scrollbar-width:none]'
+
 const WAITING = { icon: CircleDashed, label: 'Pipeline waiting', className: 'text-muted-foreground' }
 
 function PipelineIcon({ status }: { status?: PipelineStatus }) {
@@ -179,7 +179,7 @@ function MrRow({ mr, showAuthor }: { mr: WithIid<MergeRequest>; showAuthor?: boo
       >
         <PipelineIcon status={mr.pipeline?.status} />
         <span className="text-muted-foreground shrink-0 text-xs tabular-nums">!{mr.iid}</span>
-        <span className="min-w-0 flex-1 truncate">
+        <span className={SCROLLING_TITLE}>
           {mr.draft && <span className="text-muted-foreground mr-1 text-xs">Draft:</span>}
           {mr.draft ? mr.title.replace(/^\[?draft\]?:?\s*/i, '') : mr.title}
         </span>
@@ -322,7 +322,7 @@ function TicketRow({ ticket }: { ticket: JiraTicket }) {
     <>
       <span aria-hidden className={cn('size-2 shrink-0 rounded-full', CATEGORY_DOT[ticket.category])} />
       <span className="text-muted-foreground hidden shrink-0 text-xs tabular-nums @md:inline">{ticket.key}</span>
-      <span className="min-w-0 flex-1 truncate">{ticket.summary}</span>
+      <span className={SCROLLING_TITLE}>{ticket.summary}</span>
       <span className="text-muted-foreground max-w-[40%] shrink-0 truncate text-xs">{ticket.status}</span>
     </>
   )
