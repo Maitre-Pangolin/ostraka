@@ -1,5 +1,6 @@
 import { readFile } from 'node:fs/promises'
 import { describe, expect, it } from 'vitest'
+import { markSvg } from '../src/shell/logo-mark.ts'
 
 // Installable as a browser web app (own window, Dock icon): Chrome needs a standalone display, a start URL
 // and 192 and 512 px icons; Safari's "Add to Dock" uses the apple-touch-icon.
@@ -37,6 +38,10 @@ describe('web-app manifest', () => {
     const icon = manifest.icons.find((i) => i.purpose === 'maskable')
     expect(icon).toBeDefined()
     expect(await pngSize(icon!.src)).toBe(icon!.sizes)
+  })
+
+  it('has a favicon drawn from the current mark (run `pnpm --filter @ostraka/web icons` after changing it)', async () => {
+    expect(await readFile(new URL('favicon.svg', PUBLIC), 'utf8')).toBe(markSvg('rounded'))
   })
 
   it('is linked from index.html, with an apple-touch-icon for Safari', async () => {

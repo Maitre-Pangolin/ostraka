@@ -15,7 +15,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 - The work overview (GitLab and Jira) is polled by the server, never by the app: its changes arrive on the same stream as `{ kind: 'activity', id: source }` and invalidate `['activity']` (`src/work/api.ts`). The window only reports whether it is visible (`POST /api/activity/visibility`, from `live-updates.tsx`); the server picks the rates.
 - A change to an existing item sends the `version` the server answered with that item (`post(path, body, { version })`, sent as `If-Match`). If the item changed elsewhere since, the server refuses it with 412 (`isStale(error)`): the error line in place adds “Showing the newer version.”, and the invalidation on settle shows it.
 - Content and config types come from core's Zod schemas as type-only imports (`import type { Todo } from '@ostraka/core/todo-schema'`, `Config` from `@ostraka/core/config-schema`). Core's entry point pulls in Node modules, so import its zod-only subpaths.
-- The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`; a changed icon updates all of them.
+- The app installs as a browser web app (own window, Dock icon) from `public/manifest.webmanifest`, linked in `index.html` with the `apple-touch-icon` for Safari's Add to Dock. Its icons are PNGs in `public/`. The favicon, those PNGs and the rail's `Logo` (`src/shell/logo.tsx`) are all drawn from the mark's paths in `src/shell/logo-mark.ts`: after changing it, `pnpm --filter @ostraka/web icons` rewrites `public/` (commit the result; the build never runs it), and `test/manifest.test.ts` fails while the favicon is out of date.
 
 ## Layout
 
@@ -153,7 +153,7 @@ Rules every screen follows (decided in #26). They are rules, not a component cat
 
 ## Visuals and copy
 
-- Icons come from lucide-react only, sized with `size-*`.
+- Icons come from lucide-react only, sized with `size-*`. The one exception is the app's own `Logo`, drawn in `primary` and `primary-foreground` so it follows the theme.
 - A status from another system shows as a small dot before the item plus that system's own status text after it: a Jira ticket's dot is coloured by its status category (`muted-foreground` to do, `primary` in progress, `success` done), and done tickets are muted (`TicketRow` in `src/work/work-overview.tsx`); an MR's by its head pipeline (`success` passed, `destructive` failed, `primary` still running).
 - UI copy is sentence case and uses the terms in `GLOSSARY.md` (Todo, Sub-todo, Dropped, Tag, Note, Dev log, Sketch, Person, Mention, Reference…), capitalised as there.
 - Motion is shadcn's defaults only, and respects `prefers-reduced-motion`.

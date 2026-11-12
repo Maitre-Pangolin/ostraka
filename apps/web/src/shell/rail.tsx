@@ -3,6 +3,7 @@ import { BookText, CheckSquare, Lightbulb, Moon, Rows3, Rows4, Settings, Shapes,
 import type { ReactElement } from 'react'
 import { Tooltip, TooltipContent, TooltipTrigger } from '@/components/ui/tooltip'
 import { useAppearance } from './appearance'
+import { Logo } from './logo'
 
 const SECTIONS = [
   { to: '/todos', icon: CheckSquare, label: 'Todos' },
@@ -30,12 +31,7 @@ export function Rail() {
   const { theme, setTheme, density, setDensity } = useAppearance()
   return (
     <nav aria-label="Sections" className="bg-muted/40 flex w-12 shrink-0 flex-col items-center gap-1 border-r py-2">
-      <span
-        aria-hidden
-        className="bg-primary font-heading text-primary-foreground mb-2 grid size-7 place-items-center rounded-lg text-sm font-bold"
-      >
-        o
-      </span>
+      <Logo className="mb-2 size-7 shrink-0" />
       {SECTIONS.map(({ to, icon, label }) => (
         <RailItem key={to} label={label} icon={icon} render={<Link to={to} />} />
       ))}
