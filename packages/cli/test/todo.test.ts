@@ -1,7 +1,7 @@
 import { mkdtemp, rm } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
-import { afterEach, beforeEach, describe, expect, it } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { run } from '../src/main.ts'
 
 let contentRoot: string
@@ -11,8 +11,14 @@ beforeEach(async () => {
 })
 
 afterEach(async () => {
+  vi.useRealTimers()
   await rm(contentRoot, { recursive: true, force: true })
 })
+
+// The local day the finished-on tests run on, at a fixed time: two Todos finished a minute apart always list in the
+// same order, and no run crosses midnight. Only Date is faked, so file locks and timers keep real time.
+const DAY = '2026-11-16'
+const clockAt = (time: string) => vi.setSystemTime(new Date(`${DAY}T${time}`))
 
 async function ostraka(...argv: string[]) {
   let stdout = ''
@@ -98,16 +104,18 @@ describe('ostraka todo', () => {
     const done = idOf((await ostraka('todo', 'add', 'Ship it')).stdout)
     const dropped = idOf((await ostraka('todo', 'add', 'Migrate the old CI')).stdout)
     await ostraka('todo', 'add', 'Still open')
+    vi.useFakeTimers({ toFake: ['Date'] })
+    clockAt('10:00')
     await ostraka('todo', 'done', done)
+    clockAt('10:01')
     await ostraka('todo', 'drop', dropped, '--reason', 'Superseded')
 
-    const today = new Date().toLocaleDateString('sv') // YYYY-MM-DD, local
-    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', today, '--json')).stdout)
+    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', DAY, '--json')).stdout)
     expect(finished).toEqual([
       expect.objectContaining({ id: dropped, status: 'dropped', dropReason: 'Superseded' }),
       expect.objectContaining({ id: done, status: 'done' }),
     ])
-    expect((await ostraka('todo', 'list', '--finished-on', today)).stdout).toBe(
+    expect((await ostraka('todo', 'list', '--finished-on', DAY)).stdout).toBe(
       `${dropped}  Migrate the old CI (Dropped: Superseded)\n${done}  Ship it (done)\n`,
     )
     expect(await ostraka('todo', 'list', '--finished-on', '2020-01-01')).toEqual({
@@ -122,16 +130,18 @@ describe('ostraka todo', () => {
     const notes = idOf((await ostraka('todo', 'add', 'Write the notes', '--parent', parent)).stdout)
     const blog = idOf((await ostraka('todo', 'add', 'Blog post', '--parent', parent)).stdout)
     await ostraka('todo', 'add', 'Tag the build', '--parent', parent)
+    vi.useFakeTimers({ toFake: ['Date'] })
+    clockAt('10:00')
     await ostraka('todo', 'done', notes)
+    clockAt('10:01')
     await ostraka('todo', 'drop', blog, '--reason', 'No time')
 
-    const today = new Date().toLocaleDateString('sv') // YYYY-MM-DD, local
-    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', today, '--json')).stdout)
+    const finished = JSON.parse((await ostraka('todo', 'list', '--finished-on', DAY, '--json')).stdout)
     expect(finished).toEqual([
       expect.objectContaining({ id: blog, title: 'Blog post', status: 'dropped', parent: { id: parent, title: 'Release 2.0' } }),
       expect.objectContaining({ id: notes, title: 'Write the notes', status: 'done', parent: { id: parent, title: 'Release 2.0' } }),
     ])
-    expect((await ostraka('todo', 'list', '--finished-on', today)).stdout).toBe(
+    expect((await ostraka('todo', 'list', '--finished-on', DAY)).stdout).toBe(
       `${blog}  Release 2.0 › Blog post (Dropped: No time)\n${notes}  Release 2.0 › Write the notes (done)\n`,
     )
   })
