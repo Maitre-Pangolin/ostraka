@@ -33,7 +33,7 @@ The record of one working day: what was done, worked on, discussed and decided. 
 _Avoid_: Journal, diary, daily log, worklog
 
 **Backfill**:
-Writing Dev logs for past days that have none.
+Writing Dev logs for past days that have none, from their Activity sources.
 
 **Off day**:
 A weekday with no work to record, such as a holiday, kept as a Dev log marked off with an optional label so it doesn't show as missing.

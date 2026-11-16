@@ -1,6 +1,6 @@
 # Backfill
 
-A Backfill writes Dev logs for past days that have none, one week at a time, oldest first. Each day goes through [the day flow](SKILL.md#the-day-flow) and its own confirmation; the run ends with one Snapshot.
+A Backfill writes Dev logs for past days that have none, from the user's Activity sources only, one week at a time, oldest first. Each day goes through [the day flow](SKILL.md#the-day-flow) and its own confirmation; the run ends with one Snapshot.
 
 ## 1. Pick the days
 
@@ -10,7 +10,7 @@ A Backfill writes Dev logs for past days that have none, one week at a time, old
 - **A range the user names** (a week, a month, `<from>` to `<to>`): run `ostraka devlog missing --from <from> --to <to> --json`. Its days are all the days to backfill, across however many weeks.
 - If the command says there is no Dev log yet, ask the user which day to start from and run it again with `--from`.
 
-Then add the weekend days with activity. Weekends are skipped unless sources show activity: for each Saturday and Sunday of the chosen week (or inside the named range) with no Dev log (`ostraka devlog list --from <date> --to <date>` lists nothing), check the Todos, GitLab and Jira of that day as in the day flow's Gather. A weekend day with any activity joins the days; one without is skipped without a word.
+Then add the weekend days with activity. Weekends are skipped unless sources show activity: for each Saturday and Sunday of the chosen week (or inside the named range) with no Dev log (`ostraka devlog list --from <date> --to <date>` lists nothing), check the Todos, GitLab, Jira and Outlook calendar of that day as in the day flow's Gather. A weekend day with any activity joins the days; one without is skipped without a word.
 
 Tell the user in one line what this run covers: `Backfilling the week of 2026-10-19: Tue 20, Thu 22, Fri 23.` For the default, add how many more weeks have missing days.
 
@@ -18,9 +18,9 @@ Done when you have the list of days, oldest first.
 
 ## 2. Each day, oldest first
 
-Run the day flow for each day in turn: check, gather, draft and confirm, write. Show one day's draft at a time and write it as soon as the user approves it, before drafting the next. You may read a source once for the whole week (one Slack search over the dates, one Jira query from the first day to the last) and split what it returns by day.
+Run the day flow for each day in turn: check, gather, draft and confirm, write. Show one day's draft at a time and write it as soon as the user approves it, before drafting the next. You may read a source once for the whole week (one Slack search over the dates, one Jira query from the first day to the last, one calendar read and one sent-mail search over the range) and split what it returns by day.
 
-A weekday where no source shows any activity is often an off day: show that nothing was found, and offer to mark it off (asking for a label such as `Holiday`), to write it from what the user tells you, or to skip it and leave it missing.
+A weekday where no source shows any activity, or whose calendar says the user was away, is often an off day: show that nothing was found, and offer to mark it off (asking for a label such as `Holiday`), to write it from what the user tells you, or to skip it and leave it missing.
 
 The user may stop at any day. Days already written stay written.
 

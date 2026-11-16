@@ -1,6 +1,6 @@
 // `ostraka migrate`: the mechanical steps of the old monthly Dev logs' migration (#41), a thin layer over core.
-// The reformatting between `split` and `review` is an agent session per month, following the devlog skill's
-// migrate-month.md; the review and approval are the devlog skill's migrate.md.
+// The reformatting between `split` and `review` is an agent session per month, following migrate-month.md of the
+// private `devlog-migrate` skill (gitignored, so only in the owner's checkout); the review and approval are its migrate.md.
 import { homedir } from 'node:os'
 import { parseArgs } from 'node:util'
 import {
