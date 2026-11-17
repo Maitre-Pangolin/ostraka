@@ -171,9 +171,17 @@ export {
 } from './devlog-schema.ts'
 export { listDevlogs, readDevlog, readDevlogsBetween, updateDevlog, type DevlogChangeOptions, type DevlogOptions } from './devlogs.ts'
 export {
+  devlogCounts,
   devlogDays,
   devlogList,
+  devlogRangeList,
   devlogRangePresets,
+  devlogYears,
+  groupDevlogDays,
+  isoWeek,
+  monthRange,
+  weekRange,
+  yearRange,
   devlogSectionProblems,
   filterDevlogDays,
   missingDevlogWeeks,
@@ -184,6 +192,7 @@ export {
   type DevlogRange,
   type DevlogsView,
   type DevlogWeek,
+  type DevlogYear,
   type MissingDevlogWeek,
 } from './devlog-days.ts'
 export { localDay } from './todo-order.ts'

@@ -360,7 +360,7 @@ function FinishParentDialog({
   )
 }
 
-const ROW_ACTION =
+export const ROW_ACTION =
   'text-muted-foreground hover:bg-muted hover:text-foreground focus-visible:ring-ring/50 aria-expanded:bg-muted grid size-6 shrink-0 place-items-center rounded-md opacity-0 outline-none group-hover/row:opacity-100 focus-visible:opacity-100 focus-visible:ring-3 aria-expanded:opacity-100'
 
 /** The row's Add a Sub-todo action: expands the Todo and opens the Sub-todo entry under it, focused. */

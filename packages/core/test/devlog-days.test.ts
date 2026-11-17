@@ -1,9 +1,15 @@
 import { describe, expect, it } from 'vitest'
 import type { DevlogListing, DevlogSummary } from '../src/devlog-schema.ts'
 import {
+  devlogCounts,
   devlogDays,
   devlogList,
+  devlogRangeList,
   devlogRangePresets,
+  devlogYears,
+  groupDevlogDays,
+  isoWeek,
+  weekRange,
   devlogSectionProblems,
   filterDevlogDays,
   missingDevlogWeeks,
@@ -58,6 +64,83 @@ describe('devlogList', () => {
     const broken = { id: '2026-11-03', version: 'v', modifiedAt: '', error: 'Broken YAML header' }
     const months = devlogList([day('2026-11-02'), broken], TODAY)
     expect(months[0]!.weeks[0]!.days.find((entry) => entry.date === '2026-11-03')?.log).toEqual(broken)
+  })
+})
+
+describe('isoWeek and weekRange', () => {
+  it('numbers Weeks by ISO 8601, Monday to Sunday', () => {
+    expect(isoWeek('2026-11-16')).toEqual({ year: 2026, number: 47, id: '2026-W47' })
+    expect(isoWeek('2026-11-22')).toEqual({ year: 2026, number: 47, id: '2026-W47' })
+    expect(weekRange('2026-W47')).toEqual({ from: '2026-11-16', to: '2026-11-22' })
+  })
+
+  it('puts late December in Week 1 of the next year, or early January in Week 53 of the last', () => {
+    expect(isoWeek('2025-12-29').id).toBe('2026-W01')
+    expect(weekRange('2026-W01')).toEqual({ from: '2025-12-29', to: '2026-01-04' })
+    expect(isoWeek('2027-01-03').id).toBe('2026-W53')
+    expect(isoWeek('2027-01-04').id).toBe('2027-W01')
+  })
+
+  it('knows no Week a year does not have', () => {
+    expect(weekRange('2027-W53')).toBeUndefined()
+    expect(weekRange('2026-W00')).toBeUndefined()
+    expect(weekRange('2026-11')).toBeUndefined()
+  })
+})
+
+describe('groupDevlogDays and devlogYears', () => {
+  it('shows a Week running over two months under both, with the same id and each month its own days', () => {
+    // Week 40 of 2026 runs from Monday 28 September to Sunday 4 October.
+    const months = groupDevlogDays(devlogDays({ from: '2026-09-28', to: '2026-10-02' }, [], TODAY))
+    expect(months.map((month) => [month.month, month.weeks.map((week) => [week.id, week.number, week.start, dates(week.days)])])).toEqual([
+      ['2026-10', [['2026-W40', 40, '2026-09-28', ['2026-10-02', '2026-10-01']]]],
+      ['2026-09', [['2026-W40', 40, '2026-09-28', ['2026-09-30', '2026-09-29', '2026-09-28']]]],
+    ])
+  })
+
+  it('puts months under their calendar year, newest first, even a Week numbered in the next year', () => {
+    const months = groupDevlogDays(devlogDays({ from: '2025-12-29', to: '2026-01-02' }, [], TODAY))
+    const years = devlogYears(months)
+    expect(years.map((year) => [year.year, year.months.map((month) => [month.month, month.weeks.map((week) => week.id)])])).toEqual([
+      ['2026', [['2026-01', ['2026-W01']]]],
+      ['2025', [['2025-12', ['2026-W01']]]],
+    ])
+  })
+})
+
+describe('devlogRangeList', () => {
+  const logs = [day('2026-10-30', { tags: ['billing'] }), day('2026-10-29')]
+  const listing: DevlogListing[] = [...logs, summary('2026-10'), summary('2026-09')]
+
+  it('keeps the days of the range, gaps included, and the summaries of the months it touches', () => {
+    const months = devlogRangeList({ from: '2026-10-29', to: '2026-11-03' }, logs, listing, {}, TODAY)
+    expect(months.map((month) => [month.month, month.summary?.id, month.weeks.map((week) => dates(week.days))])).toEqual([
+      ['2026-11', undefined, [['2026-11-03', '2026-11-02']]],
+      ['2026-10', '2026-10', [['2026-10-30', '2026-10-29']]],
+    ])
+  })
+
+  it('keeps only the matching Dev logs once a Tag is chosen, without gaps or summaries', () => {
+    const months = devlogRangeList({ from: '2026-10-01', to: '2026-11-03' }, logs, listing, { tag: ['billing'] }, TODAY)
+    expect(months.map((month) => [month.month, month.summary?.id, month.weeks.map((week) => dates(week.days))])).toEqual([
+      ['2026-10', undefined, [['2026-10-30']]],
+    ])
+  })
+
+  it('keeps the summaries a search found', () => {
+    const months = devlogRangeList({ from: '2026-09-01', to: '2026-10-31' }, logs, listing, {}, TODAY, new Set(['2026-09', '2026-10-29']))
+    expect(months.map((month) => [month.month, month.summary?.id, month.weeks.map((week) => dates(week.days))])).toEqual([
+      ['2026-10', undefined, [['2026-10-29']]],
+      ['2026-09', '2026-09', []],
+    ])
+  })
+})
+
+describe('devlogCounts', () => {
+  it('counts the days written, off and broken ones too, and the days missing', () => {
+    const broken = { id: '2026-10-29', version: 'v', modifiedAt: '', error: 'Broken YAML header' }
+    const entries = devlogDays({ from: '2026-10-26', to: '2026-10-30' }, [day('2026-10-30', { off: true }), broken], TODAY)
+    expect(devlogCounts(entries)).toEqual({ written: 2, missing: 3 })
   })
 })
 
@@ -151,12 +234,14 @@ describe('filterDevlogDays', () => {
 })
 
 describe('devlogRangePresets', () => {
-  it('offers this and last week (Monday to Sunday) and this and last month, around today', () => {
+  it('offers this and last week (Monday to Sunday), month and year, around today', () => {
     expect(devlogRangePresets(TODAY)).toEqual([
       { label: 'This week', from: '2026-11-02', to: '2026-11-08' },
       { label: 'Last week', from: '2026-10-26', to: '2026-11-01' },
       { label: 'This month', from: '2026-11-01', to: '2026-11-30' },
       { label: 'Last month', from: '2026-10-01', to: '2026-10-31' },
+      { label: 'This year', from: '2026-01-01', to: '2026-12-31' },
+      { label: 'Last year', from: '2025-01-01', to: '2025-12-31' },
     ])
   })
 })
@@ -167,6 +252,8 @@ describe('parseDevlogsView', () => {
     expect(parseDevlogsView({ log: '2026-10-29' })).toEqual({ log: '2026-10-29' })
     expect(parseDevlogsView({ log: '2026-10' })).toEqual({ log: '2026-10' })
     expect(parseDevlogsView({ log: 'notes' })).toEqual({})
+    expect(parseDevlogsView({ log: '2026-W47' })).toEqual({ log: '2026-W47' })
+    expect(parseDevlogsView({ log: '2027-W53' })).toEqual({})
     expect(parseDevlogsView({ from: '2026-10-01', to: '2026-10-31', tag: ['Billing', 'bad tag!'], match: 'any' })).toEqual({
       from: '2026-10-01',
       to: '2026-10-31',

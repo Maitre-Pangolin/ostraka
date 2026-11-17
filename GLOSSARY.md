@@ -43,6 +43,10 @@ _Avoid_: Day off, leave, absence
 A month's Dev logs summed up in one file, written by the Dev log skill from that month's days.
 _Avoid_: Monthly report, recap
 
+**Week**:
+Monday to Sunday, named by its ISO 8601 number ("Week 47"); Week 1 is the one holding the year's first Thursday, so it can begin in late December.
+_Avoid_: Week of <date>
+
 **Sketch**:
 A quick diagram, such as a sequence or flow diagram, kept as Mermaid text that can be edited visually or as text.
 _Avoid_: Drawing, diagram, whiteboard
