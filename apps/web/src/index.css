@@ -254,6 +254,11 @@
   font-weight: 600;
   margin-top: 1em;
 }
+/* Stacked under a day's header, its sections read as part of the day: no bigger than the text. */
+.devlog-stacked h2 {
+  font-size: 1em;
+  margin-top: 0.8em;
+}
 .devlog-prose h3,
 .devlog-prose h4 {
   font-weight: 600;

@@ -30,6 +30,8 @@ import {
   CalendarRange,
   ChevronDown,
   ChevronRight,
+  ChevronsDownUp,
+  ChevronsUpDown,
   Eye,
   Hash,
   Palmtree,
@@ -63,7 +65,8 @@ import { ActiveChip, FilterPicker, MatchToggle } from '@/todos/filters'
 import { TagDot, TagPill } from '@/todos/properties'
 import { ROW_ACTION } from '@/todos/todos-view'
 import { useDevlog, useDevlogDays, useDevlogs, useTodoTitles, type BrokenDevlog, type Devlog, type DevlogListing } from './api'
-import { groupsOf, useDevlogGroups } from './collapse'
+import { useDevlogGroups } from './collapse'
+import { dayLabel, longDay, monthLabel, monthName, rangeLabel } from './labels'
 import { DevlogEditor, type DevlogEditorHandle } from './devlog-editor'
 import { MarkdownView, type TextRenderer, type TodoLinkRenderer } from './markdown-view'
 
@@ -72,16 +75,11 @@ const focusRing = 'outline-none focus-visible:ring-3 focus-visible:ring-ring/50'
 const toggled = (values: string[] = [], value: string) =>
   values.includes(value) ? values.filter((other) => other !== value) : [...values, value]
 
+/** A day in the list, under its month and Week, which already say the month: "Thu 22". */
+const UNDER_WEEK: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric' }
+
 /** How the skill is run, shown on a day without a Dev log. */
 const SKILL_COMMAND = '/devlog'
-
-const dayLabel = (day: string, options: Intl.DateTimeFormatOptions = { weekday: 'short', day: 'numeric', month: 'short' }) =>
-  dayToDate(day).toLocaleDateString('en-GB', options)
-const longDay = (day: string) => dayLabel(day, { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' })
-const monthLabel = (month: string) => dayToDate(`${month}-01`).toLocaleDateString('en-GB', { month: 'long', year: 'numeric' })
-const monthName = (month: string) => dayToDate(`${month}-01`).toLocaleDateString('en-GB', { month: 'long' })
-const rangeLabel = (from: string, to: string) =>
-  `${dayLabel(from, { day: 'numeric', month: 'short' })} – ${dayLabel(to, { day: 'numeric', month: 'short', year: 'numeric' })}`
 
 type Range = { from: string; to: string }
 
@@ -190,7 +188,7 @@ function DevlogsList({
     const key = JSON.stringify([view.log, scope])
     if (!view.log || revealed.current === key) return
     revealed.current = key
-    groups.reveal(groupsOf(view.log))
+    groups.reveal(view.log)
   })
   const snippetOf = (id: string) => search.hits?.get(id)?.snippet
   return (
@@ -219,27 +217,31 @@ function DevlogsList({
         {years.map(({ year, months: yearMonths }) => (
           <div key={year} role="group" aria-label={year}>
             <GroupHeader
+              level="year"
               label={year}
               name={year}
               open={groups.isOpen(year)}
               onToggle={() => groups.toggle(year)}
               counts={devlogCounts(daysOfMonths(yearMonths))}
               current={sameRange(range, yearRange(year))}
-              action={{ title: 'Show this year', onClick: () => onRange(yearRange(year)) }}
-              className="text-sm font-semibold"
+              onRange={() => onRange(yearRange(year))}
+              inside={{ ids: yearMonths.map(({ month }) => month), what: 'months' }}
+              groups={groups}
             />
             {groups.isOpen(year) &&
               yearMonths.map((month) => (
-                <div key={month.month} role="group" aria-label={monthLabel(month.month)}>
+                <div key={month.month} role="group" aria-label={monthLabel(month.month)} className="border-b">
                   <GroupHeader
+                    level="month"
                     label={monthName(month.month)}
                     name={monthLabel(month.month)}
                     open={groups.isOpen(month.month)}
                     onToggle={() => groups.toggle(month.month)}
                     counts={devlogCounts(daysOfMonths([month]))}
                     current={sameRange(range, monthRange(month.month))}
-                    action={{ title: 'Show this month', onClick: () => onRange(monthRange(month.month)) }}
-                    className="text-xs font-semibold"
+                    onRange={() => onRange(monthRange(month.month))}
+                    inside={{ ids: month.weeks.map(({ id }) => id), what: 'Weeks' }}
+                    groups={groups}
                   />
                   {groups.isOpen(month.month) && (
                     <>
@@ -253,12 +255,19 @@ function DevlogsList({
                       )}
                       {month.weeks.map((week) => (
                         <div key={week.id} role="group" aria-label={`Week ${week.number}`}>
-                          <WeekHeader
+                          <WeekBand
                             week={week}
+                            today={today}
                             open={groups.isOpen(week.id)}
-                            onToggle={() => groups.toggle(week.id)}
-                            active={view.log === week.id}
-                            onOpen={() => onOpen(week.id)}
+                            active={view.log}
+                            onBand={() => {
+                              groups.toggle(week.id)
+                              onOpen(week.id)
+                            }}
+                            onDay={(date) => {
+                              groups.setAll([week.id], true)
+                              onOpen(date)
+                            }}
                           />
                           {groups.isOpen(week.id) && (
                             <ul className="flex flex-col">
@@ -302,92 +311,195 @@ function GroupCounts({ counts: { written, missing } }: { counts: { written: numb
   )
 }
 
-/** A year's or month's header: it collapses and expands, and its row action sets the range to it. */
+/**
+ * A year's or month's header: it collapses and expands, and its row actions collapse or expand all it holds and set
+ * the range to it. A month's sticks under the Dates bar while its days scroll.
+ */
 function GroupHeader({
+  level,
   label,
   name,
   open,
   onToggle,
   counts,
   current,
-  action,
-  className,
+  onRange,
+  inside,
+  groups,
 }: {
+  level: 'year' | 'month'
   label: string
-  /** Its full name, for the row action. */
+  /** Its full name, for the row actions. */
   name: string
   open: boolean
   onToggle: () => void
   counts: { written: number; missing: number }
   /** The range is this year or month. */
   current: boolean
-  action: { title: string; onClick: () => void }
-  className?: string
+  onRange: () => void
+  /** The groups it holds, for Collapse all and Expand all. */
+  inside: { ids: string[]; what: string }
+  groups: { isOpen: (id: string) => boolean; setAll: (ids: string[], open: boolean) => void }
 }) {
   return (
-    <div className={cn('group/row bg-background flex items-center gap-1 border-b pr-2', current && 'bg-accent', className)}>
+    <div
+      className={cn(
+        'group/row bg-background flex items-center gap-0.5 pr-2',
+        level === 'year' ? 'border-b text-base font-bold' : 'bg-background/95 sticky top-10 z-[5] text-sm font-semibold backdrop-blur-sm',
+        level === 'month' && open && 'border-b',
+        current && 'bg-accent',
+      )}
+    >
       <button
         type="button"
         aria-expanded={open}
         aria-current={current || undefined}
         onClick={onToggle}
-        className={cn('flex min-w-0 flex-1 items-center gap-1 py-1.5 pl-2 text-left', focusRing)}
+        className={cn('flex min-w-0 flex-1 items-center gap-1.5 px-2 text-left', level === 'year' ? 'py-2' : 'py-1.5', focusRing)}
       >
         <ChevronRight aria-hidden className={cn('text-muted-foreground size-3.5 shrink-0 transition-transform', open && 'rotate-90')} />
         <span className="truncate">{label}</span>
         {!open && <GroupCounts counts={counts} />}
       </button>
-      <button type="button" onClick={action.onClick} title={action.title} aria-label={`Show ${name}`} className={ROW_ACTION}>
+      {open && <CollapseAll name={name} {...inside} groups={groups} />}
+      <button type="button" onClick={onRange} title={`Show this ${level}`} aria-label={`Show ${name}`} className={ROW_ACTION}>
         <CalendarRange className="size-3.5" />
       </button>
     </div>
   )
 }
 
-/** A Week's header: the chevron collapses and expands it, its name opens it stacked by day. */
-function WeekHeader({
+/** Collapses every group a header holds while any is open, else expands them all. */
+function CollapseAll({
+  name,
+  ids,
+  what,
+  groups,
+}: {
+  name: string
+  ids: string[]
+  what: string
+  groups: { isOpen: (id: string) => boolean; setAll: (ids: string[], open: boolean) => void }
+}) {
+  if (!ids.length) return null
+  const anyOpen = ids.some(groups.isOpen)
+  const title = `${anyOpen ? 'Collapse' : 'Expand'} all ${what}`
+  return (
+    <button
+      type="button"
+      onClick={() => groups.setAll(ids, !anyOpen)}
+      title={title}
+      aria-label={`${title} of ${name}`}
+      className={ROW_ACTION}
+    >
+      {anyOpen ? <ChevronsDownUp className="size-3.5" /> : <ChevronsUpDown className="size-3.5" />}
+    </button>
+  )
+}
+
+const WEEKDAYS = ['M', 'T', 'W', 'T', 'F', 'S', 'S']
+
+/**
+ * A Week as a band holding a square per weekday (and a weekend day with a Dev log): a square opens its day and
+ * unfolds the Week; anywhere else on the band opens the Week stacked and folds or unfolds its day rows.
+ */
+function WeekBand({
   week,
+  today,
   open,
-  onToggle,
   active,
-  onOpen,
+  onBand,
+  onDay,
 }: {
   week: DevlogWeek
+  today: string
   open: boolean
-  onToggle: () => void
-  /** The Week is open on the right. */
-  active: boolean
-  onOpen: () => void
+  /** What is open on the right. */
+  active?: string
+  onBand: () => void
+  onDay: (date: string) => void
 }) {
-  const end = addDays(week.start, 6)
-  const title = `Week ${week.number} of ${week.id.slice(0, 4)}, ${rangeLabel(week.start, end)}`
+  const byDate = new Map(week.days.map((day) => [day.date, day]))
+  const name = `Week ${week.number} of ${week.id.slice(0, 4)}, ${rangeLabel(week.start, addDays(week.start, 6))}`
   return (
-    <div
-      className={cn(
-        'bg-muted/40 text-muted-foreground flex items-center text-[11px] font-semibold tracking-wide uppercase',
-        active && 'bg-accent text-foreground',
-      )}
-    >
+    <div className={cn('hover:bg-muted/50 relative flex items-center gap-1.5 border-b px-2 py-1', active === week.id && 'bg-accent')}>
+      {/* The band itself, under the squares. */}
       <button
         type="button"
         aria-expanded={open}
-        aria-label={`Week ${week.number} days`}
-        onClick={onToggle}
-        className={cn('hover:text-foreground grid shrink-0 place-items-center py-1 pr-1 pl-2', focusRing)}
-      >
-        <ChevronRight aria-hidden className={cn('size-3.5 transition-transform', open && 'rotate-90')} />
-      </button>
-      <button
-        type="button"
-        onClick={onOpen}
-        aria-current={active || undefined}
-        title={title}
-        className={cn('hover:text-foreground flex min-w-0 flex-1 items-center gap-1 py-1 pr-3 text-left uppercase', focusRing)}
-      >
-        Week {week.number}
-        {!open && <GroupCounts counts={devlogCounts(week.days)} />}
-      </button>
+        aria-current={active === week.id || undefined}
+        aria-label={name}
+        title={name}
+        onClick={onBand}
+        className={cn('absolute inset-0 cursor-pointer', focusRing)}
+      />
+      <span aria-hidden className="pointer-events-none relative w-8 shrink-0 pl-1 text-xs font-semibold">
+        W{week.number}
+      </span>
+      <span className="pointer-events-none relative flex flex-1 gap-1">
+        {WEEKDAYS.map((letter, index) => {
+          const date = addDays(week.start, index)
+          const day = byDate.get(date)
+          if (index >= 5 && !day?.log) return null
+          return (
+            <DayCell key={date} letter={letter} date={date} day={day} today={today} active={active === date} onOpen={() => onDay(date)} />
+          )
+        })}
+      </span>
     </div>
+  )
+}
+
+/** A day's square on its Week's band, by state: written, missing (dashed), off, broken; empty outside the month. */
+function DayCell({
+  letter,
+  date,
+  day,
+  today,
+  active,
+  onOpen,
+}: {
+  letter: string
+  date: string
+  /** None for a day of the Week in the other month, or after today. */
+  day?: DevlogDay
+  today: string
+  active: boolean
+  onOpen: () => void
+}) {
+  if (!day) return <span className="size-8 shrink-0" />
+  const { log } = day
+  const off = log && !isBrokenDevlog(log) && log.off
+  const state = !log
+    ? date === today
+      ? 'No Dev log yet'
+      : 'No Dev log'
+    : isBrokenDevlog(log)
+      ? log.error
+      : off
+        ? (log.label ?? 'Off day')
+        : log.tags.map((tag) => `#${tag}`).join(' ') || 'Dev log'
+  const title = `${dayLabel(date)}: ${state}`
+  return (
+    <button
+      type="button"
+      onClick={onOpen}
+      title={title}
+      aria-label={title}
+      aria-current={active || undefined}
+      className={cn(
+        'pointer-events-auto flex size-8 shrink-0 flex-col items-center justify-center rounded-md text-[11px] leading-none',
+        focusRing,
+        !log && 'text-muted-foreground hover:bg-muted border border-dashed',
+        log && !off && 'bg-primary/10 text-foreground hover:bg-primary/20',
+        off && 'bg-muted text-muted-foreground',
+        log && isBrokenDevlog(log) && 'bg-destructive/10 text-destructive',
+        active && 'ring-primary ring-2',
+      )}
+    >
+      <span className="text-[9px] opacity-60">{letter}</span>
+      <span className="font-medium">{off ? <Palmtree className="size-3" /> : Number(date.slice(8))}</span>
+    </button>
   )
 }
 
@@ -455,14 +567,14 @@ function DayRow({
   onOpen: () => void
 }) {
   const { log } = day
-  if (!log) return <MissingDay date={day.date} today={today} className="border-b px-3 py-2" />
+  if (!log) return <MissingDay date={day.date} today={today} className="border-b px-3 py-1.5" />
   return (
     <button
       type="button"
       onClick={onOpen}
       aria-current={active || undefined}
       className={cn(
-        'hover:bg-muted/60 flex w-full min-w-0 flex-col gap-0.5 border-b px-3 py-2 text-left',
+        'hover:bg-muted/60 flex w-full min-w-0 flex-col gap-0.5 border-b px-3 py-1.5 text-left',
         focusRing,
         active && 'bg-accent',
       )}
@@ -472,9 +584,7 @@ function DayRow({
           <BrokenLine log={log} />
         ) : (
           <>
-            <span className={cn('w-24 shrink-0 text-sm font-medium whitespace-nowrap', log.off && 'text-muted-foreground')}>
-              {dayLabel(day.date)}
-            </span>
+            <span className="text-muted-foreground w-14 shrink-0 text-[13px] whitespace-nowrap">{dayLabel(day.date, UNDER_WEEK)}</span>
             {log.off ? (
               <OffLabel log={log} />
             ) : (
@@ -554,7 +664,7 @@ function MissingDay({ date, today, className, heading }: { date: string; today: 
           {longDay(date)}
         </span>
       ) : (
-        <span className="w-24 shrink-0 text-sm whitespace-nowrap">{dayLabel(date)}</span>
+        <span className="w-14 shrink-0 text-[13px] whitespace-nowrap">{dayLabel(date, UNDER_WEEK)}</span>
       )}
       <span className="min-w-0 flex-1 truncate">
         {date === today ? 'No Dev log yet' : 'No Dev log'}
@@ -945,7 +1055,8 @@ function StackedDay({
   if (!log) return <MissingDay date={day.date} today={today} heading className="border-b px-3 py-2.5" />
   return (
     <article aria-label={longDay(day.date)} className="border-b">
-      <header className="flex min-w-0 flex-wrap items-center gap-1.5 px-3 pt-2.5">
+      {/* A band over the day, kept in sight while its text scrolls, so each day reads apart from the next. */}
+      <header className="bg-muted/60 sticky top-0 z-[1] flex min-w-0 flex-wrap items-center gap-1.5 border-b px-3 py-2 backdrop-blur-sm">
         <DayHeading onOpen={onOpen}>{longDay(day.date)}</DayHeading>
         {!isBrokenDevlog(log) && log.off && <OffLabel log={log} />}
         {!isBrokenDevlog(log) && log.tags.map((tag) => <TagPill key={tag} tag={tag} />)}
@@ -955,7 +1066,7 @@ function StackedDay({
           <BrokenLine log={log} />
         </div>
       ) : log.body.trim() ? (
-        <div className="devlog-prose px-5 pb-2.5">
+        <div className="devlog-prose devlog-stacked px-5 pt-1 pb-3">
           <MarkdownView markdown={log.body} todoLink={todoLink} text={referenceText} />
         </div>
       ) : (
@@ -967,7 +1078,7 @@ function StackedDay({
 
 function DayHeading({ onOpen, children }: { onOpen: () => void; children: ReactNode }) {
   return (
-    <h3 className="min-w-0 text-sm font-semibold">
+    <h3 className="min-w-0 text-lg font-semibold">
       <button type="button" onClick={onOpen} className={cn('hover:text-primary truncate rounded text-left', focusRing)}>
         {children}
       </button>

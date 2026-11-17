@@ -1,5 +1,5 @@
-// Which years, months and Weeks of the Dev logs list are open. By default the current year and month are open, and
-// every Week; elsewhere it is what the viewer chose, kept in browser storage as the groups they set apart from the
+// Which years, months and Weeks of the Dev logs list are open. By default the current year, month and Week are open,
+// and the rest closed; elsewhere it is what the viewer chose, kept in browser storage as the groups they set apart from the
 // default (by id: `2026`, `2026-11`, `2026-W47`), so the default moves on with the calendar. A date range or a search
 // opens every group it shows instead, its toggles lasting while it does (`useDevlogGroups`).
 import { isoWeek, weekRange } from '@ostraka/core/devlog-days'
@@ -15,7 +15,7 @@ const MONTH = /^\d{4}-\d{2}$/
 export function isOpenByDefault(id: string, today: string): boolean {
   if (YEAR.test(id)) return id === today.slice(0, 4)
   if (MONTH.test(id)) return id === today.slice(0, 7)
-  return true
+  return id === isoWeek(today).id
 }
 
 export const isGroupOpen = (state: GroupState, id: string, today: string) => state[id] ?? isOpenByDefault(id, today)
@@ -26,12 +26,18 @@ export function setGroup(state: GroupState, id: string, open: boolean, today: st
   return open === isOpenByDefault(id, today) ? rest : { ...rest, [id]: open }
 }
 
-/** The groups holding a Dev log (a day, monthly summary or Week id), outermost first: its year, month and Week. */
-export function groupsOf(log: string): string[] {
+/**
+ * The groups to open so a Dev log (a day, monthly summary or Week id) shows in the list, outermost first: its year
+ * and month. A collapsed Week still shows its days as a strip, so it stays as it is. A Week runs over two months at
+ * most and shows under both, so one already open is enough; with neither open, its Monday's month opens.
+ */
+export function groupsToReveal(log: string, isOpen: (id: string) => boolean): string[] {
   const week = weekRange(log)
-  if (week) return [...new Set([week.from, week.to].flatMap((day) => [day.slice(0, 4), day.slice(0, 7)])), log]
-  if (MONTH.test(log)) return [log.slice(0, 4), log]
-  return [log.slice(0, 4), log.slice(0, 7), isoWeek(log).id]
+  if (week) {
+    const shown = [week.from, week.to].some((day) => isOpen(day.slice(0, 4)) && isOpen(day.slice(0, 7)))
+    return shown ? [] : [week.from.slice(0, 4), week.from.slice(0, 7)]
+  }
+  return [log.slice(0, 4), log.slice(0, 7)]
 }
 
 export function loadGroups(): GroupState {
@@ -65,18 +71,18 @@ export function useDevlogGroups(today: string, scope: string | undefined) {
     setSaved(next)
     saveGroups(next)
   }
+  /** Sets these groups open or closed: saved, or for the scope only. */
+  const setAll = (ids: string[], open: boolean) => {
+    const changed = ids.filter((id) => isOpen(id) !== open)
+    if (!changed.length) return
+    if (scope !== undefined) setScoped({ scope, state: { ...temporary, ...Object.fromEntries(changed.map((id) => [id, open])) } })
+    else save(changed.reduce((state, id) => setGroup(state, id, open, today), saved))
+  }
   return {
     isOpen,
-    toggle(id: string) {
-      if (scope !== undefined) setScoped({ scope, state: { ...temporary, [id]: !isOpen(id) } })
-      else save(setGroup(saved, id, !isOpen(id), today))
-    },
-    /** Opens these groups, saved when the list isn't narrowed (a Dev log opened from a link). */
-    reveal(ids: string[]) {
-      const closed = ids.filter((id) => !isOpen(id))
-      if (!closed.length) return
-      if (scope !== undefined) setScoped({ scope, state: { ...temporary, ...Object.fromEntries(closed.map((id) => [id, true])) } })
-      else save(closed.reduce((state, id) => setGroup(state, id, true, today), saved))
-    },
+    setAll,
+    toggle: (id: string) => setAll([id], !isOpen(id)),
+    /** Opens the groups that show this Dev log (opened from a link, or from a range or search that ended). */
+    reveal: (log: string) => setAll(groupsToReveal(log, isOpen), true),
   }
 }
